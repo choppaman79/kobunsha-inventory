@@ -10,10 +10,15 @@ auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
 
 let allProducts = [];
 let allMovements = [];
+let allSlips = [];
 let activeCategory = "すべて";
 let editingId = null;
 let movingProductId = null;
 let currentStaffName = "";
+let qrProductId = null;
+let currentSlipItems = []; // 伝票作成中の品目リスト
+let openSlipId = null;     // 現在開いている伝票詳細のID
+const SLIPS_COLLECTION = "inventory_slips"; // Phase2追加: 出荷/入荷伝票
 
 // ===================== 初期化 =====================
 function init() {
@@ -70,6 +75,56 @@ function init() {
   // ---- Phase2: 入出庫履歴タブ ----
   document.getElementById("historySearchBox").addEventListener("input", renderHistoryList);
 
+  // ---- Phase2: QRモーダル ----
+  document.getElementById("qrCloseBtn").addEventListener("click", closeQrModal);
+  document.getElementById("qrPrintBtn").addEventListener("click", () => window.print());
+  document.getElementById("qrOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "qrOverlay") closeQrModal();
+  });
+  document.getElementById("qrBulkPrintBtn").addEventListener("click", openQrBulkPrint);
+  document.getElementById("qrBulkCloseBtn").addEventListener("click", () => {
+    document.getElementById("qrBulkOverlay").classList.remove("show");
+  });
+  document.getElementById("qrBulkPrintOkBtn").addEventListener("click", () => window.print());
+  document.getElementById("qrBulkOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "qrBulkOverlay") document.getElementById("qrBulkOverlay").classList.remove("show");
+  });
+
+  // ---- Phase2: エクセル一括登録 ----
+  document.getElementById("excelFileInput").addEventListener("change", handleExcelFile);
+  document.getElementById("excelImportBtn").addEventListener("click", handleExcelImport);
+
+  // ---- Phase2: 伝票（出荷/入荷）----
+  document.getElementById("slipCreateBtn").addEventListener("click", () => openSlipCreateModal("out"));
+  document.querySelectorAll(".slip-filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".slip-filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderSlipList(btn.dataset.filter);
+    });
+  });
+  document.getElementById("slipCreateCancelBtn").addEventListener("click", closeSlipCreateModal);
+  document.getElementById("slipCreateSaveBtn").addEventListener("click", handleSlipCreateSave);
+  document.getElementById("slipCreateOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "slipCreateOverlay") closeSlipCreateModal();
+  });
+  document.querySelectorAll(".slip-type-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".slip-type-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("slipCreateType").value = btn.dataset.type;
+    });
+  });
+  document.getElementById("slipItemAddBtn").addEventListener("click", handleSlipItemAdd);
+  document.getElementById("slipItemProduct").addEventListener("change", handleSlipItemProductChange);
+
+  document.getElementById("slipDetailCloseBtn").addEventListener("click", closeSlipDetailModal);
+  document.getElementById("slipDetailPrintBtn").addEventListener("click", () => window.print());
+  document.getElementById("slipDetailCompleteBtn").addEventListener("click", handleSlipComplete);
+  document.getElementById("slipDetailOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "slipDetailOverlay") closeSlipDetailModal();
+  });
+
   auth.onAuthStateChanged(user => {
     if (user) {
       showApp(user);
@@ -112,6 +167,7 @@ function showApp(user) {
   document.getElementById("whoAmI").textContent = `${name} さん`;
   subscribeProducts();
   subscribeMovements();
+  subscribeSlips();
 }
 
 // ===================== タブ切り替え =====================
@@ -120,7 +176,9 @@ function switchTab(tab) {
   document.getElementById("tabList").style.display = tab === "list" ? "block" : "none";
   document.getElementById("tabRegister").style.display = tab === "register" ? "block" : "none";
   document.getElementById("tabHistory").style.display = tab === "history" ? "block" : "none";
+  document.getElementById("tabSlips").style.display = tab === "slips" ? "block" : "none";
   if (tab === "history") renderHistoryList();
+  if (tab === "slips") renderSlipList("all");
 }
 
 // ===================== 商品データ購読 =====================
@@ -193,13 +251,14 @@ function renderProductList() {
         <div class="product-name">
           <span class="cat-tag">${p.category || "未分類"}</span>${escapeHtml(p.name || "")}
         </div>
-        <div class="product-meta">単位：${escapeHtml(p.unit || "-")}　/　僅少ライン：${p.minStock ?? 0}${p.note ? "　/　" + escapeHtml(p.note) : ""}</div>
+        <div class="product-meta">${p.code ? "商品コード：" + escapeHtml(p.code) + "　/　" : ""}単位：${escapeHtml(p.unit || "-")}　/　僅少ライン：${p.minStock ?? 0}${p.price ? "　/　売価：¥" + Number(p.price).toLocaleString() : ""}${p.note ? "　/　" + escapeHtml(p.note) : ""}</div>
       </div>
       <div class="stock-control">
         <div class="stock-num ${isLow ? "low" : ""}">${p.currentStock ?? 0}</div>
         <span style="font-size:11px;color:#8a8272;">${escapeHtml(p.unit || "")}</span>
       </div>
       <button class="btn-move" data-action="move" data-id="${p.id}">入出庫</button>
+      <button class="btn-qr" data-id="${p.id}">QR</button>
       <a class="edit-link" data-id="${p.id}">編集</a>
     `;
     listEl.appendChild(row);
@@ -207,6 +266,9 @@ function renderProductList() {
 
   listEl.querySelectorAll(".btn-move").forEach(btn => {
     btn.addEventListener("click", () => openMoveModal(btn.dataset.id));
+  });
+  listEl.querySelectorAll(".btn-qr").forEach(btn => {
+    btn.addEventListener("click", () => openQrModal(btn.dataset.id));
   });
   listEl.querySelectorAll(".edit-link").forEach(link => {
     link.addEventListener("click", () => openEditModal(link.dataset.id));
@@ -346,11 +408,444 @@ function formatDateTime(date) {
   return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+// ===================== Phase2: QRコード =====================
+function openQrModal(id) {
+  const p = allProducts.find(x => x.id === id);
+  if (!p) return;
+  qrProductId = id;
+  document.getElementById("qrProductName").textContent = p.name || "";
+  document.getElementById("qrProductCode").textContent = p.code ? `商品コード：${p.code}` : "";
+  const box = document.getElementById("qrCanvasBox");
+  box.innerHTML = "";
+  // QRコードにはドキュメントIDを埋め込む（バーコード読取時にそのままproductIdとして検索できるように）
+  new QRCode(box, {
+    text: id,
+    width: 180,
+    height: 180,
+    correctLevel: QRCode.CorrectLevel.M
+  });
+  document.getElementById("qrOverlay").classList.add("show");
+}
+
+function closeQrModal() {
+  qrProductId = null;
+  document.getElementById("qrOverlay").classList.remove("show");
+}
+
+function openQrBulkPrint() {
+  const keyword = document.getElementById("searchBox").value.trim().toLowerCase();
+  const items = allProducts.filter(p => {
+    const matchCat = activeCategory === "すべて" || p.category === activeCategory;
+    const matchKeyword = !keyword || (p.name || "").toLowerCase().includes(keyword);
+    return matchCat && matchKeyword;
+  });
+  if (items.length === 0) {
+    showToast("印刷対象の商品がありません");
+    return;
+  }
+  const grid = document.getElementById("qrBulkGrid");
+  grid.innerHTML = "";
+  items.forEach(p => {
+    const cell = document.createElement("div");
+    cell.className = "qr-label";
+    const qrBox = document.createElement("div");
+    cell.appendChild(qrBox);
+    const label = document.createElement("div");
+    label.className = "qr-label-text";
+    label.innerHTML = `${escapeHtml(p.name || "")}${p.code ? "<br>" + escapeHtml(p.code) : ""}`;
+    cell.appendChild(label);
+    grid.appendChild(cell);
+    new QRCode(qrBox, { text: p.id, width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
+  });
+  document.getElementById("qrBulkOverlay").classList.add("show");
+}
+
+// ===================== Phase2: エクセル一括登録 =====================
+let excelParsedRows = [];
+
+function handleExcelFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = new Uint8Array(ev.target.result);
+      const workbook = XLSX.read(data, { type: "array" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+      excelParsedRows = rows.map(mapExcelRow).filter(r => r.name);
+      renderExcelPreview();
+    } catch (err) {
+      console.error(err);
+      showToast("ファイルの読み込みに失敗しました");
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function mapExcelRow(row) {
+  // 列名の表記ゆれを吸収（商品コード/コード/品番、商品名/名称、売価/価格/単価 など）
+  const get = (keys) => {
+    for (const k of Object.keys(row)) {
+      const norm = k.replace(/\s/g, "");
+      if (keys.includes(norm)) return row[k];
+    }
+    return "";
+  };
+  return {
+    code: String(get(["商品コード", "コード", "品番", "code"]) || "").trim(),
+    name: String(get(["商品名", "名称", "品名", "name"]) || "").trim(),
+    category: String(get(["分類", "カテゴリ", "category"]) || "").trim(),
+    unit: String(get(["単位", "unit"]) || "個").trim(),
+    price: Number(get(["売価", "価格", "単価", "price"])) || 0,
+    minStock: Number(get(["在庫僅少ライン", "僅少ライン", "minStock"])) || 3,
+    stock: Number(get(["現在庫数", "在庫数", "stock"])) || 0,
+    note: String(get(["備考", "note"]) || "").trim()
+  };
+}
+
+function renderExcelPreview() {
+  const wrap = document.getElementById("excelPreviewWrap");
+  const tbody = document.getElementById("excelPreviewBody");
+  tbody.innerHTML = "";
+  if (excelParsedRows.length === 0) {
+    wrap.style.display = "none";
+    return;
+  }
+  excelParsedRows.slice(0, 500).forEach(r => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(r.code)}</td>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.category)}</td>
+      <td>${escapeHtml(r.unit)}</td>
+      <td>${r.price}</td>
+      <td>${r.stock}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  document.getElementById("excelPreviewCount").textContent = `${excelParsedRows.length}件を読み込みました`;
+  wrap.style.display = "block";
+}
+
+function handleExcelImport() {
+  if (excelParsedRows.length === 0) {
+    showToast("先にエクセル/CSVファイルを選択してください");
+    return;
+  }
+  const btn = document.getElementById("excelImportBtn");
+  btn.disabled = true;
+  btn.textContent = "登録中...";
+
+  // Firestoreのバッチ書き込みは1回500件まで
+  const chunks = [];
+  for (let i = 0; i < excelParsedRows.length; i += 400) {
+    chunks.push(excelParsedRows.slice(i, i + 400));
+  }
+
+  const runChunk = (idx) => {
+    if (idx >= chunks.length) {
+      showToast(`${excelParsedRows.length}件の商品を登録しました`);
+      excelParsedRows = [];
+      document.getElementById("excelFileInput").value = "";
+      renderExcelPreview();
+      btn.disabled = false;
+      btn.textContent = "この内容で一括登録する";
+      switchTab("list");
+      return;
+    }
+    const batch = db.batch();
+    chunks[idx].forEach(r => {
+      const ref = db.collection(COLLECTION).doc();
+      batch.set(ref, {
+        name: r.name,
+        code: r.code,
+        category: r.category || CATEGORIES[0],
+        unit: r.unit || "個",
+        price: r.price || 0,
+        currentStock: r.stock || 0,
+        minStock: r.minStock || 3,
+        note: r.note || "",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    batch.commit().then(() => runChunk(idx + 1)).catch(err => {
+      console.error(err);
+      showToast("登録中にエラーが発生しました");
+      btn.disabled = false;
+      btn.textContent = "この内容で一括登録する";
+    });
+  };
+  runChunk(0);
+}
+
+// ===================== Phase2: 伝票（出荷/入荷）・検品 =====================
+function subscribeSlips() {
+  db.collection(SLIPS_COLLECTION).orderBy("createdAt", "desc").limit(200).onSnapshot(snapshot => {
+    allSlips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    if (document.getElementById("tabSlips").style.display !== "none") {
+      renderSlipList(getActiveSlipFilter());
+    }
+  }, err => console.error(err));
+}
+
+function getActiveSlipFilter() {
+  const active = document.querySelector(".slip-filter-btn.active");
+  return active ? active.dataset.filter : "all";
+}
+
+function renderSlipList(filter) {
+  const listEl = document.getElementById("slipList");
+  const emptyEl = document.getElementById("slipEmptyState");
+  let items = allSlips;
+  if (filter === "out") items = items.filter(s => s.type === "out");
+  if (filter === "in") items = items.filter(s => s.type === "in");
+  if (filter === "draft") items = items.filter(s => s.status !== "done");
+  if (filter === "done") items = items.filter(s => s.status === "done");
+
+  listEl.innerHTML = "";
+  emptyEl.style.display = items.length === 0 ? "block" : "none";
+
+  items.forEach(s => {
+    const row = document.createElement("div");
+    row.className = "slip-row";
+    const dt = s.createdAt && s.createdAt.toDate ? formatDateTime(s.createdAt.toDate()) : "―";
+    const typeLabel = s.type === "in" ? "入荷" : "出荷";
+    const statusLabel = s.status === "done" ? "検品完了" : "未検品";
+    row.innerHTML = `
+      <div class="slip-main">
+        <div class="slip-top">
+          <span class="history-type ${s.type === "in" ? "in" : "out"}">${typeLabel}</span>
+          <span class="slip-number">${escapeHtml(s.slipNumber || "")}</span>
+          <span class="slip-status ${s.status === "done" ? "done" : ""}">${statusLabel}</span>
+        </div>
+        <div class="history-meta">${escapeHtml(s.partner || "取引先未設定")}　/　${dt}　/　品目数：${(s.items || []).length}</div>
+      </div>
+    `;
+    row.addEventListener("click", () => openSlipDetailModal(s.id));
+    listEl.appendChild(row);
+  });
+}
+
+// ---- 伝票の新規作成 ----
+function openSlipCreateModal(type) {
+  currentSlipItems = [];
+  document.getElementById("slipCreateType").value = type;
+  document.querySelectorAll(".slip-type-btn").forEach(b => b.classList.toggle("active", b.dataset.type === type));
+  document.getElementById("slipPartner").value = "";
+  document.getElementById("slipMemo").value = "";
+  const productSelect = document.getElementById("slipItemProduct");
+  productSelect.innerHTML = `<option value="">商品を選択...</option>` +
+    allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}${p.code ? "（" + escapeHtml(p.code) + "）" : ""}</option>`).join("");
+  document.getElementById("slipItemQty").value = 1;
+  renderSlipItemsEditor();
+  document.getElementById("slipCreateOverlay").classList.add("show");
+}
+
+function closeSlipCreateModal() {
+  document.getElementById("slipCreateOverlay").classList.remove("show");
+}
+
+function handleSlipItemProductChange() {
+  const id = document.getElementById("slipItemProduct").value;
+  const p = allProducts.find(x => x.id === id);
+  document.getElementById("slipItemStockHint").textContent = p ? `現在庫：${p.currentStock ?? 0}${p.unit || ""}` : "";
+}
+
+function handleSlipItemAdd() {
+  const productId = document.getElementById("slipItemProduct").value;
+  const qty = Number(document.getElementById("slipItemQty").value);
+  const p = allProducts.find(x => x.id === productId);
+  if (!p) { showToast("商品を選択してください"); return; }
+  if (!qty || qty <= 0) { showToast("数量は1以上を入力してください"); return; }
+
+  const existing = currentSlipItems.find(i => i.productId === productId);
+  if (existing) {
+    existing.plannedQty += qty;
+  } else {
+    currentSlipItems.push({
+      productId, productName: p.name, code: p.code || "", unit: p.unit || "",
+      plannedQty: qty, checkedQty: 0, checked: false
+    });
+  }
+  document.getElementById("slipItemQty").value = 1;
+  renderSlipItemsEditor();
+}
+
+function renderSlipItemsEditor() {
+  const wrap = document.getElementById("slipItemsEditor");
+  wrap.innerHTML = "";
+  if (currentSlipItems.length === 0) {
+    wrap.innerHTML = `<p style="font-size:12px;color:#8a8272;">まだ品目がありません</p>`;
+    return;
+  }
+  currentSlipItems.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "slip-item-row";
+    row.innerHTML = `
+      <div class="slip-item-name">${escapeHtml(item.productName)}${item.code ? "（" + escapeHtml(item.code) + "）" : ""}</div>
+      <div class="slip-item-qty">${item.plannedQty}${escapeHtml(item.unit)}</div>
+      <button type="button" class="slip-item-remove" data-idx="${idx}">×</button>
+    `;
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll(".slip-item-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      currentSlipItems.splice(Number(btn.dataset.idx), 1);
+      renderSlipItemsEditor();
+    });
+  });
+}
+
+function generateSlipNumber(type) {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const prefix = type === "in" ? "NYU" : "SYK";
+  const rand = String(Math.floor(Math.random() * 900) + 100);
+  return `${prefix}-${dateStr}-${rand}`;
+}
+
+function handleSlipCreateSave() {
+  if (currentSlipItems.length === 0) {
+    showToast("品目を1件以上追加してください");
+    return;
+  }
+  const type = document.getElementById("slipCreateType").value;
+  const partner = document.getElementById("slipPartner").value.trim();
+  const memo = document.getElementById("slipMemo").value.trim();
+
+  db.collection(SLIPS_COLLECTION).add({
+    type,
+    slipNumber: generateSlipNumber(type),
+    partner,
+    memo,
+    status: "draft",
+    items: currentSlipItems,
+    staff: currentStaffName,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(() => {
+    showToast("伝票を作成しました");
+    closeSlipCreateModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("伝票の作成に失敗しました");
+  });
+}
+
+// ---- 伝票の詳細・検品・印刷 ----
+function openSlipDetailModal(id) {
+  const s = allSlips.find(x => x.id === id);
+  if (!s) return;
+  openSlipId = id;
+  const typeLabel = s.type === "in" ? "入荷伝票" : "出荷伝票";
+  document.getElementById("slipDetailTitle").textContent = typeLabel;
+  document.getElementById("slipDetailNumber").textContent = s.slipNumber || "";
+  document.getElementById("slipDetailPartner").textContent = s.partner || "取引先未設定";
+  document.getElementById("slipDetailDate").textContent = s.createdAt && s.createdAt.toDate ? formatDateTime(s.createdAt.toDate()) : "";
+  document.getElementById("slipDetailStaff").textContent = s.staff ? `作成：${s.staff}さん` : "";
+  document.getElementById("slipDetailMemo").textContent = s.memo || "";
+
+  const tbody = document.getElementById("slipDetailBody");
+  tbody.innerHTML = "";
+  const isDone = s.status === "done";
+  (s.items || []).forEach((item, idx) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.productName)}</td>
+      <td>${escapeHtml(item.code || "")}</td>
+      <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
+      <td class="no-print">
+        <input type="number" class="slip-check-qty" data-idx="${idx}" min="0" value="${item.checkedQty ?? item.plannedQty}" ${isDone ? "disabled" : ""}>
+      </td>
+      <td class="print-only">${item.checkedQty ?? ""}${escapeHtml(item.unit || "")}</td>
+      <td class="no-print">
+        <input type="checkbox" class="slip-check-box" data-idx="${idx}" ${item.checked ? "checked" : ""} ${isDone ? "disabled" : ""}>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById("slipDetailCompleteBtn").style.display = isDone ? "none" : "block";
+  document.getElementById("slipDetailDoneNote").style.display = isDone ? "block" : "none";
+  document.getElementById("slipDetailOverlay").classList.add("show");
+}
+
+function closeSlipDetailModal() {
+  openSlipId = null;
+  document.getElementById("slipDetailOverlay").classList.remove("show");
+}
+
+function handleSlipComplete() {
+  const s = allSlips.find(x => x.id === openSlipId);
+  if (!s) return;
+  if (!confirm("検品を完了し、在庫に反映します。よろしいですか？")) return;
+
+  // 画面上の確認数・チェック状態を取得
+  const items = (s.items || []).map((item, idx) => {
+    const qtyInput = document.querySelector(`.slip-check-qty[data-idx="${idx}"]`);
+    const checkBox = document.querySelector(`.slip-check-box[data-idx="${idx}"]`);
+    return {
+      ...item,
+      checkedQty: qtyInput ? Number(qtyInput.value) || 0 : item.plannedQty,
+      checked: checkBox ? checkBox.checked : false
+    };
+  });
+
+  const slipRef = db.collection(SLIPS_COLLECTION).doc(openSlipId);
+  const btn = document.getElementById("slipDetailCompleteBtn");
+  btn.disabled = true;
+  btn.textContent = "反映中...";
+
+  db.runTransaction(tx => {
+    return Promise.all(items.map(item => {
+      const productRef = db.collection(COLLECTION).doc(item.productId);
+      return tx.get(productRef).then(doc => ({ doc, item, productRef }));
+    })).then(results => {
+      results.forEach(({ doc, item, productRef }) => {
+        if (!doc.exists) return;
+        const latestStock = Number(doc.data().currentStock || 0);
+        const delta = s.type === "in" ? item.checkedQty : -item.checkedQty;
+        const newStock = Math.max(0, latestStock + delta);
+        tx.update(productRef, { currentStock: newStock });
+        const movementRef = db.collection(MOVEMENTS_COLLECTION).doc();
+        tx.set(movementRef, {
+          productId: item.productId,
+          productName: item.productName,
+          unit: item.unit || "",
+          type: s.type,
+          qty: item.checkedQty,
+          note: `伝票 ${s.slipNumber} による検品反映`,
+          staff: currentStaffName,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      tx.update(slipRef, {
+        items,
+        status: "done",
+        completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        completedBy: currentStaffName
+      });
+    });
+  }).then(() => {
+    showToast("検品を完了し、在庫に反映しました");
+    closeSlipDetailModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("反映に失敗しました");
+  }).finally(() => {
+    btn.disabled = false;
+    btn.textContent = "検品完了として記録する";
+  });
+}
+
 // ===================== 商品登録 =====================
 function handleRegisterSubmit() {
   const name = document.getElementById("regName").value.trim();
+  const code = document.getElementById("regCode").value.trim();
   const category = document.getElementById("regCategory").value;
   const unit = document.getElementById("regUnit").value.trim() || "個";
+  const price = Number(document.getElementById("regPrice").value) || 0;
   const stock = Number(document.getElementById("regStock").value) || 0;
   const minStock = Number(document.getElementById("regMinStock").value) || 0;
   const note = document.getElementById("regNote").value.trim();
@@ -361,7 +856,8 @@ function handleRegisterSubmit() {
   }
 
   db.collection(COLLECTION).add({
-    name, category, unit,
+    name, code, category, unit,
+    price,
     currentStock: stock,
     minStock: minStock,
     note,
@@ -369,7 +865,9 @@ function handleRegisterSubmit() {
   }).then(() => {
     showToast("商品を登録しました");
     document.getElementById("regName").value = "";
+    document.getElementById("regCode").value = "";
     document.getElementById("regUnit").value = "個";
+    document.getElementById("regPrice").value = "";
     document.getElementById("regStock").value = 0;
     document.getElementById("regMinStock").value = 3;
     document.getElementById("regNote").value = "";
@@ -386,8 +884,10 @@ function openEditModal(id) {
   if (!p) return;
   editingId = id;
   document.getElementById("editName").value = p.name || "";
+  document.getElementById("editCode").value = p.code || "";
   document.getElementById("editCategory").value = p.category || CATEGORIES[0];
   document.getElementById("editUnit").value = p.unit || "";
+  document.getElementById("editPrice").value = p.price ?? "";
   document.getElementById("editStock").value = p.currentStock ?? 0;
   document.getElementById("editMinStock").value = p.minStock ?? 0;
   document.getElementById("editNote").value = p.note || "";
@@ -403,8 +903,10 @@ function handleEditSave() {
   if (!editingId) return;
   const data = {
     name: document.getElementById("editName").value.trim(),
+    code: document.getElementById("editCode").value.trim(),
     category: document.getElementById("editCategory").value,
     unit: document.getElementById("editUnit").value.trim(),
+    price: Number(document.getElementById("editPrice").value) || 0,
     currentStock: Number(document.getElementById("editStock").value) || 0,
     minStock: Number(document.getElementById("editMinStock").value) || 0,
     note: document.getElementById("editNote").value.trim()
