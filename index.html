@@ -252,6 +252,70 @@
     margin-left: 8px;
     white-space: nowrap;
   }
+  .btn-move {
+    background: var(--indigo);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .btn-move:hover { background: var(--indigo-deep); }
+
+  /* ---------- 入出庫モーダル ---------- */
+  .move-type-group {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .move-type-btn {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    font-size: 14px;
+    font-weight: 600;
+    color: #6b6357;
+  }
+  .move-type-btn.active[data-type="in"] {
+    background: #e8f0e9;
+    border-color: var(--ok-text);
+    color: var(--ok-text);
+  }
+  .move-type-btn.active[data-type="out"] {
+    background: var(--warn-bg);
+    border-color: var(--warn-text);
+    color: var(--warn-text);
+  }
+
+  /* ---------- 入出庫履歴 ---------- */
+  .history-list { display: flex; flex-direction: column; gap: 8px; }
+  .history-row {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .history-main { flex: 1; min-width: 0; }
+  .history-top { display: flex; align-items: center; gap: 8px; }
+  .history-type {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .history-type.in { background: #e8f0e9; color: var(--ok-text); }
+  .history-type.out { background: var(--warn-bg); color: var(--warn-text); }
+  .history-name { font-size: 14px; font-weight: 600; color: var(--indigo-deep); }
+  .history-meta { font-size: 12px; color: #8a8272; margin-top: 3px; }
+  .history-qty { font-size: 16px; font-weight: 700; white-space: nowrap; }
+  .history-qty.in { color: var(--ok-text); }
+  .history-qty.out { color: var(--warn-text); }
 
   .empty-state {
     text-align: center;
@@ -364,6 +428,7 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="list">在庫一覧</button>
       <button class="tab-btn" data-tab="register">商品登録</button>
+      <button class="tab-btn" data-tab="history">入出庫履歴</button>
     </div>
 
     <!-- ---- 在庫一覧タブ ---- -->
@@ -401,7 +466,42 @@
       <input type="text" id="regNote" placeholder="仕入先や型番など">
       <button class="btn-primary" id="regSubmitBtn" style="max-width:280px;">この内容で登録する</button>
     </section>
+
+    <!-- ---- 入出庫履歴タブ (Phase2) ---- -->
+    <section id="tabHistory" style="display:none;">
+      <div class="toolbar">
+        <input type="text" id="historySearchBox" placeholder="商品名で検索">
+      </div>
+      <div class="history-list" id="historyList"></div>
+      <div class="empty-state" id="historyEmptyState" style="display:none;">履歴がありません</div>
+    </section>
   </main>
+</div>
+
+<!-- ===================== 入出庫モーダル (Phase2) ===================== -->
+<div class="modal-overlay" id="moveOverlay">
+  <div class="modal">
+    <h2>入出庫を記録</h2>
+    <p id="moveProductName" style="font-size:14.5px;font-weight:600;color:var(--indigo-deep);margin:0 0 2px;"></p>
+    <p id="moveCurrentStock" style="font-size:12px;color:#8a8272;margin:0 0 16px;"></p>
+
+    <label>区分</label>
+    <div class="move-type-group">
+      <button type="button" class="move-type-btn active" data-type="in">＋ 入庫</button>
+      <button type="button" class="move-type-btn" data-type="out">－ 出庫</button>
+    </div>
+    <input type="hidden" id="moveType" value="in">
+
+    <label>数量</label>
+    <input type="number" id="moveQty" min="1" value="1">
+    <label>備考（任意）</label>
+    <input type="text" id="moveNote" placeholder="例：〇〇様納品分、棚卸調整など">
+    <div class="error-msg" id="moveError"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="moveCancelBtn">キャンセル</button>
+      <button class="btn-primary" id="moveSaveBtn">記録する</button>
+    </div>
+  </div>
 </div>
 
 <!-- ===================== 編集モーダル ===================== -->
