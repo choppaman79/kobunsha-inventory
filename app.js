@@ -2,14 +2,18 @@
 const MEMBERS = ["仙波","山崎","田中","落合","川野","迫","佐藤","二神","森重","小鷹","山根","熊澤"];
 const CATEGORIES = ["神具","仏具","神向き用品","防災用品","その他"];
 const COLLECTION = "inventory_products"; // 予定管理アプリのコレクションとは別名にして衝突を防止
+const MOVEMENTS_COLLECTION = "inventory_movements"; // Phase2: 入出庫履歴
 
 const auth = firebase.auth();
 const db = firebase.firestore();
 auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
 
 let allProducts = [];
+let allMovements = [];
 let activeCategory = "すべて";
 let editingId = null;
+let movingProductId = null;
+let currentStaffName = "";
 
 // ===================== 初期化 =====================
 function init() {
@@ -49,6 +53,23 @@ function init() {
     if (e.target.id === "editOverlay") closeEditModal();
   });
 
+  // ---- Phase2: 入出庫モーダル ----
+  document.getElementById("moveCancelBtn").addEventListener("click", closeMoveModal);
+  document.getElementById("moveSaveBtn").addEventListener("click", handleMoveSave);
+  document.getElementById("moveOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "moveOverlay") closeMoveModal();
+  });
+  document.querySelectorAll(".move-type-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".move-type-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("moveType").value = btn.dataset.type;
+    });
+  });
+
+  // ---- Phase2: 入出庫履歴タブ ----
+  document.getElementById("historySearchBox").addEventListener("input", renderHistoryList);
+
   auth.onAuthStateChanged(user => {
     if (user) {
       showApp(user);
@@ -87,8 +108,10 @@ function showApp(user) {
   document.getElementById("loginScreen").style.display = "none";
   document.getElementById("appScreen").style.display = "block";
   const name = user.email.split("@")[0];
+  currentStaffName = name;
   document.getElementById("whoAmI").textContent = `${name} さん`;
   subscribeProducts();
+  subscribeMovements();
 }
 
 // ===================== タブ切り替え =====================
@@ -96,6 +119,8 @@ function switchTab(tab) {
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   document.getElementById("tabList").style.display = tab === "list" ? "block" : "none";
   document.getElementById("tabRegister").style.display = tab === "register" ? "block" : "none";
+  document.getElementById("tabHistory").style.display = tab === "history" ? "block" : "none";
+  if (tab === "history") renderHistoryList();
 }
 
 // ===================== 商品データ購読 =====================
@@ -171,17 +196,17 @@ function renderProductList() {
         <div class="product-meta">単位：${escapeHtml(p.unit || "-")}　/　僅少ライン：${p.minStock ?? 0}${p.note ? "　/　" + escapeHtml(p.note) : ""}</div>
       </div>
       <div class="stock-control">
-        <button class="stock-btn" data-action="dec" data-id="${p.id}">−</button>
         <div class="stock-num ${isLow ? "low" : ""}">${p.currentStock ?? 0}</div>
-        <button class="stock-btn" data-action="inc" data-id="${p.id}">＋</button>
+        <span style="font-size:11px;color:#8a8272;">${escapeHtml(p.unit || "")}</span>
       </div>
+      <button class="btn-move" data-action="move" data-id="${p.id}">入出庫</button>
       <a class="edit-link" data-id="${p.id}">編集</a>
     `;
     listEl.appendChild(row);
   });
 
-  listEl.querySelectorAll(".stock-btn").forEach(btn => {
-    btn.addEventListener("click", () => adjustStock(btn.dataset.id, btn.dataset.action));
+  listEl.querySelectorAll(".btn-move").forEach(btn => {
+    btn.addEventListener("click", () => openMoveModal(btn.dataset.id));
   });
   listEl.querySelectorAll(".edit-link").forEach(link => {
     link.addEventListener("click", () => openEditModal(link.dataset.id));
@@ -194,14 +219,131 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// ===================== 在庫増減 =====================
-function adjustStock(id, action) {
-  const product = allProducts.find(p => p.id === id);
+// ===================== Phase2: 入出庫記録 =====================
+function openMoveModal(id) {
+  const p = allProducts.find(x => x.id === id);
+  if (!p) return;
+  movingProductId = id;
+  document.getElementById("moveProductName").textContent = p.name || "";
+  document.getElementById("moveCurrentStock").textContent = `現在庫：${p.currentStock ?? 0} ${p.unit || ""}`;
+  document.getElementById("moveQty").value = 1;
+  document.getElementById("moveNote").value = "";
+  document.getElementById("moveType").value = "in";
+  document.querySelectorAll(".move-type-btn").forEach(b => b.classList.toggle("active", b.dataset.type === "in"));
+  document.getElementById("moveError").textContent = "";
+  document.getElementById("moveOverlay").classList.add("show");
+}
+
+function closeMoveModal() {
+  movingProductId = null;
+  document.getElementById("moveOverlay").classList.remove("show");
+}
+
+function handleMoveSave() {
+  if (!movingProductId) return;
+  const product = allProducts.find(p => p.id === movingProductId);
   if (!product) return;
-  const delta = action === "inc" ? 1 : -1;
-  const newStock = Math.max(0, Number(product.currentStock || 0) + delta);
-  db.collection(COLLECTION).doc(id).update({ currentStock: newStock })
-    .catch(err => { console.error(err); showToast("更新に失敗しました"); });
+
+  const type = document.getElementById("moveType").value; // "in" or "out"
+  const qty = Number(document.getElementById("moveQty").value);
+  const note = document.getElementById("moveNote").value.trim();
+  const errorEl = document.getElementById("moveError");
+  errorEl.textContent = "";
+
+  if (!qty || qty <= 0) {
+    errorEl.textContent = "数量は1以上を入力してください";
+    return;
+  }
+
+  const delta = type === "in" ? qty : -qty;
+  const newStock = Number(product.currentStock || 0) + delta;
+
+  if (newStock < 0) {
+    errorEl.textContent = "現在庫数を超える出庫はできません";
+    return;
+  }
+
+  const productRef = db.collection(COLLECTION).doc(movingProductId);
+  const movementRef = db.collection(MOVEMENTS_COLLECTION).doc();
+
+  db.runTransaction(tx => {
+    return tx.get(productRef).then(doc => {
+      if (!doc.exists) throw new Error("商品が見つかりません");
+      const latestStock = Number(doc.data().currentStock || 0);
+      const latestNewStock = type === "in" ? latestStock + qty : latestStock - qty;
+      if (latestNewStock < 0) throw new Error("在庫不足");
+      tx.update(productRef, { currentStock: latestNewStock });
+      tx.set(movementRef, {
+        productId: movingProductId,
+        productName: product.name || "",
+        category: product.category || "",
+        unit: product.unit || "",
+        type,
+        qty,
+        note,
+        staff: currentStaffName,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+  }).then(() => {
+    showToast(type === "in" ? "入庫を記録しました" : "出庫を記録しました");
+    closeMoveModal();
+  }).catch(err => {
+    console.error(err);
+    if (err.message === "在庫不足") {
+      errorEl.textContent = "現在庫数を超える出庫はできません";
+    } else {
+      errorEl.textContent = "";
+      showToast("記録に失敗しました");
+    }
+  });
+}
+
+// ===================== Phase2: 入出庫履歴 =====================
+function subscribeMovements() {
+  db.collection(MOVEMENTS_COLLECTION).orderBy("createdAt", "desc").limit(200).onSnapshot(snapshot => {
+    allMovements = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    if (document.getElementById("tabHistory").style.display !== "none") {
+      renderHistoryList();
+    }
+  }, err => {
+    console.error(err);
+  });
+}
+
+function renderHistoryList() {
+  const keyword = document.getElementById("historySearchBox").value.trim().toLowerCase();
+  const listEl = document.getElementById("historyList");
+  const emptyEl = document.getElementById("historyEmptyState");
+
+  const items = allMovements.filter(m => !keyword || (m.productName || "").toLowerCase().includes(keyword));
+
+  listEl.innerHTML = "";
+  emptyEl.style.display = items.length === 0 ? "block" : "none";
+
+  items.forEach(m => {
+    const row = document.createElement("div");
+    row.className = "history-row";
+    const dt = m.createdAt && m.createdAt.toDate ? formatDateTime(m.createdAt.toDate()) : "―";
+    const sign = m.type === "in" ? "+" : "−";
+    const typeLabel = m.type === "in" ? "入庫" : "出庫";
+    row.innerHTML = `
+      <div class="history-main">
+        <div class="history-top">
+          <span class="history-type ${m.type}">${typeLabel}</span>
+          <span class="history-name">${escapeHtml(m.productName || "")}</span>
+        </div>
+        <div class="history-meta">${dt}　/　${escapeHtml(m.staff || "-")}さん${m.note ? "　/　" + escapeHtml(m.note) : ""}</div>
+      </div>
+      <div class="history-qty ${m.type}">${sign}${m.qty ?? 0}${escapeHtml(m.unit || "")}</div>
+    `;
+    listEl.appendChild(row);
+  });
+}
+
+function formatDateTime(date) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 // ===================== 商品登録 =====================
