@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>弘文社 在庫管理</title>
+<style>
+  :root {
+    --ink: #23282b;
+    --paper: #f6f3ec;
+    --panel: #ffffff;
+    --line: #ddd6c4;
+    --indigo: #2f4156;
+    --indigo-deep: #1f2d3d;
+    --bronze: #a8763e;
+    --bronze-soft: #e9dcc3;
+    --warn-bg: #fbeceb;
+    --warn-text: #a3392b;
+    --ok-text: #4a6b4f;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- ログイン画面 ---------- */
+  #loginScreen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .login-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 36px 30px;
+    width: 100%;
+    max-width: 360px;
+  }
+  .login-card h1 {
+    font-size: 20px;
+    letter-spacing: .02em;
+    margin: 0 0 4px;
+    color: var(--indigo-deep);
+  }
+  .login-card p.sub {
+    margin: 0 0 24px;
+    color: #6b6357;
+    font-size: 13px;
+  }
+  select, input[type=password], input[type=text], input[type=number] {
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    font-size: 15px;
+    color: var(--ink);
+    margin-bottom: 14px;
+  }
+  select:focus, input:focus {
+    outline: none;
+    border-color: var(--bronze);
+    box-shadow: 0 0 0 3px var(--bronze-soft);
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+  }
+  .btn-primary {
+    width: 100%;
+    padding: 12px;
+    background: var(--indigo);
+    color: #fff;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+  .btn-primary:hover { background: var(--indigo-deep); }
+  .error-msg {
+    color: var(--warn-text);
+    font-size: 13px;
+    margin: -6px 0 14px;
+    min-height: 16px;
+  }
+
+  /* ---------- アプリ本体 ---------- */
+  #appScreen { display: none; min-height: 100vh; }
+  header.topbar {
+    background: var(--indigo-deep);
+    color: #f2efe6;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header.topbar .title {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .03em;
+  }
+  header.topbar .who {
+    font-size: 12px;
+    color: #c9c2b0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header.topbar button.logout {
+    background: transparent;
+    color: #c9c2b0;
+    font-size: 12px;
+    text-decoration: underline;
+    padding: 4px;
+  }
+
+  main {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 20px 16px 80px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tab-btn {
+    background: transparent;
+    padding: 10px 16px;
+    font-size: 14px;
+    color: #756b5c;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab-btn.active {
+    color: var(--indigo-deep);
+    border-bottom-color: var(--bronze);
+    font-weight: 600;
+  }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+  .toolbar input[type=text] { margin: 0; max-width: 220px; }
+  .toolbar select { margin: 0; max-width: 160px; }
+  .chip-group { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    font-size: 13px;
+    color: #5c5648;
+  }
+  .chip.active {
+    background: var(--indigo);
+    border-color: var(--indigo);
+    color: #fff;
+  }
+
+  .spacer { flex: 1; }
+  .btn-add {
+    background: var(--bronze);
+    color: #fff;
+    padding: 9px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .btn-add:hover { background: #8f622f; }
+
+  .summary-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .summary-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    min-width: 110px;
+  }
+  .summary-card .num { font-size: 22px; font-weight: 700; color: var(--indigo-deep); }
+  .summary-card .lbl { font-size: 11px; color: #8a8272; margin-top: 2px; }
+  .summary-card.warn .num { color: var(--warn-text); }
+
+  .product-list { display: flex; flex-direction: column; gap: 8px; }
+  .product-row {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .product-row.low { border-color: #e3b2ab; background: var(--warn-bg); }
+  .product-main { flex: 1; min-width: 0; }
+  .product-name { font-size: 14.5px; font-weight: 600; color: var(--indigo-deep); }
+  .product-meta { font-size: 12px; color: #8a8272; margin-top: 2px; }
+  .cat-tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--bronze-soft);
+    color: #6b4a20;
+    margin-right: 6px;
+  }
+  .stock-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .stock-btn {
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    font-size: 16px;
+    color: var(--indigo-deep);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stock-btn:hover { background: var(--bronze-soft); }
+  .stock-num { min-width: 42px; text-align: center; font-size: 16px; font-weight: 700; }
+  .stock-num.low { color: var(--warn-text); }
+  .edit-link {
+    font-size: 12px;
+    color: #8a8272;
+    text-decoration: underline;
+    margin-left: 8px;
+    white-space: nowrap;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #8a8272;
+    font-size: 14px;
+  }
+
+  /* ---------- モーダル ---------- */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(31,45,61,.45);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 100;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--panel);
+    border-radius: var(--radius);
+    padding: 26px 24px;
+    width: 100%;
+    max-width: 400px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal h2 { font-size: 16px; margin: 0 0 18px; color: var(--indigo-deep); }
+  .modal label {
+    display: block;
+    font-size: 12px;
+    color: #6b6357;
+    margin: 0 0 4px;
+  }
+  .modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .btn-secondary {
+    flex: 1;
+    padding: 11px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 14px;
+    color: #6b6357;
+  }
+  .btn-danger {
+    padding: 11px 14px;
+    background: transparent;
+    border: 1px solid #e3b2ab;
+    color: var(--warn-text);
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .modal .btn-primary { flex: 2; }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--indigo-deep);
+    color: #fff;
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: all .25s ease;
+    z-index: 200;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 480px) {
+    .product-row { flex-wrap: wrap; }
+    .edit-link { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== ログイン画面 ===================== -->
+<div id="loginScreen">
+  <div class="login-card">
+    <h1>弘文社 在庫管理</h1>
+    <p class="sub">担当者を選んでログインしてください</p>
+    <select id="loginName">
+      <option value="">名前を選択...</option>
+    </select>
+    <input type="password" id="loginPassword" placeholder="パスワード">
+    <div class="error-msg" id="loginError"></div>
+    <button class="btn-primary" id="loginBtn">ログイン</button>
+  </div>
+</div>
+
+<!-- ===================== アプリ本体 ===================== -->
+<div id="appScreen">
+  <header class="topbar">
+    <div class="title">弘文社 在庫管理</div>
+    <div class="who">
+      <span id="whoAmI"></span>
+      <button class="logout" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="list">在庫一覧</button>
+      <button class="tab-btn" data-tab="register">商品登録</button>
+    </div>
+
+    <!-- ---- 在庫一覧タブ ---- -->
+    <section id="tabList">
+      <div class="summary-row" id="summaryRow"></div>
+
+      <div class="toolbar">
+        <input type="text" id="searchBox" placeholder="商品名で検索">
+        <div class="spacer"></div>
+        <button class="btn-add" id="openAddBtn">＋ 商品を登録</button>
+      </div>
+      <div class="chip-group" id="categoryChips"></div>
+      <br>
+
+      <div class="product-list" id="productList"></div>
+      <div class="empty-state" id="emptyState" style="display:none;">該当する商品がありません</div>
+    </section>
+
+    <!-- ---- 商品登録タブ（一覧と同じフォームをモーダルなしで表示） ---- -->
+    <section id="tabRegister" style="display:none;">
+      <p style="font-size:13px;color:#6b6357;margin-bottom:16px;">
+        新しい商品をここから登録できます。既存商品の編集は「在庫一覧」の各行から行ってください。
+      </p>
+      <label>商品名</label>
+      <input type="text" id="regName" placeholder="例：御神鏡 5寸">
+      <label>分類</label>
+      <select id="regCategory"></select>
+      <label>単位</label>
+      <input type="text" id="regUnit" placeholder="例：個、箱、セット" value="個">
+      <label>現在庫数</label>
+      <input type="number" id="regStock" value="0" min="0">
+      <label>在庫僅少の目安（この数以下で警告表示）</label>
+      <input type="number" id="regMinStock" value="3" min="0">
+      <label>備考（任意）</label>
+      <input type="text" id="regNote" placeholder="仕入先や型番など">
+      <button class="btn-primary" id="regSubmitBtn" style="max-width:280px;">この内容で登録する</button>
+    </section>
+  </main>
+</div>
+
+<!-- ===================== 編集モーダル ===================== -->
+<div class="modal-overlay" id="editOverlay">
+  <div class="modal">
+    <h2>商品を編集</h2>
+    <label>商品名</label>
+    <input type="text" id="editName">
+    <label>分類</label>
+    <select id="editCategory"></select>
+    <label>単位</label>
+    <input type="text" id="editUnit">
+    <label>現在庫数</label>
+    <input type="number" id="editStock" min="0">
+    <label>在庫僅少の目安</label>
+    <input type="number" id="editMinStock" min="0">
+    <label>備考</label>
+    <input type="text" id="editNote">
+    <div class="modal-actions">
+      <button class="btn-danger" id="editDeleteBtn">削除</button>
+      <button class="btn-secondary" id="editCancelBtn">キャンセル</button>
+      <button class="btn-primary" id="editSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Firebase SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+
+<script src="firebase-config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
