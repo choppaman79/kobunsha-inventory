@@ -20,6 +20,12 @@ let currentSlipItems = []; // 伝票作成中の品目リスト
 let openSlipId = null;     // 現在開いている伝票詳細のID
 const SLIPS_COLLECTION = "inventory_slips"; // Phase2追加: 出荷/入荷伝票
 
+// ---- Phase3: カメラスキャン関連 ----
+let scanStream = null;
+let scanRAF = null;
+let scanMode = "global"; // "global" または "slip-item"
+let pendingHashHandled = false;
+
 // ===================== 初期化 =====================
 function init() {
   const loginSelect = document.getElementById("loginName");
@@ -124,6 +130,15 @@ function init() {
   document.getElementById("slipDetailOverlay").addEventListener("click", (e) => {
     if (e.target.id === "slipDetailOverlay") closeSlipDetailModal();
   });
+  document.getElementById("slipDetailScanBtn").addEventListener("click", () => openScanModal("slip-item"));
+
+  // ---- Phase3: カメラスキャン ----
+  document.getElementById("scanGlobalBtn").addEventListener("click", () => openScanModal("global"));
+  document.getElementById("scanGlobalBtn2").addEventListener("click", () => openScanModal("global"));
+  document.getElementById("scanCloseBtn").addEventListener("click", closeScanModal);
+  document.getElementById("scanOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "scanOverlay") closeScanModal();
+  });
 
   auth.onAuthStateChanged(user => {
     if (user) {
@@ -187,6 +202,7 @@ function subscribeProducts() {
     allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderSummary();
     renderProductList();
+    handlePendingHash();
   }, err => {
     console.error(err);
     showToast("データの取得に失敗しました");
@@ -408,6 +424,40 @@ function formatDateTime(date) {
   return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+// ===================== Phase3: QR用URL生成・ハッシュルーティング =====================
+function buildProductUrl(id) {
+  return `${location.origin}${location.pathname}#product=${encodeURIComponent(id)}`;
+}
+function buildSlipUrl(id) {
+  return `${location.origin}${location.pathname}#slip=${encodeURIComponent(id)}`;
+}
+
+function handlePendingHash() {
+  if (pendingHashHandled) return;
+  const hash = location.hash;
+  if (!hash) return;
+  const pm = hash.match(/#product=([^&]+)/);
+  const sm = hash.match(/#slip=([^&]+)/);
+  if (pm) {
+    const id = decodeURIComponent(pm[1]);
+    const p = allProducts.find(x => x.id === id);
+    if (p) {
+      pendingHashHandled = true;
+      history.replaceState(null, "", location.pathname);
+      openMoveModal(p.id);
+    }
+  } else if (sm) {
+    const id = decodeURIComponent(sm[1]);
+    const s = allSlips.find(x => x.id === id);
+    if (s) {
+      pendingHashHandled = true;
+      history.replaceState(null, "", location.pathname);
+      switchTab("slips");
+      openSlipDetailModal(s.id);
+    }
+  }
+}
+
 // ===================== Phase2: QRコード =====================
 function openQrModal(id) {
   const p = allProducts.find(x => x.id === id);
@@ -417,9 +467,9 @@ function openQrModal(id) {
   document.getElementById("qrProductCode").textContent = p.code ? `商品コード：${p.code}` : "";
   const box = document.getElementById("qrCanvasBox");
   box.innerHTML = "";
-  // QRコードにはドキュメントIDを埋め込む（バーコード読取時にそのままproductIdとして検索できるように）
+  // QRコードにはこの商品を直接開くURLを埋め込む（スマホの標準カメラからもアプリを開けるように）
   new QRCode(box, {
-    text: id,
+    text: buildProductUrl(id),
     width: 180,
     height: 180,
     correctLevel: QRCode.CorrectLevel.M
@@ -455,7 +505,7 @@ function openQrBulkPrint() {
     label.innerHTML = `${escapeHtml(p.name || "")}${p.code ? "<br>" + escapeHtml(p.code) : ""}`;
     cell.appendChild(label);
     grid.appendChild(cell);
-    new QRCode(qrBox, { text: p.id, width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
+    new QRCode(qrBox, { text: buildProductUrl(p.id), width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
   });
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
@@ -622,6 +672,7 @@ function subscribeSlips() {
     if (document.getElementById("tabSlips").style.display !== "none") {
       renderSlipList(getActiveSlipFilter());
     }
+    handlePendingHash();
   }, err => console.error(err));
 }
 
@@ -782,6 +833,14 @@ function openSlipDetailModal(id) {
   document.getElementById("slipDetailStaff").textContent = s.staff ? `作成：${s.staff}さん` : "";
   document.getElementById("slipDetailMemo").textContent = s.memo || "";
 
+  const qrBox = document.getElementById("slipQrBox");
+  qrBox.innerHTML = "";
+  new QRCode(qrBox, { text: buildSlipUrl(id), width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
+  const qrLabel = document.createElement("div");
+  qrLabel.style.cssText = "font-size:11px;color:#8a8272;";
+  qrLabel.textContent = s.slipNumber || "";
+  qrBox.appendChild(qrLabel);
+
   const tbody = document.getElementById("slipDetailBody");
   tbody.innerHTML = "";
   const isDone = s.status === "done";
@@ -810,6 +869,131 @@ function openSlipDetailModal(id) {
 function closeSlipDetailModal() {
   openSlipId = null;
   document.getElementById("slipDetailOverlay").classList.remove("show");
+}
+
+// ===================== Phase3: カメラでのQRスキャン =====================
+function openScanModal(mode) {
+  scanMode = mode;
+  document.getElementById("scanModalTitle").textContent =
+    mode === "slip-item" ? "商品QRをスキャン（検品）" : "QRコードをスキャン";
+  document.getElementById("scanHint").textContent =
+    mode === "slip-item" ? "この伝票に含まれる商品のQRにカメラを向けてください" : "商品または伝票のQRコードにカメラを向けてください";
+  document.getElementById("scanError").textContent = "";
+  document.getElementById("scanOverlay").classList.add("show");
+  startScanCamera();
+}
+
+function closeScanModal() {
+  stopScanCamera();
+  document.getElementById("scanOverlay").classList.remove("show");
+}
+
+function startScanCamera() {
+  const video = document.getElementById("scanVideo");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    document.getElementById("scanError").textContent = "このブラウザはカメラ読み取りに対応していません";
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+    .then(stream => {
+      scanStream = stream;
+      video.srcObject = stream;
+      video.play();
+      scanRAF = requestAnimationFrame(scanTick);
+    })
+    .catch(err => {
+      console.error(err);
+      document.getElementById("scanError").textContent = "カメラを起動できませんでした（ブラウザのカメラ権限をご確認ください）";
+    });
+}
+
+function stopScanCamera() {
+  if (scanRAF) cancelAnimationFrame(scanRAF);
+  scanRAF = null;
+  if (scanStream) {
+    scanStream.getTracks().forEach(t => t.stop());
+    scanStream = null;
+  }
+  const video = document.getElementById("scanVideo");
+  if (video) video.srcObject = null;
+}
+
+function scanTick() {
+  const video = document.getElementById("scanVideo");
+  const canvas = document.getElementById("scanCanvas");
+  if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+    if (code && code.data) {
+      handleScanResult(code.data);
+      return;
+    }
+  }
+  scanRAF = requestAnimationFrame(scanTick);
+}
+
+function extractScannedId(text) {
+  const pm = text.match(/#product=([^&]+)/);
+  if (pm) return { type: "product", id: decodeURIComponent(pm[1]) };
+  const sm = text.match(/#slip=([^&]+)/);
+  if (sm) return { type: "slip", id: decodeURIComponent(sm[1]) };
+  return { type: "unknown", id: text.trim() };
+}
+
+function handleScanResult(text) {
+  const parsed = extractScannedId(text);
+
+  if (scanMode === "slip-item") {
+    stopScanCamera();
+    closeScanModal();
+    handleSlipItemScan(parsed.id);
+    return;
+  }
+
+  let { type, id } = parsed;
+  if (type === "unknown") {
+    if (allProducts.find(p => p.id === id)) type = "product";
+    else if (allSlips.find(s => s.id === id)) type = "slip";
+  }
+
+  if (type === "product") {
+    const p = allProducts.find(x => x.id === id);
+    stopScanCamera();
+    closeScanModal();
+    if (p) openMoveModal(p.id); else showToast("該当する商品が見つかりません");
+  } else if (type === "slip") {
+    const s = allSlips.find(x => x.id === id);
+    stopScanCamera();
+    closeScanModal();
+    if (s) { switchTab("slips"); openSlipDetailModal(s.id); } else showToast("該当する伝票が見つかりません");
+  } else {
+    document.getElementById("scanError").textContent = "認識できませんでした。もう一度お試しください。";
+    scanRAF = requestAnimationFrame(scanTick);
+  }
+}
+
+function handleSlipItemScan(productId) {
+  const s = allSlips.find(x => x.id === openSlipId);
+  if (!s) { showToast("伝票が開かれていません"); return; }
+  const idx = (s.items || []).findIndex(it => it.productId === productId);
+  if (idx === -1) {
+    showToast("この伝票に含まれない商品です");
+    return;
+  }
+  const qtyInput = document.querySelector(`.slip-check-qty[data-idx="${idx}"]`);
+  const checkBox = document.querySelector(`.slip-check-box[data-idx="${idx}"]`);
+  const planned = s.items[idx].plannedQty;
+  if (qtyInput) {
+    const current = Number(qtyInput.value) || 0;
+    const next = Math.min(current + 1, planned);
+    qtyInput.value = next;
+    if (checkBox) checkBox.checked = next >= planned;
+    showToast(`${s.items[idx].productName}：${next}/${planned}${s.items[idx].unit || ""} 確認`);
+  }
 }
 
 function handleSlipComplete() {
