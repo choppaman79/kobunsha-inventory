@@ -1,6 +1,6 @@
 // ===================== 設定 =====================
 const MEMBERS = ["仙波","山崎","田中","落合","川野","迫","佐藤","二神","森重","小鷹","山根","熊澤"];
-const CATEGORIES = ["神具","仏具","神向き用品","防災用品","その他"];
+const CATEGORIES = ["神具","仏具","神向き用品","チェーン","非常用品","その他"];
 const COLLECTION = "inventory_products"; // 予定管理アプリのコレクションとは別名にして衝突を防止
 const MOVEMENTS_COLLECTION = "inventory_movements"; // Phase2: 入出庫履歴
 
@@ -473,7 +473,7 @@ function handleExcelFile(e) {
       const workbook = XLSX.read(data, { type: "array" });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
-      excelParsedRows = rows.map(mapExcelRow).filter(r => r.name);
+      excelParsedRows = rows.map(mapExcelRow).filter(isValidExcelRow);
       renderExcelPreview();
     } catch (err) {
       console.error(err);
@@ -483,25 +483,61 @@ function handleExcelFile(e) {
   reader.readAsArrayBuffer(file);
 }
 
+// 分類名の表記ゆれを、アプリで使う分類名に寄せる（該当なしは「その他」に）
+const CATEGORY_ALIASES = {
+  "非常用品": "非常用品",
+  "光ミュージアム前売り券": "その他",
+  "レジ袋": "その他"
+};
+
+function normalizeHeader(k) {
+  return String(k).normalize("NFKC").replace(/[\s　]/g, "");
+}
+
 function mapExcelRow(row) {
-  // 列名の表記ゆれを吸収（商品コード/コード/品番、商品名/名称、売価/価格/単価 など）
+  // 列名の表記ゆれを吸収（商品ｺｰﾄﾞ/商品コード/コード/品番、商品名/名称、種別/分類、売上単価/売価/単価 など）
   const get = (keys) => {
     for (const k of Object.keys(row)) {
-      const norm = k.replace(/\s/g, "");
-      if (keys.includes(norm)) return row[k];
+      const norm = normalizeHeader(k);
+      if (keys.some(kw => norm.includes(kw))) return row[k];
     }
     return "";
   };
+
+  let code = String(get(["商品コード", "コード", "品番", "code"]) || "").trim();
+  if (code === "-" || code === "―" || code === "ー") code = "";
+
+  let rawCategory = String(get(["分類", "カテゴリ", "種別", "category"]) || "").trim();
+  let category = rawCategory;
+  let note = String(get(["備考", "note"]) || "").trim();
+  if (!rawCategory) {
+    category = "その他";
+  } else if (CATEGORY_ALIASES[rawCategory]) {
+    category = CATEGORY_ALIASES[rawCategory];
+    // エイリアスで丸めた場合、元の分類名が消えないよう備考に残す
+    if (category !== rawCategory) {
+      note = note ? `${note}（元の分類：${rawCategory}）` : `元の分類：${rawCategory}`;
+    }
+  }
+
   return {
-    code: String(get(["商品コード", "コード", "品番", "code"]) || "").trim(),
+    code,
     name: String(get(["商品名", "名称", "品名", "name"]) || "").trim(),
-    category: String(get(["分類", "カテゴリ", "category"]) || "").trim(),
+    category,
     unit: String(get(["単位", "unit"]) || "個").trim(),
-    price: Number(get(["売価", "価格", "単価", "price"])) || 0,
+    price: Number(get(["売上単価", "売価", "価格", "単価", "price"])) || 0,
     minStock: Number(get(["在庫僅少ライン", "僅少ライン", "minStock"])) || 3,
     stock: Number(get(["現在庫数", "在庫数", "stock"])) || 0,
-    note: String(get(["備考", "note"]) || "").trim()
+    note
   };
+}
+
+function isValidExcelRow(r) {
+  if (!r.name) return false;
+  // ヘッダー行がデータとして紛れ込んでいる場合（表を複数貼り付けた際など）を除外
+  if (r.name === "商品名") return false;
+  if (normalizeHeader(r.code || "").includes("商品コード")) return false;
+  return true;
 }
 
 function renderExcelPreview() {
