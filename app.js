@@ -101,7 +101,8 @@ function init() {
   document.getElementById("excelImportBtn").addEventListener("click", handleExcelImport);
 
   // ---- Phase2: 伝票（出荷/入荷）----
-  document.getElementById("slipCreateBtn").addEventListener("click", () => openSlipCreateModal("out"));
+  document.getElementById("slipCreateOutBtn").addEventListener("click", () => openSlipCreateModal("out"));
+  document.getElementById("slipCreateInBtn").addEventListener("click", () => openSlipCreateModal("in"));
   document.querySelectorAll(".slip-filter-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".slip-filter-btn").forEach(b => b.classList.remove("active"));
@@ -113,13 +114,6 @@ function init() {
   document.getElementById("slipCreateSaveBtn").addEventListener("click", handleSlipCreateSave);
   document.getElementById("slipCreateOverlay").addEventListener("click", (e) => {
     if (e.target.id === "slipCreateOverlay") closeSlipCreateModal();
-  });
-  document.querySelectorAll(".slip-type-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".slip-type-btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      document.getElementById("slipCreateType").value = btn.dataset.type;
-    });
   });
   document.getElementById("slipItemAddBtn").addEventListener("click", handleSlipItemAdd);
   document.getElementById("slipItemProduct").addEventListener("change", handleSlipItemProductChange);
@@ -718,7 +712,10 @@ function renderSlipList(filter) {
 function openSlipCreateModal(type) {
   currentSlipItems = [];
   document.getElementById("slipCreateType").value = type;
-  document.querySelectorAll(".slip-type-btn").forEach(b => b.classList.toggle("active", b.dataset.type === type));
+  document.getElementById("slipCreateTitle").textContent = type === "in" ? "入荷伝票を作成" : "出荷伝票を作成";
+  const badge = document.getElementById("slipCreateTypeBadge");
+  badge.textContent = type === "in" ? "入荷伝票" : "出荷伝票";
+  badge.className = "slip-type-badge " + type;
   document.getElementById("slipPartner").value = "";
   document.getElementById("slipMemo").value = "";
   const productSelect = document.getElementById("slipItemProduct");
@@ -890,6 +887,10 @@ function closeScanModal() {
 
 function startScanCamera() {
   const video = document.getElementById("scanVideo");
+  if (typeof jsQR === "undefined") {
+    document.getElementById("scanError").textContent = "QR読み取りライブラリの読み込みに失敗しました。通信環境をご確認の上、再読み込みしてください。";
+    return;
+  }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     document.getElementById("scanError").textContent = "このブラウザはカメラ読み取りに対応していません";
     return;
