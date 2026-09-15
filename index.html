@@ -501,6 +501,29 @@
     .modal-overlay { background: none !important; position: static !important; }
   }
 
+  /* ---------- カメラスキャン (Phase3) ---------- */
+  .scan-video-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .scan-video-wrap video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .scan-frame {
+    position: absolute;
+    top: 15%; left: 15%; right: 15%; bottom: 15%;
+    border: 2px solid #fff;
+    border-radius: 10px;
+    box-shadow: 0 0 0 999px rgba(0,0,0,.25);
+    pointer-events: none;
+  }
+
   @media (max-width: 480px) {
     .product-row { flex-wrap: wrap; }
     .edit-link { margin-left: 0; }
@@ -549,6 +572,7 @@
       <div class="toolbar">
         <input type="text" id="searchBox" placeholder="商品名で検索">
         <div class="spacer"></div>
+        <button class="btn-secondary-inline" id="scanGlobalBtn">📷 スキャン</button>
         <button class="btn-secondary-inline" id="qrBulkPrintBtn">QRラベル印刷</button>
         <button class="btn-add" id="openAddBtn">＋ 商品を登録</button>
       </div>
@@ -623,6 +647,7 @@
           <button class="chip slip-filter-btn" data-filter="done">検品完了</button>
         </div>
         <div class="spacer"></div>
+        <button class="btn-secondary-inline" id="scanGlobalBtn2">📷 伝票をスキャン</button>
         <button class="btn-add" id="slipCreateBtn">＋ 伝票を作成</button>
       </div>
       <div class="slip-list" id="slipList"></div>
@@ -757,7 +782,13 @@
     </div>
     <p style="font-size:14px;margin:10px 0 2px;">取引先：<span id="slipDetailPartner"></span></p>
     <p id="slipDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 2px;"></p>
-    <p id="slipDetailMemo" style="font-size:12px;color:#8a8272;margin:0 0 14px;"></p>
+    <p id="slipDetailMemo" style="font-size:12px;color:#8a8272;margin:0 0 10px;"></p>
+    <div id="slipQrBox" style="display:flex;flex-direction:column;align-items:center;gap:4px;margin-bottom:14px;"></div>
+    <p class="no-print" style="font-size:11px;color:#8a8272;text-align:center;margin:-10px 0 14px;">↑ この伝票のQR（スキャンすると直接この画面を開けます）</p>
+
+    <div class="no-print" style="margin-bottom:10px;">
+      <button type="button" class="btn-secondary-inline" id="slipDetailScanBtn">📷 商品をスキャンして検品</button>
+    </div>
 
     <table class="slip-detail-table">
       <thead>
@@ -778,6 +809,23 @@
   </div>
 </div>
 
+<!-- ===================== カメラスキャンモーダル (Phase3) ===================== -->
+<div class="modal-overlay" id="scanOverlay">
+  <div class="modal" style="max-width:420px;">
+    <h2 id="scanModalTitle">QRコードをスキャン</h2>
+    <div class="scan-video-wrap">
+      <video id="scanVideo" playsinline muted></video>
+      <canvas id="scanCanvas" style="display:none;"></canvas>
+      <div class="scan-frame"></div>
+    </div>
+    <p id="scanHint" style="font-size:12px;color:#8a8272;margin-top:10px;">商品または伝票のQRコードにカメラを向けてください</p>
+    <p class="error-msg" id="scanError"></p>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="scanCloseBtn">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <!-- Firebase SDK (compat) -->
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
@@ -786,6 +834,8 @@
 <!-- Phase2追加: エクセル取込用 / QRコード生成用ライブラリ -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- Phase3追加: スマホカメラでのQRコード読み取り用ライブラリ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
 <script src="app.js"></script>
