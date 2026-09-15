@@ -451,6 +451,20 @@
   }
   .slip-status.done { background: #e8f0e9; color: var(--ok-text); }
 
+  .btn-add-in { background: var(--ok-text, #3d7a4d); }
+  .btn-add-in:hover { filter: brightness(0.95); }
+
+  .slip-type-badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 999px;
+    margin-bottom: 16px;
+  }
+  .slip-type-badge.out { background: var(--warn-bg); color: var(--warn-text); }
+  .slip-type-badge.in { background: #e8f0e9; color: var(--ok-text); }
+
   /* ---------- 伝票作成：品目エディタ ---------- */
   .slip-items-editor { display: flex; flex-direction: column; gap: 6px; }
   .slip-item-row {
@@ -648,7 +662,8 @@
         </div>
         <div class="spacer"></div>
         <button class="btn-secondary-inline" id="scanGlobalBtn2">📷 伝票をスキャン</button>
-        <button class="btn-add" id="slipCreateBtn">＋ 伝票を作成</button>
+        <button class="btn-add" id="slipCreateOutBtn">＋ 出荷伝票を作成</button>
+        <button class="btn-add btn-add-in" id="slipCreateInBtn">＋ 入荷伝票を作成</button>
       </div>
       <div class="slip-list" id="slipList"></div>
       <div class="empty-state" id="slipEmptyState" style="display:none;">伝票がありません</div>
@@ -741,12 +756,8 @@
 <!-- ===================== 伝票作成モーダル (Phase2) ===================== -->
 <div class="modal-overlay" id="slipCreateOverlay">
   <div class="modal" style="max-width:480px;">
-    <h2>伝票を作成</h2>
-    <label>種別</label>
-    <div class="move-type-group">
-      <button type="button" class="slip-type-btn active" data-type="out">出荷伝票</button>
-      <button type="button" class="slip-type-btn" data-type="in">入荷伝票</button>
-    </div>
+    <h2 id="slipCreateTitle">伝票を作成</h2>
+    <span class="slip-type-badge" id="slipCreateTypeBadge"></span>
     <input type="hidden" id="slipCreateType" value="out">
 
     <label>取引先／納品先（任意）</label>
@@ -835,9 +846,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <!-- Phase3追加: スマホカメラでのQRコード読み取り用ライブラリ -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
+
