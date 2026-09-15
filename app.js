@@ -117,6 +117,12 @@ function init() {
   });
   document.getElementById("slipItemAddBtn").addEventListener("click", handleSlipItemAdd);
   document.getElementById("slipItemProduct").addEventListener("change", handleSlipItemProductChange);
+  document.getElementById("slipItemCodeInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSlipItemCodeLookup();
+    }
+  });
 
   document.getElementById("slipDetailCloseBtn").addEventListener("click", closeSlipDetailModal);
   document.getElementById("slipDetailPrintBtn").addEventListener("click", () => window.print());
@@ -125,6 +131,7 @@ function init() {
     if (e.target.id === "slipDetailOverlay") closeSlipDetailModal();
   });
   document.getElementById("slipDetailScanBtn").addEventListener("click", () => openScanModal("slip-item"));
+  document.getElementById("slipReceivingLabelBtn").addEventListener("click", () => printSlipReceivingLabels(openSlipId));
 
   // ---- Phase3: カメラスキャン ----
   document.getElementById("scanGlobalBtn").addEventListener("click", () => openScanModal("global"));
@@ -132,6 +139,22 @@ function init() {
   document.getElementById("scanCloseBtn").addEventListener("click", closeScanModal);
   document.getElementById("scanOverlay").addEventListener("click", (e) => {
     if (e.target.id === "scanOverlay") closeScanModal();
+  });
+
+  // ---- Phase3.5: ハンディスキャナー（キーボード入力）----
+  ["scannerInput", "scannerInputSlips"].forEach(id => {
+    document.getElementById(id).addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleScannerWedgeInput(e.target, "global");
+      }
+    });
+  });
+  document.getElementById("slipItemScannerInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleScannerWedgeInput(e.target, "slip-item");
+    }
   });
 
   auth.onAuthStateChanged(user => {
@@ -188,6 +211,9 @@ function switchTab(tab) {
   document.getElementById("tabSlips").style.display = tab === "slips" ? "block" : "none";
   if (tab === "history") renderHistoryList();
   if (tab === "slips") renderSlipList("all");
+  // ハンディスキャナーがすぐ使えるよう、該当タブの入力欄に自動でフォーカス
+  if (tab === "list") setTimeout(() => document.getElementById("scannerInput").focus(), 50);
+  if (tab === "slips") setTimeout(() => document.getElementById("scannerInputSlips").focus(), 50);
 }
 
 // ===================== 商品データ購読 =====================
@@ -504,6 +530,33 @@ function openQrBulkPrint() {
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
 
+// ===================== Phase3.5: 入荷分のQRラベル印刷 =====================
+function printSlipReceivingLabels(slipId) {
+  const s = allSlips.find(x => x.id === slipId);
+  if (!s) return;
+  const items = s.items || [];
+  if (items.length === 0) {
+    showToast("印刷対象の品目がありません");
+    return;
+  }
+  const grid = document.getElementById("qrBulkGrid");
+  grid.innerHTML = "";
+  items.forEach(item => {
+    const p = allProducts.find(x => x.id === item.productId);
+    const cell = document.createElement("div");
+    cell.className = "qr-label";
+    const qrBox = document.createElement("div");
+    cell.appendChild(qrBox);
+    const label = document.createElement("div");
+    label.className = "qr-label-text";
+    label.innerHTML = `${escapeHtml(item.productName || "")}${item.code ? "<br>" + escapeHtml(item.code) : ""}`;
+    cell.appendChild(label);
+    grid.appendChild(cell);
+    new QRCode(qrBox, { text: buildProductUrl(item.productId), width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
+  });
+  document.getElementById("qrBulkOverlay").classList.add("show");
+}
+
 // ===================== Phase2: エクセル一括登録 =====================
 let excelParsedRows = [];
 
@@ -718,6 +771,8 @@ function openSlipCreateModal(type) {
   badge.className = "slip-type-badge " + type;
   document.getElementById("slipPartner").value = "";
   document.getElementById("slipMemo").value = "";
+  document.getElementById("slipItemCodeInput").value = "";
+  document.getElementById("slipItemCodeError").textContent = "";
   const productSelect = document.getElementById("slipItemProduct");
   productSelect.innerHTML = `<option value="">商品を選択...</option>` +
     allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}${p.code ? "（" + escapeHtml(p.code) + "）" : ""}</option>`).join("");
@@ -733,7 +788,29 @@ function closeSlipCreateModal() {
 function handleSlipItemProductChange() {
   const id = document.getElementById("slipItemProduct").value;
   const p = allProducts.find(x => x.id === id);
-  document.getElementById("slipItemStockHint").textContent = p ? `現在庫：${p.currentStock ?? 0}${p.unit || ""}` : "";
+  document.getElementById("slipItemCodeError").textContent = "";
+  document.getElementById("slipItemStockHint").textContent = p
+    ? `現在庫：${p.currentStock ?? 0}${p.unit || ""}${p.price ? "　/　売価：¥" + Number(p.price).toLocaleString() : ""}`
+    : "";
+}
+
+function handleSlipItemCodeLookup() {
+  const input = document.getElementById("slipItemCodeInput");
+  const code = input.value.trim();
+  const errorEl = document.getElementById("slipItemCodeError");
+  errorEl.textContent = "";
+  if (!code) return;
+
+  const p = allProducts.find(x => (x.code || "").trim().toLowerCase() === code.toLowerCase());
+  if (!p) {
+    errorEl.textContent = `商品コード「${code}」に該当する商品が見つかりません`;
+    return;
+  }
+  document.getElementById("slipItemProduct").value = p.id;
+  handleSlipItemProductChange();
+  input.value = "";
+  document.getElementById("slipItemQty").focus();
+  document.getElementById("slipItemQty").select();
 }
 
 function handleSlipItemAdd() {
@@ -860,7 +937,14 @@ function openSlipDetailModal(id) {
 
   document.getElementById("slipDetailCompleteBtn").style.display = isDone ? "none" : "block";
   document.getElementById("slipDetailDoneNote").style.display = isDone ? "block" : "none";
+
+  const labelWrap = document.getElementById("slipReceivingLabelWrap");
+  labelWrap.style.display = (isDone && s.type === "in") ? "block" : "none";
+
   document.getElementById("slipDetailOverlay").classList.add("show");
+  if (!isDone) {
+    setTimeout(() => document.getElementById("slipItemScannerInput").focus(), 50);
+  }
 }
 
 function closeSlipDetailModal() {
@@ -949,9 +1033,13 @@ function handleScanResult(text) {
   const parsed = extractScannedId(text);
 
   if (scanMode === "slip-item") {
-    stopScanCamera();
-    closeScanModal();
     handleSlipItemScan(parsed.id);
+    // 検品モードは閉じずに継続スキャン。連続検知を防ぐため少し間を空けて再開
+    setTimeout(() => {
+      if (document.getElementById("scanOverlay").classList.contains("show")) {
+        scanRAF = requestAnimationFrame(scanTick);
+      }
+    }, 1200);
     return;
   }
 
@@ -977,24 +1065,109 @@ function handleScanResult(text) {
   }
 }
 
+// ===================== Phase3.5: 警告音・バイブレーション =====================
+let sharedAudioCtx = null;
+function getAudioCtx() {
+  if (!sharedAudioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) sharedAudioCtx = new Ctx();
+  }
+  if (sharedAudioCtx && sharedAudioCtx.state === "suspended") sharedAudioCtx.resume();
+  return sharedAudioCtx;
+}
+
+function playTone(freq, durationMs, type) {
+  try {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.value = freq;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    osc.start();
+    osc.stop(ctx.currentTime + durationMs / 1000);
+  } catch (e) { console.error(e); }
+}
+
+function playSuccessBeep() {
+  playTone(880, 100, "sine");
+  if (navigator.vibrate) navigator.vibrate(40);
+}
+
+function playWarningAlert() {
+  playTone(220, 180, "square");
+  setTimeout(() => playTone(220, 180, "square"), 220);
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+}
+
+// ===================== Phase2: 入出庫（検品スキャン処理） =====================
 function handleSlipItemScan(productId) {
   const s = allSlips.find(x => x.id === openSlipId);
   if (!s) { showToast("伝票が開かれていません"); return; }
   const idx = (s.items || []).findIndex(it => it.productId === productId);
+
   if (idx === -1) {
-    showToast("この伝票に含まれない商品です");
+    playWarningAlert();
+    showToast("⚠️ この伝票に含まれない商品です");
     return;
   }
+
   const qtyInput = document.querySelector(`.slip-check-qty[data-idx="${idx}"]`);
   const checkBox = document.querySelector(`.slip-check-box[data-idx="${idx}"]`);
   const planned = s.items[idx].plannedQty;
-  if (qtyInput) {
-    const current = Number(qtyInput.value) || 0;
-    const next = Math.min(current + 1, planned);
-    qtyInput.value = next;
-    if (checkBox) checkBox.checked = next >= planned;
-    showToast(`${s.items[idx].productName}：${next}/${planned}${s.items[idx].unit || ""} 確認`);
+  const name = s.items[idx].productName;
+  const unit = s.items[idx].unit || "";
+  if (!qtyInput) return;
+
+  const current = Number(qtyInput.value) || 0;
+
+  if (current >= planned) {
+    // 数量超過（規定数に達しているのにさらにスキャンされた）
+    playWarningAlert();
+    showToast(`⚠️ 数量超過：${name} は既に${planned}${unit}に達しています`);
+    return;
   }
+
+  const next = current + 1;
+  qtyInput.value = next;
+  if (checkBox) checkBox.checked = next >= planned;
+  playSuccessBeep();
+  showToast(`${name}：${next}/${planned}${unit} 確認`);
+}
+
+// ===================== Phase3.5: ハンディスキャナー（キーボード入力）対応 =====================
+function handleScannerWedgeInput(inputEl, mode) {
+  const text = inputEl.value.trim();
+  inputEl.value = "";
+  if (!text) return;
+
+  const parsed = extractScannedId(text);
+
+  if (mode === "slip-item") {
+    handleSlipItemScan(parsed.id);
+    inputEl.focus();
+    return;
+  }
+
+  let { type, id } = parsed;
+  if (type === "unknown") {
+    if (allProducts.find(p => p.id === id)) type = "product";
+    else if (allSlips.find(s => s.id === id)) type = "slip";
+  }
+
+  if (type === "product") {
+    const p = allProducts.find(x => x.id === id);
+    if (p) openMoveModal(p.id); else showToast("該当する商品が見つかりません");
+  } else if (type === "slip") {
+    const s = allSlips.find(x => x.id === id);
+    if (s) { switchTab("slips"); openSlipDetailModal(s.id); } else showToast("該当する伝票が見つかりません");
+  } else {
+    showToast("認識できませんでした");
+  }
+  inputEl.focus();
 }
 
 function handleSlipComplete() {
