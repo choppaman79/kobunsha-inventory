@@ -480,6 +480,16 @@
     background: transparent; color: var(--warn-text); font-size: 16px; font-weight: 700; padding: 0 4px;
   }
 
+  .slip-selected-card {
+    background: #e8f0e9;
+    border: 1px solid var(--ok-text, #3d7a4d);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  .slip-selected-name { font-size: 14.5px; font-weight: 700; color: var(--indigo-deep); }
+  .slip-selected-meta { font-size: 12px; color: #4c6b53; margin-top: 2px; }
+
   /* ---------- 伝票詳細テーブル ---------- */
   .slip-detail-head { display: flex; justify-content: space-between; align-items: baseline; }
   .slip-detail-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
@@ -785,9 +795,19 @@
       <input type="text" id="slipItemCodeInput" placeholder="商品コードを入力してEnter" style="flex:1;">
     </div>
     <p id="slipItemCodeError" class="error-msg" style="margin:-4px 0 8px;"></p>
-    <select id="slipItemProduct"></select>
-    <p id="slipItemStockHint" style="font-size:12px;color:#8a8272;margin:-8px 0 8px;"></p>
-    <div style="display:flex;gap:8px;">
+
+    <div id="slipItemSelectedCard" class="slip-selected-card" style="display:none;">
+      <div class="slip-selected-name" id="slipSelectedName"></div>
+      <div class="slip-selected-meta" id="slipSelectedMeta"></div>
+    </div>
+
+    <details style="margin:4px 0 10px;">
+      <summary style="font-size:12.5px;color:#8a8272;cursor:pointer;">商品コードが分からない場合は商品名から選ぶ</summary>
+      <select id="slipItemProduct" style="margin-top:8px;"></select>
+    </details>
+
+    <div style="display:flex;gap:8px;align-items:center;">
+      <label style="margin:0;white-space:nowrap;">数量</label>
       <input type="number" id="slipItemQty" min="1" value="1" style="flex:1;">
       <button type="button" class="btn-secondary" id="slipItemAddBtn" style="flex:1;">追加</button>
     </div>
