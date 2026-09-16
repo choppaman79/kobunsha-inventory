@@ -123,6 +123,12 @@ function init() {
       handleSlipItemCodeLookup();
     }
   });
+  document.getElementById("slipItemQty").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSlipItemAdd();
+    }
+  });
 
   document.getElementById("slipDetailCloseBtn").addEventListener("click", closeSlipDetailModal);
   document.getElementById("slipDetailPrintBtn").addEventListener("click", () => window.print());
@@ -777,21 +783,34 @@ function openSlipCreateModal(type) {
   productSelect.innerHTML = `<option value="">商品を選択...</option>` +
     allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}${p.code ? "（" + escapeHtml(p.code) + "）" : ""}</option>`).join("");
   document.getElementById("slipItemQty").value = 1;
+  clearSelectedProductCard();
   renderSlipItemsEditor();
   document.getElementById("slipCreateOverlay").classList.add("show");
+  setTimeout(() => document.getElementById("slipItemCodeInput").focus(), 50);
 }
 
 function closeSlipCreateModal() {
   document.getElementById("slipCreateOverlay").classList.remove("show");
 }
 
+function showSelectedProductCard(p) {
+  const card = document.getElementById("slipItemSelectedCard");
+  if (!p) { clearSelectedProductCard(); return; }
+  document.getElementById("slipSelectedName").textContent = p.name || "";
+  document.getElementById("slipSelectedMeta").textContent =
+    `${p.code ? "コード：" + p.code + "　/　" : ""}現在庫：${p.currentStock ?? 0}${p.unit || ""}${p.price ? "　/　売価：¥" + Number(p.price).toLocaleString() : ""}`;
+  card.style.display = "block";
+}
+
+function clearSelectedProductCard() {
+  document.getElementById("slipItemSelectedCard").style.display = "none";
+}
+
 function handleSlipItemProductChange() {
   const id = document.getElementById("slipItemProduct").value;
   const p = allProducts.find(x => x.id === id);
   document.getElementById("slipItemCodeError").textContent = "";
-  document.getElementById("slipItemStockHint").textContent = p
-    ? `現在庫：${p.currentStock ?? 0}${p.unit || ""}${p.price ? "　/　売価：¥" + Number(p.price).toLocaleString() : ""}`
-    : "";
+  showSelectedProductCard(p);
 }
 
 function handleSlipItemCodeLookup() {
@@ -804,11 +823,12 @@ function handleSlipItemCodeLookup() {
   const p = allProducts.find(x => (x.code || "").trim().toLowerCase() === code.toLowerCase());
   if (!p) {
     errorEl.textContent = `商品コード「${code}」に該当する商品が見つかりません`;
+    clearSelectedProductCard();
+    document.getElementById("slipItemProduct").value = "";
     return;
   }
   document.getElementById("slipItemProduct").value = p.id;
-  handleSlipItemProductChange();
-  input.value = "";
+  showSelectedProductCard(p);
   document.getElementById("slipItemQty").focus();
   document.getElementById("slipItemQty").select();
 }
@@ -817,7 +837,7 @@ function handleSlipItemAdd() {
   const productId = document.getElementById("slipItemProduct").value;
   const qty = Number(document.getElementById("slipItemQty").value);
   const p = allProducts.find(x => x.id === productId);
-  if (!p) { showToast("商品を選択してください"); return; }
+  if (!p) { showToast("商品コードを入力するか、商品名から選択してください"); return; }
   if (!qty || qty <= 0) { showToast("数量は1以上を入力してください"); return; }
 
   const existing = currentSlipItems.find(i => i.productId === productId);
@@ -829,8 +849,14 @@ function handleSlipItemAdd() {
       plannedQty: qty, checkedQty: 0, checked: false
     });
   }
+  showToast(`${p.name} を追加しました`);
+  // 次の品目をすぐ入力できるようリセットしてコード欄にフォーカスを戻す
   document.getElementById("slipItemQty").value = 1;
+  document.getElementById("slipItemCodeInput").value = "";
+  document.getElementById("slipItemProduct").value = "";
+  clearSelectedProductCard();
   renderSlipItemsEditor();
+  document.getElementById("slipItemCodeInput").focus();
 }
 
 function renderSlipItemsEditor() {
