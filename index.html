@@ -55,7 +55,7 @@
     color: #6b6357;
     font-size: 13px;
   }
-  select, input[type=password], input[type=text], input[type=number] {
+  select, input[type=password], input[type=text], input[type=number], input[type=date] {
     width: 100%;
     padding: 11px 12px;
     border: 1px solid var(--line);
@@ -526,15 +526,39 @@
   }
   .slip-selected-name { font-size: 14.5px; font-weight: 700; color: var(--indigo-deep); }
   .slip-selected-meta { font-size: 12px; color: #4c6b53; margin-top: 2px; }
+  .slip-item-price { font-size: 12px; color: #6b6357; margin-top: 2px; }
+  .slip-item-remark { font-size: 12px; color: #6b6357; font-style: italic; }
+
+  /* ---------- 伝票フォーマル表示（発行日・取引先・自社情報など） ---------- */
+  .slip-formal-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 12px; margin-bottom: 12px;
+  }
+  .slip-formal-companybox {
+    text-align: right; font-size: 11.5px; color: #6b6357; line-height: 1.6; white-space: nowrap;
+  }
+  .slip-formal-companyname {
+    font-size: 14.5px; font-weight: 700; color: var(--indigo-deep); margin-top: 3px;
+  }
+  .slip-formal-table {
+    width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 12px;
+  }
+  .slip-formal-table th, .slip-formal-table td {
+    border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top;
+  }
+  .slip-formal-table th {
+    background: var(--paper); color: #6b6357; font-weight: 700; width: 84px; white-space: nowrap;
+  }
 
   /* ---------- 伝票詳細テーブル ---------- */
   .slip-detail-head { display: flex; justify-content: space-between; align-items: baseline; }
-  .slip-detail-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  .slip-detail-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 6px; }
   .slip-detail-table th, .slip-detail-table td {
     padding: 8px 6px;
     border-bottom: 1px solid var(--line);
     text-align: left;
   }
+  .slip-detail-table tfoot td { border-bottom: none; border-top: 2px solid var(--ink); padding-top: 10px; }
   .slip-check-qty { width: 64px; margin: 0; padding: 6px; }
   .print-only { display: none; }
 
@@ -848,9 +872,37 @@
     <span class="slip-type-badge" id="slipCreateTypeBadge"></span>
     <input type="hidden" id="slipCreateType" value="out">
 
-    <label>取引先／納品先（任意）</label>
+    <label id="slipPartnerLabel">取引先／納品先（任意）</label>
     <input type="text" id="slipPartner" placeholder="例：〇〇神社様">
-    <label>メモ（任意）</label>
+    <label>取引先住所（任意）</label>
+    <input type="text" id="slipPartnerAddress" placeholder="例：東京都〇〇区……">
+    <label>取引先TEL（任意）</label>
+    <input type="text" id="slipPartnerTel" placeholder="例：03-1234-5678">
+    <label id="slipShipToLabel">出荷先（任意）</label>
+    <input type="text" id="slipShipTo" placeholder="取引先と異なる場合のみ入力">
+
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;">
+        <label>計上日</label>
+        <input type="date" id="slipPostingDate">
+      </div>
+      <div style="flex:1;">
+        <label>取引区分（任意）</label>
+        <input type="text" id="slipTransactionType" placeholder="例：掛／現金">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;">
+        <label>倉庫（任意）</label>
+        <input type="text" id="slipWarehouse" placeholder="例：本社倉庫">
+      </div>
+      <div style="flex:1;">
+        <label>発注№（任意）</label>
+        <input type="text" id="slipOrderNo" placeholder="先方発注番号など">
+      </div>
+    </div>
+
+    <label>備考（任意）</label>
     <input type="text" id="slipMemo" placeholder="納品場所や便名など">
 
     <hr class="section-divider">
@@ -870,9 +922,14 @@
       <select id="slipItemProduct" style="margin-top:8px;"></select>
     </details>
 
-    <div style="display:flex;gap:8px;align-items:center;">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
       <label style="margin:0;white-space:nowrap;">数量</label>
-      <input type="number" id="slipItemQty" min="1" value="1" style="flex:1;">
+      <input type="number" id="slipItemQty" min="1" value="1" style="flex:1;margin-bottom:0;">
+      <label style="margin:0;white-space:nowrap;">単価</label>
+      <input type="number" id="slipItemPrice" min="0" step="1" placeholder="円" style="flex:1;margin-bottom:0;">
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="text" id="slipItemRemark" placeholder="摘要（任意）" style="flex:1;margin-bottom:0;">
       <button type="button" class="btn-secondary" id="slipItemAddBtn" style="flex:1;">追加</button>
     </div>
 
@@ -887,17 +944,47 @@
 
 <!-- ===================== 伝票詳細・検品モーダル (Phase2) ===================== -->
 <div class="modal-overlay" id="slipDetailOverlay">
-  <div class="modal" id="slipDetailPrintArea" style="max-width:600px;">
-    <h2 id="slipDetailTitle">伝票</h2>
-    <div class="slip-detail-head">
-      <div><strong id="slipDetailNumber"></strong></div>
-      <div id="slipDetailDate" style="font-size:12px;color:#8a8272;"></div>
+  <div class="modal" id="slipDetailPrintArea" style="max-width:680px;">
+    <div class="slip-formal-header">
+      <h2 id="slipDetailTitle" style="margin:0;">伝票</h2>
+      <div class="slip-formal-companybox">
+        <div>住所　東京都府中市八幡町1-4-3</div>
+        <div>電話　042(334)1660番(代)</div>
+        <div>FAX　042(334)1665番</div>
+        <div class="slip-formal-companyname">株式会社　弘文社</div>
+      </div>
     </div>
-    <p style="font-size:14px;margin:10px 0 2px;">取引先：<span id="slipDetailPartner"></span></p>
-    <p id="slipDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 2px;"></p>
-    <p id="slipDetailMemo" style="font-size:12px;color:#8a8272;margin:0 0 10px;"></p>
-    <div id="slipQrBox" style="display:flex;flex-direction:column;align-items:center;gap:4px;margin-bottom:14px;"></div>
-    <p class="no-print" style="font-size:11px;color:#8a8272;text-align:center;margin:-10px 0 14px;">↑ この伝票のQR（スキャンすると直接この画面を開けます）</p>
+
+    <table class="slip-formal-table">
+      <tr>
+        <th>発行日</th><td id="slipDetailIssueDate"></td>
+        <th>計上日</th><td id="slipDetailPostingDate"></td>
+      </tr>
+      <tr>
+        <th>伝票番号</th><td id="slipDetailNumber"></td>
+        <th id="slipDetailShipToLabel">出荷先</th><td id="slipDetailShipTo"></td>
+      </tr>
+      <tr>
+        <th>取引先</th>
+        <td colspan="3">
+          名称：<span id="slipDetailPartner"></span>　
+          住所：<span id="slipDetailPartnerAddress"></span>　
+          TEL：<span id="slipDetailPartnerTel"></span>
+        </td>
+      </tr>
+      <tr>
+        <th>取引区分</th><td id="slipDetailTransactionType"></td>
+        <th>倉庫</th><td id="slipDetailWarehouse"></td>
+      </tr>
+      <tr>
+        <th>発注№</th><td colspan="3" id="slipDetailOrderNo"></td>
+      </tr>
+    </table>
+
+    <p id="slipDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 8px;"></p>
+
+    <div id="slipQrBox" style="display:flex;flex-direction:column;align-items:center;gap:4px;margin-bottom:10px;"></div>
+    <p class="no-print" style="font-size:11px;color:#8a8272;text-align:center;margin:-6px 0 14px;">↑ この伝票のQR（スキャンすると直接この画面を開けます）</p>
 
     <div class="no-print" style="margin-bottom:10px;">
       <input type="text" id="slipItemScannerInput" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄（検品用）" style="margin-bottom:8px;">
@@ -907,11 +994,21 @@
     <table class="slip-detail-table">
       <thead>
         <tr>
-          <th>商品名</th><th>コード</th><th>数量</th><th class="no-print">確認数</th><th class="print-only">確認数</th><th class="no-print">検品済</th>
+          <th>商品コード</th><th>商品名</th><th>単価</th><th>数量</th><th>金額</th><th>摘要</th>
+          <th class="no-print">確認数</th><th class="no-print">検品済</th>
         </tr>
       </thead>
       <tbody id="slipDetailBody"></tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4" style="text-align:right;font-weight:700;">合計金額</td>
+          <td colspan="2" id="slipDetailTotal" style="font-weight:700;"></td>
+          <td class="no-print"></td><td class="no-print"></td>
+        </tr>
+      </tfoot>
     </table>
+
+    <p style="font-size:13px;margin-top:12px;">備考：<span id="slipDetailMemo"></span></p>
 
     <p id="slipDetailDoneNote" style="display:none;font-size:13px;color:var(--ok-text);font-weight:600;margin-top:12px;">この伝票は検品完了済みです（在庫反映済み）</p>
 
