@@ -134,6 +134,7 @@
 
   .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     margin-bottom: 18px;
     border-bottom: 1px solid var(--line);
@@ -151,6 +152,42 @@
     border-bottom-color: var(--bronze);
     font-weight: 600;
   }
+  .tab-badge {
+    display: inline-block;
+    min-width: 18px;
+    padding: 1px 5px;
+    margin-left: 4px;
+    border-radius: 999px;
+    background: var(--warn-text);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    vertical-align: middle;
+  }
+
+  /* ---------- Phase4: 発注管理 ---------- */
+  .low-stock-alert {
+    background: var(--warn-bg);
+    border: 1px solid #e3b2ab;
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+  .low-stock-alert-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--warn-text);
+  }
+  .low-stock-alert-row {
+    font-size: 12.5px;
+    color: var(--ink);
+    padding: 3px 0;
+  }
+  .slip-status.cancelled { background: #ece7dd; color: #756b5c; }
 
   .toolbar {
     display: flex;
@@ -599,6 +636,7 @@
       <button class="tab-btn" data-tab="register">商品登録</button>
       <button class="tab-btn" data-tab="history">入出庫履歴</button>
       <button class="tab-btn" data-tab="slips">伝票・検品</button>
+      <button class="tab-btn" data-tab="orders">発注管理<span id="orderLowBadge" class="tab-badge" style="display:none;"></span></button>
     </div>
 
     <!-- ---- 在庫一覧タブ ---- -->
@@ -691,6 +729,32 @@
       </div>
       <div class="slip-list" id="slipList"></div>
       <div class="empty-state" id="slipEmptyState" style="display:none;">伝票がありません</div>
+    </section>
+
+    <!-- ---- 発注管理タブ (Phase4) ---- -->
+    <section id="tabOrders" style="display:none;">
+      <div class="low-stock-alert" id="lowStockAlertBox" style="display:none;">
+        <div class="low-stock-alert-head">
+          <strong>⚠️ 発注が必要な商品が<span id="lowStockAlertCount">0</span>件あります</strong>
+          <button type="button" class="btn-secondary-inline" id="lowStockCreateOrderBtn">まとめて発注案を作成</button>
+        </div>
+        <div id="lowStockAlertList"></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="chip-group">
+          <button class="chip order-filter-btn active" data-filter="all">すべて</button>
+          <button class="chip order-filter-btn" data-filter="draft">未発注</button>
+          <button class="chip order-filter-btn" data-filter="ordered">発注済み</button>
+          <button class="chip order-filter-btn" data-filter="received">入荷済み</button>
+          <button class="chip order-filter-btn" data-filter="cancelled">キャンセル</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn-secondary-inline" id="orderNotifyBtn">🔕 ブラウザ通知を有効にする</button>
+        <button class="btn-add" id="orderCreateBtn">＋ 発注を作成</button>
+      </div>
+      <div class="slip-list" id="orderList"></div>
+      <div class="empty-state" id="orderEmptyState" style="display:none;">発注がありません</div>
     </section>
   </main>
 </div>
@@ -859,6 +923,81 @@
       <button class="btn-secondary" id="slipDetailCloseBtn">閉じる</button>
       <button class="btn-secondary" id="slipDetailPrintBtn">印刷する</button>
       <button class="btn-primary" id="slipDetailCompleteBtn">検品完了として記録する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 発注作成モーダル (Phase4) ===================== -->
+<div class="modal-overlay" id="orderCreateOverlay">
+  <div class="modal" style="max-width:480px;">
+    <h2>発注を作成</h2>
+
+    <label>仕入先（任意）</label>
+    <input type="text" id="orderPartner" placeholder="例：〇〇商店">
+    <label>メモ（任意）</label>
+    <input type="text" id="orderMemo" placeholder="納期の目安など">
+
+    <hr class="section-divider">
+    <label>品目を追加</label>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <input type="text" id="orderItemCodeInput" placeholder="商品コードを入力してEnter" style="flex:1;">
+    </div>
+    <p id="orderItemCodeError" class="error-msg" style="margin:-4px 0 8px;"></p>
+
+    <div id="orderItemSelectedCard" class="slip-selected-card" style="display:none;">
+      <div class="slip-selected-name" id="orderSelectedName"></div>
+      <div class="slip-selected-meta" id="orderSelectedMeta"></div>
+    </div>
+
+    <details style="margin:4px 0 10px;">
+      <summary style="font-size:12.5px;color:#8a8272;cursor:pointer;">商品コードが分からない場合は商品名から選ぶ</summary>
+      <select id="orderItemProduct" style="margin-top:8px;"></select>
+    </details>
+
+    <div style="display:flex;gap:8px;align-items:center;">
+      <label style="margin:0;white-space:nowrap;">発注数量</label>
+      <input type="number" id="orderItemQty" min="1" value="1" style="flex:1;">
+      <button type="button" class="btn-secondary" id="orderItemAddBtn" style="flex:1;">追加</button>
+    </div>
+
+    <div class="slip-items-editor" id="orderItemsEditor" style="margin-top:14px;"></div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="orderCreateCancelBtn">キャンセル</button>
+      <button class="btn-primary" id="orderCreateSaveBtn">発注案を作成する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 発注詳細モーダル (Phase4) ===================== -->
+<div class="modal-overlay" id="orderDetailOverlay">
+  <div class="modal" style="max-width:600px;">
+    <h2>発注</h2>
+    <div class="slip-detail-head">
+      <div><strong id="orderDetailNumber"></strong>　<span class="slip-status" id="orderDetailStatus"></span></div>
+      <div id="orderDetailDate" style="font-size:12px;color:#8a8272;"></div>
+    </div>
+    <p style="font-size:14px;margin:10px 0 2px;">仕入先：<span id="orderDetailPartner"></span></p>
+    <p id="orderDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 2px;"></p>
+    <p id="orderDetailMemo" style="font-size:12px;color:#8a8272;margin:0 0 10px;"></p>
+
+    <p id="orderReceivedQtyHint" style="display:none;font-size:12px;color:#8a8272;margin:0 0 8px;">実際に入荷した数量を確認・修正してください</p>
+
+    <table class="slip-detail-table">
+      <thead>
+        <tr><th>商品名</th><th>コード</th><th>発注数量</th><th>入荷数量</th></tr>
+      </thead>
+      <tbody id="orderDetailBody"></tbody>
+    </table>
+
+    <p id="orderDetailDoneNote" style="display:none;font-size:13px;color:var(--ok-text);font-weight:600;margin-top:12px;">この発注は入荷済みです（在庫反映済み）</p>
+    <p id="orderDetailCancelledNote" style="display:none;font-size:13px;color:var(--warn-text);font-weight:600;margin-top:12px;">この発注はキャンセルされました</p>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="orderDetailCloseBtn">閉じる</button>
+      <button class="btn-secondary" id="orderCancelBtn" style="display:none;">発注をキャンセル</button>
+      <button class="btn-primary" id="orderMarkOrderedBtn" style="display:none;">発注済みにする</button>
+      <button class="btn-primary" id="orderMarkReceivedBtn" style="display:none;">入荷完了として記録する（在庫に反映）</button>
     </div>
   </div>
 </div>
