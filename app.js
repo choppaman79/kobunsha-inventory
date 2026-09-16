@@ -497,6 +497,21 @@ function formatDateTime(date) {
   return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function formatDateOnly(date) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}`;
+}
+
+function todayDateInputValue() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function formatPostingDate(str) {
+  return str ? str.replace(/-/g, "/") : "";
+}
+
 // ===================== Phase3: QR用URL生成・ハッシュルーティング =====================
 function buildProductUrl(id) {
   return `${location.origin}${location.pathname}#product=${encodeURIComponent(id)}`;
@@ -825,7 +840,16 @@ function openSlipCreateModal(type) {
   const badge = document.getElementById("slipCreateTypeBadge");
   badge.textContent = type === "in" ? "入荷伝票" : "出荷伝票";
   badge.className = "slip-type-badge " + type;
+  document.getElementById("slipPartnerLabel").textContent = type === "in" ? "仕入先（任意）" : "取引先／納品先（任意）";
+  document.getElementById("slipShipToLabel").textContent = type === "in" ? "入荷元（任意）" : "出荷先（任意）";
   document.getElementById("slipPartner").value = "";
+  document.getElementById("slipPartnerAddress").value = "";
+  document.getElementById("slipPartnerTel").value = "";
+  document.getElementById("slipShipTo").value = "";
+  document.getElementById("slipPostingDate").value = todayDateInputValue();
+  document.getElementById("slipTransactionType").value = "";
+  document.getElementById("slipWarehouse").value = "";
+  document.getElementById("slipOrderNo").value = "";
   document.getElementById("slipMemo").value = "";
   document.getElementById("slipItemCodeInput").value = "";
   document.getElementById("slipItemCodeError").textContent = "";
@@ -833,6 +857,8 @@ function openSlipCreateModal(type) {
   productSelect.innerHTML = `<option value="">商品を選択...</option>` +
     allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}${p.code ? "（" + escapeHtml(p.code) + "）" : ""}</option>`).join("");
   document.getElementById("slipItemQty").value = 1;
+  document.getElementById("slipItemPrice").value = "";
+  document.getElementById("slipItemRemark").value = "";
   clearSelectedProductCard();
   renderSlipItemsEditor();
   document.getElementById("slipCreateOverlay").classList.add("show");
@@ -850,6 +876,7 @@ function showSelectedProductCard(p) {
   document.getElementById("slipSelectedMeta").textContent =
     `${p.code ? "コード：" + p.code + "　/　" : ""}現在庫：${p.currentStock ?? 0}${p.unit || ""}${p.price ? "　/　売価：¥" + Number(p.price).toLocaleString() : ""}`;
   card.style.display = "block";
+  document.getElementById("slipItemPrice").value = p.price != null ? p.price : "";
 }
 
 function clearSelectedProductCard() {
@@ -886,6 +913,8 @@ function handleSlipItemCodeLookup() {
 function handleSlipItemAdd() {
   const productId = document.getElementById("slipItemProduct").value;
   const qty = Number(document.getElementById("slipItemQty").value);
+  const unitPrice = Number(document.getElementById("slipItemPrice").value) || 0;
+  const remark = document.getElementById("slipItemRemark").value.trim();
   const p = allProducts.find(x => x.id === productId);
   if (!p) { showToast("商品コードを入力するか、商品名から選択してください"); return; }
   if (!qty || qty <= 0) { showToast("数量は1以上を入力してください"); return; }
@@ -893,15 +922,19 @@ function handleSlipItemAdd() {
   const existing = currentSlipItems.find(i => i.productId === productId);
   if (existing) {
     existing.plannedQty += qty;
+    existing.unitPrice = unitPrice || existing.unitPrice;
+    if (remark) existing.remark = remark;
   } else {
     currentSlipItems.push({
       productId, productName: p.name, code: p.code || "", unit: p.unit || "",
-      plannedQty: qty, checkedQty: 0, checked: false
+      plannedQty: qty, checkedQty: 0, checked: false, unitPrice, remark
     });
   }
   showToast(`${p.name} を追加しました`);
   // 次の品目をすぐ入力できるようリセットしてコード欄にフォーカスを戻す
   document.getElementById("slipItemQty").value = 1;
+  document.getElementById("slipItemPrice").value = "";
+  document.getElementById("slipItemRemark").value = "";
   document.getElementById("slipItemCodeInput").value = "";
   document.getElementById("slipItemProduct").value = "";
   clearSelectedProductCard();
@@ -919,9 +952,13 @@ function renderSlipItemsEditor() {
   currentSlipItems.forEach((item, idx) => {
     const row = document.createElement("div");
     row.className = "slip-item-row";
+    const amount = (item.unitPrice || 0) * item.plannedQty;
     row.innerHTML = `
-      <div class="slip-item-name">${escapeHtml(item.productName)}${item.code ? "（" + escapeHtml(item.code) + "）" : ""}</div>
-      <div class="slip-item-qty">${item.plannedQty}${escapeHtml(item.unit)}</div>
+      <div style="flex:1;">
+        <div class="slip-item-name">${escapeHtml(item.productName)}${item.code ? "（" + escapeHtml(item.code) + "）" : ""}</div>
+        <div class="slip-item-price">数量：${item.plannedQty}${escapeHtml(item.unit)}　単価：¥${Number(item.unitPrice || 0).toLocaleString()}　金額：¥${amount.toLocaleString()}</div>
+        ${item.remark ? `<div class="slip-item-remark">摘要：${escapeHtml(item.remark)}</div>` : ""}
+      </div>
       <button type="button" class="slip-item-remove" data-idx="${idx}">×</button>
     `;
     wrap.appendChild(row);
@@ -950,12 +987,26 @@ function handleSlipCreateSave() {
   }
   const type = document.getElementById("slipCreateType").value;
   const partner = document.getElementById("slipPartner").value.trim();
+  const partnerAddress = document.getElementById("slipPartnerAddress").value.trim();
+  const partnerTel = document.getElementById("slipPartnerTel").value.trim();
+  const shipTo = document.getElementById("slipShipTo").value.trim();
+  const postingDate = document.getElementById("slipPostingDate").value;
+  const transactionType = document.getElementById("slipTransactionType").value.trim();
+  const warehouse = document.getElementById("slipWarehouse").value.trim();
+  const orderNo = document.getElementById("slipOrderNo").value.trim();
   const memo = document.getElementById("slipMemo").value.trim();
 
   db.collection(SLIPS_COLLECTION).add({
     type,
     slipNumber: generateSlipNumber(type),
     partner,
+    partnerAddress,
+    partnerTel,
+    shipTo,
+    postingDate,
+    transactionType,
+    warehouse,
+    orderNo,
     memo,
     status: "draft",
     items: currentSlipItems,
@@ -979,7 +1030,15 @@ function openSlipDetailModal(id) {
   document.getElementById("slipDetailTitle").textContent = typeLabel;
   document.getElementById("slipDetailNumber").textContent = s.slipNumber || "";
   document.getElementById("slipDetailPartner").textContent = s.partner || "取引先未設定";
-  document.getElementById("slipDetailDate").textContent = s.createdAt && s.createdAt.toDate ? formatDateTime(s.createdAt.toDate()) : "";
+  document.getElementById("slipDetailPartnerAddress").textContent = s.partnerAddress || "";
+  document.getElementById("slipDetailPartnerTel").textContent = s.partnerTel || "";
+  document.getElementById("slipDetailShipToLabel").textContent = s.type === "in" ? "入荷元" : "出荷先";
+  document.getElementById("slipDetailShipTo").textContent = s.shipTo || s.partner || "";
+  document.getElementById("slipDetailIssueDate").textContent = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  document.getElementById("slipDetailPostingDate").textContent = formatPostingDate(s.postingDate);
+  document.getElementById("slipDetailTransactionType").textContent = s.transactionType || "";
+  document.getElementById("slipDetailWarehouse").textContent = s.warehouse || "";
+  document.getElementById("slipDetailOrderNo").textContent = s.orderNo || "";
   document.getElementById("slipDetailStaff").textContent = s.staff ? `作成：${s.staff}さん` : "";
   document.getElementById("slipDetailMemo").textContent = s.memo || "";
 
@@ -994,22 +1053,29 @@ function openSlipDetailModal(id) {
   const tbody = document.getElementById("slipDetailBody");
   tbody.innerHTML = "";
   const isDone = s.status === "done";
+  let totalAmount = 0;
   (s.items || []).forEach((item, idx) => {
+    const unitPrice = Number(item.unitPrice || 0);
+    const amount = unitPrice * item.plannedQty;
+    totalAmount += amount;
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${escapeHtml(item.productName)}</td>
       <td>${escapeHtml(item.code || "")}</td>
+      <td>${escapeHtml(item.productName)}</td>
+      <td>¥${unitPrice.toLocaleString()}</td>
       <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
+      <td>¥${amount.toLocaleString()}</td>
+      <td>${escapeHtml(item.remark || "")}</td>
       <td class="no-print">
         <input type="number" class="slip-check-qty" data-idx="${idx}" min="0" value="${item.checkedQty ?? item.plannedQty}" ${isDone ? "disabled" : ""}>
       </td>
-      <td class="print-only">${item.checkedQty ?? ""}${escapeHtml(item.unit || "")}</td>
       <td class="no-print">
         <input type="checkbox" class="slip-check-box" data-idx="${idx}" ${item.checked ? "checked" : ""} ${isDone ? "disabled" : ""}>
       </td>
     `;
     tbody.appendChild(tr);
   });
+  document.getElementById("slipDetailTotal").textContent = `¥${totalAmount.toLocaleString()}`;
 
   document.getElementById("slipDetailCompleteBtn").style.display = isDone ? "none" : "block";
   document.getElementById("slipDetailDoneNote").style.display = isDone ? "block" : "none";
