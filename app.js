@@ -20,6 +20,14 @@ let currentSlipItems = []; // 伝票作成中の品目リスト
 let openSlipId = null;     // 現在開いている伝票詳細のID
 const SLIPS_COLLECTION = "inventory_slips"; // Phase2追加: 出荷/入荷伝票
 
+// ---- Phase4: 発注管理・在庫僅少の自動通知 ----
+const ORDERS_COLLECTION = "inventory_orders";
+let allOrders = [];
+let currentOrderItems = []; // 発注作成中の品目リスト
+let openOrderId = null;
+let previousLowStockIds = null; // 直近の「発注が必要な在庫僅少商品」ID集合（差分検知用。nullは未計算＝初回）
+let browserNotifyEnabled = false;
+
 // ---- Phase3: カメラスキャン関連 ----
 let scanStream = null;
 let scanRAF = null;
@@ -139,6 +147,38 @@ function init() {
   document.getElementById("slipDetailScanBtn").addEventListener("click", () => openScanModal("slip-item"));
   document.getElementById("slipReceivingLabelBtn").addEventListener("click", () => printSlipReceivingLabels(openSlipId));
 
+  // ---- Phase4: 発注管理 ----
+  document.getElementById("lowStockCreateOrderBtn").addEventListener("click", handleCreateOrderFromLowStock);
+  document.getElementById("orderNotifyBtn").addEventListener("click", handleEnableBrowserNotify);
+  document.querySelectorAll(".order-filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".order-filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderOrderList(btn.dataset.filter);
+    });
+  });
+  document.getElementById("orderCreateBtn").addEventListener("click", () => openOrderCreateModal());
+  document.getElementById("orderCreateCancelBtn").addEventListener("click", closeOrderCreateModal);
+  document.getElementById("orderCreateSaveBtn").addEventListener("click", handleOrderCreateSave);
+  document.getElementById("orderCreateOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "orderCreateOverlay") closeOrderCreateModal();
+  });
+  document.getElementById("orderItemAddBtn").addEventListener("click", handleOrderItemAdd);
+  document.getElementById("orderItemProduct").addEventListener("change", handleOrderItemProductChange);
+  document.getElementById("orderItemCodeInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); handleOrderItemCodeLookup(); }
+  });
+  document.getElementById("orderItemQty").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); handleOrderItemAdd(); }
+  });
+  document.getElementById("orderDetailCloseBtn").addEventListener("click", closeOrderDetailModal);
+  document.getElementById("orderMarkOrderedBtn").addEventListener("click", handleOrderMarkOrdered);
+  document.getElementById("orderMarkReceivedBtn").addEventListener("click", handleOrderMarkReceived);
+  document.getElementById("orderCancelBtn").addEventListener("click", handleOrderCancel);
+  document.getElementById("orderDetailOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "orderDetailOverlay") closeOrderDetailModal();
+  });
+
   // ---- Phase3: カメラスキャン ----
   document.getElementById("scanGlobalBtn").addEventListener("click", () => openScanModal("global"));
   document.getElementById("scanGlobalBtn2").addEventListener("click", () => openScanModal("global"));
@@ -206,6 +246,9 @@ function showApp(user) {
   subscribeProducts();
   subscribeMovements();
   subscribeSlips();
+  subscribeOrders();
+  browserNotifyEnabled = (typeof Notification !== "undefined" && Notification.permission === "granted");
+  updateNotifyBtnLabel();
 }
 
 // ===================== タブ切り替え =====================
@@ -215,8 +258,10 @@ function switchTab(tab) {
   document.getElementById("tabRegister").style.display = tab === "register" ? "block" : "none";
   document.getElementById("tabHistory").style.display = tab === "history" ? "block" : "none";
   document.getElementById("tabSlips").style.display = tab === "slips" ? "block" : "none";
+  document.getElementById("tabOrders").style.display = tab === "orders" ? "block" : "none";
   if (tab === "history") renderHistoryList();
   if (tab === "slips") renderSlipList("all");
+  if (tab === "orders") { renderLowStockAlert(); renderOrderList(getActiveOrderFilter()); }
   // ハンディスキャナーがすぐ使えるよう、該当タブの入力欄に自動でフォーカス
   if (tab === "list") setTimeout(() => document.getElementById("scannerInput").focus(), 50);
   if (tab === "slips") setTimeout(() => document.getElementById("scannerInputSlips").focus(), 50);
@@ -228,6 +273,8 @@ function subscribeProducts() {
     allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderSummary();
     renderProductList();
+    checkLowStockAutoNotify();
+    if (document.getElementById("tabOrders").style.display !== "none") renderLowStockAlert();
     handlePendingHash();
   }, err => {
     console.error(err);
@@ -979,6 +1026,442 @@ function openSlipDetailModal(id) {
 function closeSlipDetailModal() {
   openSlipId = null;
   document.getElementById("slipDetailOverlay").classList.remove("show");
+}
+
+// ===================== Phase4: 在庫僅少の自動通知 =====================
+// 「発注が必要な商品」＝在庫僅少ライン以下 かつ 未発注/発注済みの発注にまだ含まれていない商品
+function getOpenOrderProductIds() {
+  const ids = new Set();
+  allOrders.forEach(o => {
+    if (o.status === "draft" || o.status === "ordered") {
+      (o.items || []).forEach(item => ids.add(item.productId));
+    }
+  });
+  return ids;
+}
+
+function getLowStockNeedingOrder() {
+  const openIds = getOpenOrderProductIds();
+  return allProducts.filter(p => Number(p.currentStock) <= Number(p.minStock) && !openIds.has(p.id));
+}
+
+function checkLowStockAutoNotify() {
+  const current = getLowStockNeedingOrder();
+  const currentIds = new Set(current.map(p => p.id));
+  updateOrdersTabBadge(currentIds.size);
+
+  if (previousLowStockIds === null) {
+    // 初回のみ：既にある分もまとめて1回お知らせする
+    if (currentIds.size > 0) {
+      showToast(`⚠️ 在庫僅少で発注が必要な商品が${currentIds.size}件あります`);
+    }
+  } else {
+    const newlyLow = current.filter(p => !previousLowStockIds.has(p.id));
+    if (newlyLow.length > 0) {
+      const names = newlyLow.slice(0, 3).map(p => p.name).join("、");
+      showToast(`⚠️ 在庫僅少：${names}${newlyLow.length > 3 ? ` 他${newlyLow.length - 3}件` : ""}`);
+      if (browserNotifyEnabled && typeof Notification !== "undefined") {
+        try {
+          new Notification("在庫僅少のお知らせ", {
+            body: `${names}${newlyLow.length > 3 ? ` 他${newlyLow.length - 3}件` : ""} が在庫僅少です。発注管理タブをご確認ください。`
+          });
+        } catch (e) { console.error(e); }
+      }
+    }
+  }
+  previousLowStockIds = currentIds;
+}
+
+function updateOrdersTabBadge(count) {
+  const badge = document.getElementById("orderLowBadge");
+  if (!badge) return;
+  if (count > 0) {
+    badge.textContent = count;
+    badge.style.display = "inline-block";
+  } else {
+    badge.style.display = "none";
+  }
+}
+
+function handleEnableBrowserNotify() {
+  if (typeof Notification === "undefined") {
+    showToast("この端末・ブラウザは通知に対応していません");
+    return;
+  }
+  Notification.requestPermission().then(perm => {
+    browserNotifyEnabled = (perm === "granted");
+    updateNotifyBtnLabel();
+    showToast(browserNotifyEnabled ? "ブラウザ通知を有効にしました" : "通知が許可されませんでした");
+  });
+}
+
+function updateNotifyBtnLabel() {
+  const btn = document.getElementById("orderNotifyBtn");
+  if (!btn) return;
+  btn.textContent = browserNotifyEnabled ? "🔔 ブラウザ通知：有効" : "🔕 ブラウザ通知を有効にする";
+}
+
+// ===================== Phase4: 発注が必要な商品（アラート表示） =====================
+function renderLowStockAlert() {
+  const box = document.getElementById("lowStockAlertBox");
+  const listEl = document.getElementById("lowStockAlertList");
+  const needing = getLowStockNeedingOrder();
+  if (needing.length === 0) {
+    box.style.display = "none";
+    return;
+  }
+  box.style.display = "block";
+  document.getElementById("lowStockAlertCount").textContent = needing.length;
+  listEl.innerHTML = "";
+  needing.forEach(p => {
+    const row = document.createElement("div");
+    row.className = "low-stock-alert-row";
+    row.innerHTML = `
+      <span>${escapeHtml(p.name)}（現在庫：${p.currentStock ?? 0}${escapeHtml(p.unit || "")}／僅少ライン：${p.minStock ?? 0}）</span>
+    `;
+    listEl.appendChild(row);
+  });
+}
+
+function handleCreateOrderFromLowStock() {
+  const needing = getLowStockNeedingOrder();
+  if (needing.length === 0) {
+    showToast("発注が必要な商品はありません");
+    return;
+  }
+  const prefill = needing.map(p => ({
+    productId: p.id,
+    productName: p.name,
+    code: p.code || "",
+    unit: p.unit || "",
+    qty: Math.max(1, (Number(p.minStock) || 0) * 2 - Number(p.currentStock || 0))
+  }));
+  openOrderCreateModal(prefill);
+}
+
+// ===================== Phase4: 発注（購入発注）管理 =====================
+function subscribeOrders() {
+  db.collection(ORDERS_COLLECTION).orderBy("createdAt", "desc").limit(200).onSnapshot(snapshot => {
+    allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    if (document.getElementById("tabOrders").style.display !== "none") {
+      renderLowStockAlert();
+      renderOrderList(getActiveOrderFilter());
+    }
+    updateOrdersTabBadge(getLowStockNeedingOrder().length);
+    handlePendingHash();
+  }, err => console.error(err));
+}
+
+function getActiveOrderFilter() {
+  const active = document.querySelector(".order-filter-btn.active");
+  return active ? active.dataset.filter : "all";
+}
+
+const ORDER_STATUS_LABEL = { draft: "未発注", ordered: "発注済み", received: "入荷済み", cancelled: "キャンセル" };
+
+function renderOrderList(filter) {
+  const listEl = document.getElementById("orderList");
+  const emptyEl = document.getElementById("orderEmptyState");
+  let items = allOrders;
+  if (filter && filter !== "all") items = items.filter(o => o.status === filter);
+
+  listEl.innerHTML = "";
+  emptyEl.style.display = items.length === 0 ? "block" : "none";
+
+  items.forEach(o => {
+    const row = document.createElement("div");
+    row.className = "slip-row";
+    const dt = o.createdAt && o.createdAt.toDate ? formatDateTime(o.createdAt.toDate()) : "―";
+    const statusClass = o.status === "received" ? "done" : (o.status === "cancelled" ? "cancelled" : "");
+    row.innerHTML = `
+      <div class="slip-main">
+        <div class="slip-top">
+          <span class="slip-number">${escapeHtml(o.orderNumber || "")}</span>
+          <span class="slip-status ${statusClass}">${ORDER_STATUS_LABEL[o.status] || o.status}</span>
+        </div>
+        <div class="history-meta">${escapeHtml(o.partner || "仕入先未設定")}　/　${dt}　/　品目数：${(o.items || []).length}</div>
+      </div>
+    `;
+    row.addEventListener("click", () => openOrderDetailModal(o.id));
+    listEl.appendChild(row);
+  });
+}
+
+// ---- 発注の新規作成 ----
+function openOrderCreateModal(prefillItems) {
+  currentOrderItems = Array.isArray(prefillItems) ? prefillItems.map(i => ({ ...i })) : [];
+  document.getElementById("orderPartner").value = "";
+  document.getElementById("orderMemo").value = "";
+  document.getElementById("orderItemCodeInput").value = "";
+  document.getElementById("orderItemCodeError").textContent = "";
+  const productSelect = document.getElementById("orderItemProduct");
+  productSelect.innerHTML = `<option value="">商品を選択...</option>` +
+    allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}${p.code ? "（" + escapeHtml(p.code) + "）" : ""}</option>`).join("");
+  document.getElementById("orderItemQty").value = 1;
+  clearOrderSelectedProductCard();
+  renderOrderItemsEditor();
+  document.getElementById("orderCreateOverlay").classList.add("show");
+  setTimeout(() => document.getElementById("orderItemCodeInput").focus(), 50);
+}
+
+function closeOrderCreateModal() {
+  document.getElementById("orderCreateOverlay").classList.remove("show");
+}
+
+function showOrderSelectedProductCard(p) {
+  const card = document.getElementById("orderItemSelectedCard");
+  if (!p) { clearOrderSelectedProductCard(); return; }
+  document.getElementById("orderSelectedName").textContent = p.name || "";
+  document.getElementById("orderSelectedMeta").textContent =
+    `${p.code ? "コード：" + p.code + "　/　" : ""}現在庫：${p.currentStock ?? 0}${p.unit || ""}　/　僅少ライン：${p.minStock ?? 0}`;
+  card.style.display = "block";
+}
+
+function clearOrderSelectedProductCard() {
+  document.getElementById("orderItemSelectedCard").style.display = "none";
+}
+
+function handleOrderItemProductChange() {
+  const id = document.getElementById("orderItemProduct").value;
+  const p = allProducts.find(x => x.id === id);
+  document.getElementById("orderItemCodeError").textContent = "";
+  showOrderSelectedProductCard(p);
+}
+
+function handleOrderItemCodeLookup() {
+  const input = document.getElementById("orderItemCodeInput");
+  const code = input.value.trim();
+  const errorEl = document.getElementById("orderItemCodeError");
+  errorEl.textContent = "";
+  if (!code) return;
+
+  const p = allProducts.find(x => (x.code || "").trim().toLowerCase() === code.toLowerCase());
+  if (!p) {
+    errorEl.textContent = `商品コード「${code}」に該当する商品が見つかりません`;
+    clearOrderSelectedProductCard();
+    document.getElementById("orderItemProduct").value = "";
+    return;
+  }
+  document.getElementById("orderItemProduct").value = p.id;
+  showOrderSelectedProductCard(p);
+  document.getElementById("orderItemQty").focus();
+  document.getElementById("orderItemQty").select();
+}
+
+function handleOrderItemAdd() {
+  const productId = document.getElementById("orderItemProduct").value;
+  const qty = Number(document.getElementById("orderItemQty").value);
+  const p = allProducts.find(x => x.id === productId);
+  if (!p) { showToast("商品コードを入力するか、商品名から選択してください"); return; }
+  if (!qty || qty <= 0) { showToast("数量は1以上を入力してください"); return; }
+
+  const existing = currentOrderItems.find(i => i.productId === productId);
+  if (existing) {
+    existing.qty += qty;
+  } else {
+    currentOrderItems.push({ productId, productName: p.name, code: p.code || "", unit: p.unit || "", qty });
+  }
+  showToast(`${p.name} を追加しました`);
+  document.getElementById("orderItemQty").value = 1;
+  document.getElementById("orderItemCodeInput").value = "";
+  document.getElementById("orderItemProduct").value = "";
+  clearOrderSelectedProductCard();
+  renderOrderItemsEditor();
+  document.getElementById("orderItemCodeInput").focus();
+}
+
+function renderOrderItemsEditor() {
+  const wrap = document.getElementById("orderItemsEditor");
+  wrap.innerHTML = "";
+  if (currentOrderItems.length === 0) {
+    wrap.innerHTML = `<p style="font-size:12px;color:#8a8272;">まだ品目がありません</p>`;
+    return;
+  }
+  currentOrderItems.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "slip-item-row";
+    row.innerHTML = `
+      <div class="slip-item-name">${escapeHtml(item.productName)}${item.code ? "（" + escapeHtml(item.code) + "）" : ""}</div>
+      <div class="slip-item-qty">${item.qty}${escapeHtml(item.unit || "")}</div>
+      <button type="button" class="slip-item-remove" data-idx="${idx}">×</button>
+    `;
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll(".slip-item-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      currentOrderItems.splice(Number(btn.dataset.idx), 1);
+      renderOrderItemsEditor();
+    });
+  });
+}
+
+function generateOrderNumber() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const rand = String(Math.floor(Math.random() * 900) + 100);
+  return `HCH-${dateStr}-${rand}`;
+}
+
+function handleOrderCreateSave() {
+  if (currentOrderItems.length === 0) {
+    showToast("品目を1件以上追加してください");
+    return;
+  }
+  const partner = document.getElementById("orderPartner").value.trim();
+  const memo = document.getElementById("orderMemo").value.trim();
+
+  db.collection(ORDERS_COLLECTION).add({
+    orderNumber: generateOrderNumber(),
+    partner,
+    memo,
+    status: "draft",
+    items: currentOrderItems,
+    staff: currentStaffName,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(() => {
+    showToast("発注案を作成しました");
+    closeOrderCreateModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("発注案の作成に失敗しました");
+  });
+}
+
+// ---- 発注の詳細・ステータス管理 ----
+function openOrderDetailModal(id) {
+  const o = allOrders.find(x => x.id === id);
+  if (!o) return;
+  openOrderId = id;
+  document.getElementById("orderDetailNumber").textContent = o.orderNumber || "";
+  document.getElementById("orderDetailStatus").textContent = ORDER_STATUS_LABEL[o.status] || o.status;
+  document.getElementById("orderDetailStatus").className =
+    "slip-status" + (o.status === "received" ? " done" : (o.status === "cancelled" ? " cancelled" : ""));
+  document.getElementById("orderDetailPartner").textContent = o.partner || "仕入先未設定";
+  document.getElementById("orderDetailDate").textContent = o.createdAt && o.createdAt.toDate ? formatDateTime(o.createdAt.toDate()) : "";
+  document.getElementById("orderDetailStaff").textContent = o.staff ? `作成：${o.staff}さん` : "";
+  document.getElementById("orderDetailMemo").textContent = o.memo || "";
+
+  const isOrdered = o.status === "ordered";
+  const isReceived = o.status === "received";
+  const isCancelled = o.status === "cancelled";
+
+  const tbody = document.getElementById("orderDetailBody");
+  tbody.innerHTML = "";
+  (o.items || []).forEach((item, idx) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.productName)}</td>
+      <td>${escapeHtml(item.code || "")}</td>
+      <td>${item.qty}${escapeHtml(item.unit || "")}</td>
+      <td>
+        ${isOrdered
+          ? `<input type="number" class="order-received-qty" data-idx="${idx}" min="0" value="${item.receivedQty ?? item.qty}">`
+          : `${item.receivedQty ?? (isReceived ? item.qty : "―")}${item.receivedQty != null || isReceived ? escapeHtml(item.unit || "") : ""}`}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById("orderMarkOrderedBtn").style.display = (o.status === "draft") ? "block" : "none";
+  document.getElementById("orderMarkReceivedBtn").style.display = isOrdered ? "block" : "none";
+  document.getElementById("orderCancelBtn").style.display = (o.status === "draft" || o.status === "ordered") ? "block" : "none";
+  document.getElementById("orderDetailDoneNote").style.display = isReceived ? "block" : "none";
+  document.getElementById("orderDetailCancelledNote").style.display = isCancelled ? "block" : "none";
+  document.getElementById("orderReceivedQtyHint").style.display = isOrdered ? "block" : "none";
+
+  document.getElementById("orderDetailOverlay").classList.add("show");
+}
+
+function closeOrderDetailModal() {
+  openOrderId = null;
+  document.getElementById("orderDetailOverlay").classList.remove("show");
+}
+
+function handleOrderMarkOrdered() {
+  if (!openOrderId) return;
+  db.collection(ORDERS_COLLECTION).doc(openOrderId).update({
+    status: "ordered",
+    orderedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    orderedBy: currentStaffName
+  }).then(() => {
+    showToast("発注済みにしました");
+    closeOrderDetailModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("更新に失敗しました");
+  });
+}
+
+function handleOrderCancel() {
+  if (!openOrderId) return;
+  if (!confirm("この発注をキャンセルします。よろしいですか？")) return;
+  db.collection(ORDERS_COLLECTION).doc(openOrderId).update({
+    status: "cancelled",
+    cancelledAt: firebase.firestore.FieldValue.serverTimestamp(),
+    cancelledBy: currentStaffName
+  }).then(() => {
+    showToast("発注をキャンセルしました");
+    closeOrderDetailModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("更新に失敗しました");
+  });
+}
+
+function handleOrderMarkReceived() {
+  const o = allOrders.find(x => x.id === openOrderId);
+  if (!o) return;
+
+  const items = (o.items || []).map((item, idx) => {
+    const qtyInput = document.querySelector(`.order-received-qty[data-idx="${idx}"]`);
+    return { ...item, receivedQty: qtyInput ? Number(qtyInput.value) || 0 : item.qty };
+  });
+
+  const orderRef = db.collection(ORDERS_COLLECTION).doc(openOrderId);
+  const btn = document.getElementById("orderMarkReceivedBtn");
+  btn.disabled = true;
+  btn.textContent = "反映中...";
+
+  db.runTransaction(tx => {
+    return Promise.all(items.map(item => {
+      const productRef = db.collection(COLLECTION).doc(item.productId);
+      return tx.get(productRef).then(doc => ({ doc, item, productRef }));
+    })).then(results => {
+      results.forEach(({ doc, item, productRef }) => {
+        if (!doc.exists) return;
+        const latestStock = Number(doc.data().currentStock || 0);
+        const newStock = latestStock + Number(item.receivedQty || 0);
+        tx.update(productRef, { currentStock: newStock });
+        const movementRef = db.collection(MOVEMENTS_COLLECTION).doc();
+        tx.set(movementRef, {
+          productId: item.productId,
+          productName: item.productName,
+          unit: item.unit || "",
+          type: "in",
+          qty: item.receivedQty,
+          note: `発注 ${o.orderNumber} の入荷反映`,
+          staff: currentStaffName,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      tx.update(orderRef, {
+        items,
+        status: "received",
+        receivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        receivedBy: currentStaffName
+      });
+    });
+  }).then(() => {
+    showToast("入荷を記録し、在庫に反映しました");
+    closeOrderDetailModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("反映に失敗しました");
+  }).finally(() => {
+    btn.disabled = false;
+    btn.textContent = "入荷完了として記録する（在庫に反映）";
+  });
 }
 
 // ===================== Phase3: カメラでのQRスキャン =====================
