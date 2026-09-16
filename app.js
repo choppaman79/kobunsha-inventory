@@ -137,9 +137,13 @@ function init() {
       handleSlipItemAdd();
     }
   });
+  document.getElementById("slipItemQty").addEventListener("input", updateSlipItemAmountPreview);
+  document.getElementById("slipItemPrice").addEventListener("input", updateSlipItemAmountPreview);
 
   document.getElementById("slipDetailCloseBtn").addEventListener("click", closeSlipDetailModal);
-  document.getElementById("slipDetailPrintBtn").addEventListener("click", () => window.print());
+  document.getElementById("slipDetailPrintPickBtn").addEventListener("click", () => printSlipSheet("pick"));
+  document.getElementById("slipDetailPrintCheckBtn").addEventListener("click", () => printSlipSheet("check"));
+  document.getElementById("slipDetailPrintDeliveryBtn").addEventListener("click", () => printSlipSheet("delivery"));
   document.getElementById("slipDetailCompleteBtn").addEventListener("click", handleSlipComplete);
   document.getElementById("slipDetailOverlay").addEventListener("click", (e) => {
     if (e.target.id === "slipDetailOverlay") closeSlipDetailModal();
@@ -860,6 +864,7 @@ function openSlipCreateModal(type) {
   document.getElementById("slipItemPrice").value = "";
   document.getElementById("slipItemRemark").value = "";
   clearSelectedProductCard();
+  updateSlipItemAmountPreview();
   renderSlipItemsEditor();
   document.getElementById("slipCreateOverlay").classList.add("show");
   setTimeout(() => document.getElementById("slipItemCodeInput").focus(), 50);
@@ -877,10 +882,19 @@ function showSelectedProductCard(p) {
     `${p.code ? "コード：" + p.code + "　/　" : ""}現在庫：${p.currentStock ?? 0}${p.unit || ""}${p.price ? "　/　売価：¥" + Number(p.price).toLocaleString() : ""}`;
   card.style.display = "block";
   document.getElementById("slipItemPrice").value = p.price != null ? p.price : "";
+  updateSlipItemAmountPreview();
 }
 
 function clearSelectedProductCard() {
   document.getElementById("slipItemSelectedCard").style.display = "none";
+  updateSlipItemAmountPreview();
+}
+
+function updateSlipItemAmountPreview() {
+  const qty = Number(document.getElementById("slipItemQty").value) || 0;
+  const price = Number(document.getElementById("slipItemPrice").value) || 0;
+  const preview = document.getElementById("slipItemAmountPreview");
+  preview.textContent = (qty && price) ? `金額：¥${(qty * price).toLocaleString()}` : "";
 }
 
 function handleSlipItemProductChange() {
@@ -938,6 +952,7 @@ function handleSlipItemAdd() {
   document.getElementById("slipItemCodeInput").value = "";
   document.getElementById("slipItemProduct").value = "";
   clearSelectedProductCard();
+  updateSlipItemAmountPreview();
   renderSlipItemsEditor();
   document.getElementById("slipItemCodeInput").focus();
 }
@@ -1039,7 +1054,7 @@ function openSlipDetailModal(id) {
   document.getElementById("slipDetailTransactionType").textContent = s.transactionType || "";
   document.getElementById("slipDetailWarehouse").textContent = s.warehouse || "";
   document.getElementById("slipDetailOrderNo").textContent = s.orderNo || "";
-  document.getElementById("slipDetailStaff").textContent = s.staff ? `作成：${s.staff}さん` : "";
+  document.getElementById("slipDetailStaff").textContent = s.staff ? `作成：${s.staff}` : "";
   document.getElementById("slipDetailMemo").textContent = s.memo || "";
 
   const qrBox = document.getElementById("slipQrBox");
@@ -1092,6 +1107,157 @@ function openSlipDetailModal(id) {
 function closeSlipDetailModal() {
   openSlipId = null;
   document.getElementById("slipDetailOverlay").classList.remove("show");
+}
+
+// ---- 伝票の印刷（ピック表／検品表／納品書） ----
+function companyLetterheadHtml() {
+  return `
+    <div class="slip-formal-companybox">
+      <div>住所　東京都府中市八幡町1-4-3</div>
+      <div>電話　042(334)1660番(代)</div>
+      <div>FAX　042(334)1665番</div>
+      <div class="slip-formal-companyname">株式会社　弘文社</div>
+    </div>
+  `;
+}
+
+function printSlipSheet(mode) {
+  const s = allSlips.find(x => x.id === openSlipId);
+  if (!s) return;
+  const sheet = document.getElementById("slipPrintSheet");
+  if (mode === "pick") sheet.innerHTML = buildPickSheetHtml(s);
+  else if (mode === "check") sheet.innerHTML = buildCheckSheetHtml(s);
+  else sheet.innerHTML = buildDeliverySheetHtml(s);
+
+  const qrHost = document.getElementById("printSheetQr");
+  if (qrHost) {
+    new QRCode(qrHost, { text: buildSlipUrl(s.id), width: 90, height: 90, correctLevel: QRCode.CorrectLevel.M });
+  }
+  setTimeout(() => window.print(), 30);
+}
+
+function buildPickSheetHtml(s) {
+  const typeLabel = s.type === "in" ? "入荷" : "出荷";
+  const shipToLabel = s.type === "in" ? "入荷元" : "出荷先";
+  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  const rows = (s.items || []).map(item => `
+    <tr>
+      <td>${escapeHtml(item.code || "")}</td>
+      <td>${escapeHtml(item.productName)}</td>
+      <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
+      <td class="checkbox-glyph">☐</td>
+    </tr>
+  `).join("");
+  return `
+    <div class="slip-formal-header">
+      <h2 style="margin:0;">ピック表（${typeLabel}）</h2>
+      ${companyLetterheadHtml()}
+    </div>
+    <table class="slip-formal-table">
+      <tr><th>伝票番号</th><td>${escapeHtml(s.slipNumber || "")}</td><th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td></tr>
+      <tr><th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td><th>作成日</th><td>${issueDate}</td></tr>
+    </table>
+    <table class="slip-detail-table">
+      <thead><tr><th>商品コード</th><th>商品名</th><th>数量</th><th>ピック済</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
+  `;
+}
+
+function buildCheckSheetHtml(s) {
+  const typeLabel = s.type === "in" ? "入荷" : "出荷";
+  const shipToLabel = s.type === "in" ? "入荷元" : "出荷先";
+  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  const rows = (s.items || []).map(item => `
+    <tr>
+      <td>${escapeHtml(item.code || "")}</td>
+      <td>${escapeHtml(item.productName)}</td>
+      <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
+      <td><span class="fill-blank"></span></td>
+      <td class="checkbox-glyph">☐</td>
+    </tr>
+  `).join("");
+  return `
+    <div class="slip-formal-header">
+      <h2 style="margin:0;">検品表（${typeLabel}）</h2>
+      ${companyLetterheadHtml()}
+    </div>
+    <table class="slip-formal-table">
+      <tr><th>伝票番号</th><td>${escapeHtml(s.slipNumber || "")}</td><th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td></tr>
+      <tr><th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td><th>作成日</th><td>${issueDate}</td></tr>
+    </table>
+    <table class="slip-detail-table">
+      <thead><tr><th>商品コード</th><th>商品名</th><th>数量（予定）</th><th>確認数</th><th>検品済</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
+  `;
+}
+
+function buildDeliverySheetHtml(s) {
+  const typeLabel = s.type === "in" ? "入荷伝票" : "出荷伝票";
+  const shipToLabel = s.type === "in" ? "入荷元" : "出荷先";
+  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  let total = 0;
+  const rows = (s.items || []).map(item => {
+    const unitPrice = Number(item.unitPrice || 0);
+    const amount = unitPrice * item.plannedQty;
+    total += amount;
+    return `
+      <tr>
+        <td>${escapeHtml(item.code || "")}</td>
+        <td>${escapeHtml(item.productName)}</td>
+        <td>¥${unitPrice.toLocaleString()}</td>
+        <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
+        <td>¥${amount.toLocaleString()}</td>
+        <td>${escapeHtml(item.remark || "")}</td>
+      </tr>
+    `;
+  }).join("");
+  return `
+    <div class="slip-formal-header">
+      <h2 style="margin:0;">${typeLabel}</h2>
+      ${companyLetterheadHtml()}
+    </div>
+    <table class="slip-formal-table">
+      <tr>
+        <th>発行日</th><td>${issueDate}</td>
+        <th>計上日</th><td>${formatPostingDate(s.postingDate)}</td>
+      </tr>
+      <tr>
+        <th>伝票番号</th><td>${escapeHtml(s.slipNumber || "")}</td>
+        <th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td>
+      </tr>
+      <tr>
+        <th>取引先</th>
+        <td colspan="3">
+          名称：${escapeHtml(s.partner || "")}　
+          住所：${escapeHtml(s.partnerAddress || "")}　
+          TEL：${escapeHtml(s.partnerTel || "")}
+        </td>
+      </tr>
+      <tr>
+        <th>取引区分</th><td>${escapeHtml(s.transactionType || "")}</td>
+        <th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td>
+      </tr>
+      <tr>
+        <th>発注№</th><td colspan="3">${escapeHtml(s.orderNo || "")}</td>
+      </tr>
+    </table>
+    <table class="slip-detail-table">
+      <thead><tr><th>商品コード</th><th>商品名</th><th>単価</th><th>数量</th><th>金額</th><th>摘要</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4" style="text-align:right;font-weight:700;">合計金額</td>
+          <td colspan="2" style="font-weight:700;">¥${total.toLocaleString()}</td>
+        </tr>
+      </tfoot>
+    </table>
+    <p style="font-size:13px;margin-top:12px;">備考：${escapeHtml(s.memo || "")}</p>
+    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
+  `;
 }
 
 // ===================== Phase4: 在庫僅少の自動通知 =====================
