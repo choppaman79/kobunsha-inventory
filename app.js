@@ -548,17 +548,20 @@ function printSlipReceivingLabels(slipId) {
   const grid = document.getElementById("qrBulkGrid");
   grid.innerHTML = "";
   items.forEach(item => {
-    const p = allProducts.find(x => x.id === item.productId);
-    const cell = document.createElement("div");
-    cell.className = "qr-label";
-    const qrBox = document.createElement("div");
-    cell.appendChild(qrBox);
-    const label = document.createElement("div");
-    label.className = "qr-label-text";
-    label.innerHTML = `${escapeHtml(item.productName || "")}${item.code ? "<br>" + escapeHtml(item.code) : ""}`;
-    cell.appendChild(label);
-    grid.appendChild(cell);
-    new QRCode(qrBox, { text: buildProductUrl(item.productId), width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
+    // 実際に入荷（検品）した数量ぶんラベルを発行する
+    const qty = Math.max(1, Number(item.checkedQty ?? item.plannedQty) || 1);
+    for (let i = 1; i <= qty; i++) {
+      const cell = document.createElement("div");
+      cell.className = "qr-label";
+      const qrBox = document.createElement("div");
+      cell.appendChild(qrBox);
+      const label = document.createElement("div");
+      label.className = "qr-label-text";
+      label.innerHTML = `${escapeHtml(item.productName || "")}${item.code ? "<br>" + escapeHtml(item.code) : ""}${qty > 1 ? `<br>(${i}/${qty})` : ""}`;
+      cell.appendChild(label);
+      grid.appendChild(cell);
+      new QRCode(qrBox, { text: buildProductUrl(item.productId), width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
+    }
   });
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
