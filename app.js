@@ -1098,24 +1098,44 @@ function getAudioCtx() {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (Ctx) sharedAudioCtx = new Ctx();
   }
-  if (sharedAudioCtx && sharedAudioCtx.state === "suspended") sharedAudioCtx.resume();
   return sharedAudioCtx;
 }
 
+// ページ内の最初のタップ／クリックでAudioContextの再生許可を得ておく
+// （こうしておかないと、スキャン時にresume()が間に合わず音が出ないことがある）
+function unlockAudioCtx() {
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+  document.removeEventListener("click", unlockAudioCtx);
+  document.removeEventListener("touchend", unlockAudioCtx);
+  document.removeEventListener("keydown", unlockAudioCtx);
+}
+document.addEventListener("click", unlockAudioCtx);
+document.addEventListener("touchend", unlockAudioCtx);
+document.addEventListener("keydown", unlockAudioCtx);
+
 function playTone(freq, durationMs, type) {
-  try {
-    const ctx = getAudioCtx();
-    if (!ctx) return;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type || "sine";
-    osc.frequency.value = freq;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    gain.gain.setValueAtTime(0.18, ctx.currentTime);
-    osc.start();
-    osc.stop(ctx.currentTime + durationMs / 1000);
-  } catch (e) { console.error(e); }
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const fire = () => {
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || "sine";
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.18, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + durationMs / 1000);
+    } catch (e) { console.error(e); }
+  };
+  // resume()の完了を待ってから鳴らす（サスペンド中に鳴らそうとすると無音になるため）
+  if (ctx.state === "suspended") {
+    ctx.resume().then(fire).catch(() => {});
+  } else {
+    fire();
+  }
 }
 
 function playSuccessBeep() {
