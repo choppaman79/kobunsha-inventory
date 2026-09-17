@@ -20,6 +20,20 @@
     --radius: 10px;
   }
   * { box-sizing: border-box; }
+  html {
+    /* 文字サイズの基準値。ここを画面幅で切り替えることで、
+       px指定だった文字サイズをrem化した全要素が自動的に拡大縮小する。
+       16pxが従来（スマートフォン想定）のサイズと同じ基準値 */
+    font-size: 16px;
+  }
+  @media (min-width: 700px) {
+    /* パソコンなど画面が広い場合は少し大きめの文字サイズに */
+    html { font-size: 17px; }
+  }
+  @media (min-width: 1200px) {
+    /* さらに広い画面ではもう一段階大きく */
+    html { font-size: 18px; }
+  }
   body {
     margin: 0;
     font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
@@ -45,7 +59,7 @@
     max-width: 360px;
   }
   .login-card h1 {
-    font-size: 20px;
+    font-size:1.25rem;
     letter-spacing: .02em;
     margin: 0 0 4px;
     color: var(--indigo-deep);
@@ -53,7 +67,7 @@
   .login-card p.sub {
     margin: 0 0 24px;
     color: #6b6357;
-    font-size: 13px;
+    font-size:0.8125rem;
   }
   select, input[type=password], input[type=text], input[type=number], input[type=date] {
     width: 100%;
@@ -61,7 +75,7 @@
     border: 1px solid var(--line);
     border-radius: 8px;
     background: var(--paper);
-    font-size: 15px;
+    font-size:0.9375rem;
     color: var(--ink);
     margin-bottom: 14px;
   }
@@ -81,14 +95,14 @@
     background: var(--indigo);
     color: #fff;
     border-radius: 8px;
-    font-size: 15px;
+    font-size:0.9375rem;
     font-weight: 600;
     letter-spacing: .02em;
   }
   .btn-primary:hover { background: var(--indigo-deep); }
   .error-msg {
     color: var(--warn-text);
-    font-size: 13px;
+    font-size:0.8125rem;
     margin: -6px 0 14px;
     min-height: 16px;
   }
@@ -107,12 +121,12 @@
     z-index: 10;
   }
   header.topbar .title {
-    font-size: 15px;
+    font-size:0.9375rem;
     font-weight: 600;
     letter-spacing: .03em;
   }
   header.topbar .who {
-    font-size: 12px;
+    font-size:0.75rem;
     color: #c9c2b0;
     display: flex;
     align-items: center;
@@ -121,7 +135,7 @@
   header.topbar button.logout {
     background: transparent;
     color: #c9c2b0;
-    font-size: 12px;
+    font-size:0.75rem;
     text-decoration: underline;
     padding: 4px;
   }
@@ -142,7 +156,7 @@
   .tab-btn {
     background: transparent;
     padding: 10px 16px;
-    font-size: 14px;
+    font-size:0.875rem;
     color: #756b5c;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
@@ -160,7 +174,7 @@
     border-radius: 999px;
     background: var(--warn-text);
     color: #fff;
-    font-size: 10px;
+    font-size:0.625rem;
     font-weight: 700;
     vertical-align: middle;
   }
@@ -183,7 +197,7 @@
     color: var(--warn-text);
   }
   .low-stock-alert-row {
-    font-size: 12.5px;
+    font-size:0.7812rem;
     color: var(--ink);
     padding: 3px 0;
   }
@@ -204,7 +218,7 @@
     border-radius: 999px;
     border: 1px solid var(--line);
     background: var(--panel);
-    font-size: 13px;
+    font-size:0.8125rem;
     color: #5c5648;
   }
   .chip.active {
@@ -219,7 +233,7 @@
     color: #fff;
     padding: 9px 16px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size:0.8125rem;
     font-weight: 600;
     white-space: nowrap;
   }
@@ -238,8 +252,8 @@
     padding: 12px 16px;
     min-width: 110px;
   }
-  .summary-card .num { font-size: 22px; font-weight: 700; color: var(--indigo-deep); }
-  .summary-card .lbl { font-size: 11px; color: #8a8272; margin-top: 2px; }
+  .summary-card .num { font-size:1.375rem; font-weight: 700; color: var(--indigo-deep); }
+  .summary-card .lbl { font-size:0.6875rem; color: #8a8272; margin-top: 2px; }
   .summary-card.warn .num { color: var(--warn-text); }
 
   .product-list { display: flex; flex-direction: column; gap: 8px; }
@@ -254,11 +268,11 @@
   }
   .product-row.low { border-color: #e3b2ab; background: var(--warn-bg); }
   .product-main { flex: 1; min-width: 0; }
-  .product-name { font-size: 14.5px; font-weight: 600; color: var(--indigo-deep); }
-  .product-meta { font-size: 12px; color: #8a8272; margin-top: 2px; }
+  .product-name { font-size:0.9062rem; font-weight: 600; color: var(--indigo-deep); }
+  .product-meta { font-size:0.75rem; color: #8a8272; margin-top: 2px; }
   .cat-tag {
     display: inline-block;
-    font-size: 11px;
+    font-size:0.6875rem;
     padding: 2px 8px;
     border-radius: 999px;
     background: var(--bronze-soft);
@@ -275,15 +289,15 @@
     border-radius: 6px;
     background: var(--paper);
     border: 1px solid var(--line);
-    font-size: 16px;
+    font-size:1rem;
     color: var(--indigo-deep);
     display: flex; align-items: center; justify-content: center;
   }
   .stock-btn:hover { background: var(--bronze-soft); }
-  .stock-num { min-width: 42px; text-align: center; font-size: 16px; font-weight: 700; }
+  .stock-num { min-width: 42px; text-align: center; font-size:1rem; font-weight: 700; }
   .stock-num.low { color: var(--warn-text); }
   .edit-link {
-    font-size: 12px;
+    font-size:0.75rem;
     color: #8a8272;
     text-decoration: underline;
     margin-left: 8px;
@@ -294,7 +308,7 @@
     color: #fff;
     padding: 8px 14px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size:0.8125rem;
     font-weight: 600;
     white-space: nowrap;
   }
@@ -312,7 +326,7 @@
     border: 1px solid var(--line);
     border-radius: 8px;
     background: var(--paper);
-    font-size: 14px;
+    font-size:0.875rem;
     font-weight: 600;
     color: #6b6357;
   }
@@ -341,16 +355,16 @@
   .history-main { flex: 1; min-width: 0; }
   .history-top { display: flex; align-items: center; gap: 8px; }
   .history-type {
-    font-size: 11px;
+    font-size:0.6875rem;
     font-weight: 700;
     padding: 2px 8px;
     border-radius: 999px;
   }
   .history-type.in { background: #e8f0e9; color: var(--ok-text); }
   .history-type.out { background: var(--warn-bg); color: var(--warn-text); }
-  .history-name { font-size: 14px; font-weight: 600; color: var(--indigo-deep); }
-  .history-meta { font-size: 12px; color: #8a8272; margin-top: 3px; }
-  .history-qty { font-size: 16px; font-weight: 700; white-space: nowrap; }
+  .history-name { font-size:0.875rem; font-weight: 600; color: var(--indigo-deep); }
+  .history-meta { font-size:0.75rem; color: #8a8272; margin-top: 3px; }
+  .history-qty { font-size:1rem; font-weight: 700; white-space: nowrap; }
   .history-qty.in { color: var(--ok-text); }
   .history-qty.out { color: var(--warn-text); }
 
@@ -358,7 +372,7 @@
     text-align: center;
     padding: 60px 20px;
     color: #8a8272;
-    font-size: 14px;
+    font-size:0.875rem;
   }
 
   /* ---------- モーダル ---------- */
@@ -381,10 +395,10 @@
     max-height: 90vh;
     overflow-y: auto;
   }
-  .modal h2 { font-size: 16px; margin: 0 0 18px; color: var(--indigo-deep); }
+  .modal h2 { font-size:1rem; margin: 0 0 18px; color: var(--indigo-deep); }
   .modal label {
     display: block;
-    font-size: 12px;
+    font-size:0.75rem;
     color: #6b6357;
     margin: 0 0 4px;
   }
@@ -399,7 +413,7 @@
     background: var(--paper);
     border: 1px solid var(--line);
     border-radius: 8px;
-    font-size: 14px;
+    font-size:0.875rem;
     color: #6b6357;
   }
   .btn-danger {
@@ -408,7 +422,7 @@
     border: 1px solid #e3b2ab;
     color: var(--warn-text);
     border-radius: 8px;
-    font-size: 13px;
+    font-size:0.8125rem;
   }
   .modal .btn-primary { flex: 2; }
 
@@ -421,7 +435,7 @@
     color: #fff;
     padding: 11px 20px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size:0.8125rem;
     opacity: 0;
     pointer-events: none;
     transition: all .25s ease;
@@ -435,7 +449,7 @@
     color: var(--indigo-deep);
     padding: 8px 12px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size:0.8125rem;
     font-weight: 600;
     white-space: nowrap;
   }
@@ -446,18 +460,18 @@
     color: #5c5648;
     padding: 9px 14px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size:0.8125rem;
     font-weight: 600;
     white-space: nowrap;
   }
   .btn-secondary-inline:hover { background: var(--bronze-soft); }
 
   .section-divider { border: none; border-top: 1px solid var(--line); margin: 26px 0 20px; }
-  .section-title { font-size: 15px; color: var(--indigo-deep); margin: 0 0 6px; }
+  .section-title { font-size:0.9375rem; color: var(--indigo-deep); margin: 0 0 6px; }
 
   /* ---------- エクセルプレビュー ---------- */
   .excel-preview-scroll { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
-  .excel-preview-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .excel-preview-table { width: 100%; border-collapse: collapse; font-size:0.7812rem; }
   .excel-preview-table th, .excel-preview-table td {
     padding: 7px 10px;
     border-bottom: 1px solid var(--line);
@@ -477,9 +491,9 @@
   }
   .slip-row:hover { border-color: var(--bronze); }
   .slip-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .slip-number { font-size: 13px; font-weight: 700; color: var(--indigo-deep); }
+  .slip-number { font-size:0.8125rem; font-weight: 700; color: var(--indigo-deep); }
   .slip-status {
-    font-size: 11px;
+    font-size:0.6875rem;
     font-weight: 700;
     padding: 2px 8px;
     border-radius: 999px;
@@ -493,7 +507,7 @@
 
   .slip-type-badge {
     display: inline-block;
-    font-size: 12px;
+    font-size:0.75rem;
     font-weight: 700;
     padding: 4px 12px;
     border-radius: 999px;
@@ -510,11 +524,11 @@
     border: 1px solid var(--line);
     border-radius: 8px;
     padding: 8px 10px;
-    font-size: 13px;
+    font-size:0.8125rem;
   }
   .slip-item-name { flex: 1; }
   .slip-item-remove {
-    background: transparent; color: var(--warn-text); font-size: 16px; font-weight: 700; padding: 0 4px;
+    background: transparent; color: var(--warn-text); font-size:1rem; font-weight: 700; padding: 0 4px;
   }
 
   .slip-selected-card {
@@ -524,24 +538,28 @@
     padding: 10px 12px;
     margin-bottom: 10px;
   }
-  .slip-selected-name { font-size: 14.5px; font-weight: 700; color: var(--indigo-deep); }
-  .slip-selected-meta { font-size: 12px; color: #4c6b53; margin-top: 2px; }
-  .slip-item-price { font-size: 12px; color: #6b6357; margin-top: 2px; }
-  .slip-item-remark { font-size: 12px; color: #6b6357; font-style: italic; }
+  .slip-selected-name { font-size:0.9062rem; font-weight: 700; color: var(--indigo-deep); }
+  .slip-selected-meta { font-size:0.75rem; color: #4c6b53; margin-top: 2px; }
+  .slip-item-price { font-size:0.75rem; color: #6b6357; margin-top: 2px; }
+  .slip-item-remark { font-size:0.75rem; color: #6b6357; font-style: italic; }
 
   /* ---------- 伝票フォーマル表示（発行日・取引先・自社情報など） ---------- */
   .slip-formal-header {
     display: flex; justify-content: space-between; align-items: flex-start;
     gap: 12px; margin-bottom: 12px;
   }
+  .slip-formal-qrbox {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font-size: 0.6875rem; color: #8a8272; flex: 0 0 auto;
+  }
   .slip-formal-companybox {
-    text-align: left; font-size: 11.5px; color: #6b6357; line-height: 1.6; white-space: nowrap;
+    text-align: left; font-size:0.7188rem; color: #6b6357; line-height: 1.6; white-space: nowrap;
   }
   .slip-formal-companyname {
-    font-size: 14.5px; font-weight: 700; color: var(--indigo-deep); margin-top: 3px;
+    font-size:0.9062rem; font-weight: 700; color: var(--indigo-deep); margin-top: 3px;
   }
   .slip-formal-table {
-    width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 12px;
+    width: 100%; border-collapse: collapse; font-size:0.7812rem; margin-bottom: 12px;
   }
   .slip-formal-table th, .slip-formal-table td {
     border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top;
@@ -552,7 +570,7 @@
 
   /* ---------- 伝票詳細テーブル ---------- */
   .slip-detail-head { display: flex; justify-content: space-between; align-items: baseline; }
-  .slip-detail-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 6px; }
+  .slip-detail-table { width: 100%; border-collapse: collapse; font-size:0.7812rem; margin-top: 6px; }
   .slip-detail-table th, .slip-detail-table td {
     padding: 8px 6px;
     border-bottom: 1px solid var(--line);
@@ -563,7 +581,7 @@
   .print-only { display: none; }
   .print-sheet { display: none; }
   .print-sheet .fill-blank { border-bottom: 1px solid var(--ink); display: inline-block; width: 100%; min-height: 16px; }
-  .print-sheet .checkbox-glyph { font-size: 15px; text-align: center; }
+  .print-sheet .checkbox-glyph { font-size:0.9375rem; text-align: center; }
 
   /* ---------- QRラベル一括印刷 ---------- */
   .qr-bulk-grid {
@@ -572,13 +590,13 @@
     gap: 14px;
   }
   .qr-label { text-align: center; border: 1px dashed var(--line); border-radius: 8px; padding: 10px; }
-  .qr-label-text { font-size: 11px; margin-top: 6px; color: var(--ink); line-height: 1.4; }
+  .qr-label-text { font-size:0.6875rem; margin-top: 6px; color: var(--ink); line-height: 1.4; }
 
   .qr-bulk-grid-2col { grid-template-columns: repeat(2, 1fr); }
   .qr-label-detail { display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 12px; }
   .qr-label-qr { flex: 0 0 auto; }
   .qr-label-fields { flex: 1; min-width: 0; }
-  .qr-label-field { font-size: 11px; line-height: 1.55; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qr-label-field { font-size:0.6875rem; line-height: 1.55; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .qr-label-field span { display: inline-block; width: 46px; color: #8a8272; }
 
   /* ---------- Phomemo 40×30mmラベル（暫定） ---------- */
@@ -655,7 +673,7 @@
   .scanner-input {
     border: 1.5px dashed var(--bronze);
     background: var(--bronze-soft, #f5efe4);
-    font-size: 13px;
+    font-size:0.8125rem;
     max-width: 260px;
   }
   .scanner-input:focus {
@@ -667,6 +685,16 @@
     .product-row { flex-wrap: wrap; }
     .edit-link { margin-left: 0; }
     .qr-bulk-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ---------- パソコンなど広い画面向けのレイアウト調整 ---------- */
+  @media (min-width: 700px) {
+    main { max-width: 1080px; padding: 32px 28px 100px; }
+    .login-card { padding: 44px 40px; max-width: 400px; }
+    .modal { padding: 32px 30px; }
+    header.topbar { padding: 16px 28px; }
+    .toolbar input[type=text] { max-width: 280px; }
+    .toolbar select { max-width: 200px; }
   }
 </style>
 </head>
@@ -726,7 +754,7 @@
 
     <!-- ---- 商品登録タブ（一覧と同じフォームをモーダルなしで表示） ---- -->
     <section id="tabRegister" style="display:none;">
-      <p style="font-size:13px;color:#6b6357;margin-bottom:16px;">
+      <p style="font-size:0.8125rem;color:#6b6357;margin-bottom:16px;">
         新しい商品をここから登録できます。既存商品の編集は「在庫一覧」の各行から行ってください。
       </p>
       <label>商品名</label>
@@ -750,12 +778,12 @@
       <hr class="section-divider">
 
       <h3 class="section-title">エクセル／CSVで一括登録</h3>
-      <p style="font-size:13px;color:#6b6357;margin-bottom:12px;">
+      <p style="font-size:0.8125rem;color:#6b6357;margin-bottom:12px;">
         列名は「商品コード／商品名／分類／単位／売価／現在庫数／在庫僅少ライン／備考」を想定しています（表記ゆれはある程度自動で吸収します）。
       </p>
       <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv">
       <div id="excelPreviewWrap" style="display:none;margin-top:14px;">
-        <p id="excelPreviewCount" style="font-size:13px;color:var(--indigo-deep);font-weight:600;"></p>
+        <p id="excelPreviewCount" style="font-size:0.8125rem;color:var(--indigo-deep);font-weight:600;"></p>
         <div class="excel-preview-scroll">
           <table class="excel-preview-table">
             <thead>
@@ -829,8 +857,8 @@
 <div class="modal-overlay" id="moveOverlay">
   <div class="modal">
     <h2>入出庫を記録</h2>
-    <p id="moveProductName" style="font-size:14.5px;font-weight:600;color:var(--indigo-deep);margin:0 0 2px;"></p>
-    <p id="moveCurrentStock" style="font-size:12px;color:#8a8272;margin:0 0 16px;"></p>
+    <p id="moveProductName" style="font-size:0.9062rem;font-weight:600;color:var(--indigo-deep);margin:0 0 2px;"></p>
+    <p id="moveCurrentStock" style="font-size:0.75rem;color:#8a8272;margin:0 0 16px;"></p>
 
     <label>区分</label>
     <div class="move-type-group">
@@ -885,8 +913,8 @@
 <div class="modal-overlay" id="qrOverlay">
   <div class="modal" id="qrPrintArea">
     <h2>QRコード</h2>
-    <p id="qrProductName" style="font-size:14.5px;font-weight:600;color:var(--indigo-deep);margin:0 0 4px;"></p>
-    <p id="qrProductCode" style="font-size:12px;color:#8a8272;margin:0 0 16px;"></p>
+    <p id="qrProductName" style="font-size:0.9062rem;font-weight:600;color:var(--indigo-deep);margin:0 0 4px;"></p>
+    <p id="qrProductCode" style="font-size:0.75rem;color:#8a8272;margin:0 0 16px;"></p>
     <div id="qrCanvasBox" style="display:flex;justify-content:center;margin-bottom:18px;"></div>
     <div class="modal-actions no-print">
       <button class="btn-secondary" id="qrCloseBtn">閉じる</button>
@@ -960,7 +988,7 @@
     </div>
 
     <details style="margin:4px 0 10px;">
-      <summary style="font-size:12.5px;color:#8a8272;cursor:pointer;">商品コードが分からない場合は商品名から選ぶ</summary>
+      <summary style="font-size:0.7812rem;color:#8a8272;cursor:pointer;">商品コードが分からない場合は商品名から選ぶ</summary>
       <select id="slipItemProduct" style="margin-top:8px;"></select>
     </details>
 
@@ -970,7 +998,7 @@
       <label style="margin:0;white-space:nowrap;">単価</label>
       <input type="number" id="slipItemPrice" min="0" step="1" placeholder="円" style="flex:1;margin-bottom:0;">
     </div>
-    <p id="slipItemAmountPreview" style="font-size:12px;color:#6b6357;margin:-4px 0 8px;text-align:right;"></p>
+    <p id="slipItemAmountPreview" style="font-size:0.75rem;color:#6b6357;margin:-4px 0 8px;text-align:right;"></p>
     <div style="display:flex;gap:8px;align-items:center;">
       <input type="text" id="slipItemRemark" placeholder="摘要（任意）" style="flex:1;margin-bottom:0;">
       <button type="button" class="btn-secondary" id="slipItemAddBtn" style="flex:1;">追加</button>
@@ -991,6 +1019,7 @@
     <div class="no-print">
       <div class="slip-formal-header">
         <h2 id="slipDetailTitle" style="margin:0;">伝票</h2>
+        <div class="slip-formal-qrbox" id="slipQrBox"></div>
         <div class="slip-formal-companybox">
           <div>住所　東京都府中市八幡町1-4-3</div>
           <div>電話　042(334)1660番(代)</div>
@@ -1025,10 +1054,7 @@
         </tr>
       </table>
 
-      <p id="slipDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 8px;"></p>
-
-      <div id="slipQrBox" style="display:flex;flex-direction:column;align-items:center;gap:4px;margin-bottom:10px;"></div>
-      <p style="font-size:11px;color:#8a8272;text-align:center;margin:-6px 0 14px;">↑ この伝票のQR（スキャンすると直接この画面を開けます）</p>
+      <p id="slipDetailStaff" style="font-size:0.75rem;color:#8a8272;margin:0 0 8px;"></p>
 
       <div style="margin-bottom:10px;">
         <input type="text" id="slipItemScannerInput" class="scanner-input" placeholder="🔫 現品→検品シールの順にスキャン（検品用）" style="margin-bottom:8px;">
@@ -1052,9 +1078,9 @@
         </tfoot>
       </table>
 
-      <p style="font-size:13px;margin-top:12px;">備考：<span id="slipDetailMemo"></span></p>
+      <p style="font-size:0.8125rem;margin-top:12px;">備考：<span id="slipDetailMemo"></span></p>
 
-      <p id="slipDetailDoneNote" style="display:none;font-size:13px;color:var(--ok-text);font-weight:600;margin-top:12px;">この伝票は検品完了済みです（在庫反映済み）</p>
+      <p id="slipDetailDoneNote" style="display:none;font-size:0.8125rem;color:var(--ok-text);font-weight:600;margin-top:12px;">この伝票は検品完了済みです（在庫反映済み）</p>
 
       <div id="slipReceivingLabelWrap" style="display:none;margin-top:10px;">
         <button type="button" class="btn-secondary-inline" id="slipReceivingLabelBtn">🏷️ 受入QRラベルを印刷</button>
@@ -1069,7 +1095,6 @@
 
     <div class="modal-actions no-print" style="flex-wrap:wrap;">
       <button class="btn-secondary" id="slipDetailCloseBtn">閉じる</button>
-      <button class="btn-secondary" id="slipDetailPrintPickBtn">🧺 ピック表</button>
       <button class="btn-secondary" id="slipDetailPrintCheckBtn">🔍 検品表</button>
       <button class="btn-secondary" id="slipDetailPrintDeliveryBtn">📦 納品書</button>
       <button class="btn-primary" id="slipDetailCompleteBtn">検品完了として記録する</button>
@@ -1100,7 +1125,7 @@
     </div>
 
     <details style="margin:4px 0 10px;">
-      <summary style="font-size:12.5px;color:#8a8272;cursor:pointer;">商品コードが分からない場合は商品名から選ぶ</summary>
+      <summary style="font-size:0.7812rem;color:#8a8272;cursor:pointer;">商品コードが分からない場合は商品名から選ぶ</summary>
       <select id="orderItemProduct" style="margin-top:8px;"></select>
     </details>
 
@@ -1125,13 +1150,13 @@
     <h2>発注</h2>
     <div class="slip-detail-head">
       <div><strong id="orderDetailNumber"></strong>　<span class="slip-status" id="orderDetailStatus"></span></div>
-      <div id="orderDetailDate" style="font-size:12px;color:#8a8272;"></div>
+      <div id="orderDetailDate" style="font-size:0.75rem;color:#8a8272;"></div>
     </div>
-    <p style="font-size:14px;margin:10px 0 2px;">仕入先：<span id="orderDetailPartner"></span></p>
-    <p id="orderDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 2px;"></p>
-    <p id="orderDetailMemo" style="font-size:12px;color:#8a8272;margin:0 0 10px;"></p>
+    <p style="font-size:0.875rem;margin:10px 0 2px;">仕入先：<span id="orderDetailPartner"></span></p>
+    <p id="orderDetailStaff" style="font-size:0.75rem;color:#8a8272;margin:0 0 2px;"></p>
+    <p id="orderDetailMemo" style="font-size:0.75rem;color:#8a8272;margin:0 0 10px;"></p>
 
-    <p id="orderReceivedQtyHint" style="display:none;font-size:12px;color:#8a8272;margin:0 0 8px;">実際に入荷した数量を確認・修正してください</p>
+    <p id="orderReceivedQtyHint" style="display:none;font-size:0.75rem;color:#8a8272;margin:0 0 8px;">実際に入荷した数量を確認・修正してください</p>
 
     <table class="slip-detail-table">
       <thead>
@@ -1140,8 +1165,8 @@
       <tbody id="orderDetailBody"></tbody>
     </table>
 
-    <p id="orderDetailDoneNote" style="display:none;font-size:13px;color:var(--ok-text);font-weight:600;margin-top:12px;">この発注は入荷済みです（在庫反映済み）</p>
-    <p id="orderDetailCancelledNote" style="display:none;font-size:13px;color:var(--warn-text);font-weight:600;margin-top:12px;">この発注はキャンセルされました</p>
+    <p id="orderDetailDoneNote" style="display:none;font-size:0.8125rem;color:var(--ok-text);font-weight:600;margin-top:12px;">この発注は入荷済みです（在庫反映済み）</p>
+    <p id="orderDetailCancelledNote" style="display:none;font-size:0.8125rem;color:var(--warn-text);font-weight:600;margin-top:12px;">この発注はキャンセルされました</p>
 
     <div class="modal-actions">
       <button class="btn-secondary" id="orderDetailCloseBtn">閉じる</button>
@@ -1161,8 +1186,8 @@
       <canvas id="scanCanvas" style="display:none;"></canvas>
       <div class="scan-frame"></div>
     </div>
-    <p id="scanHint" style="font-size:12px;color:#8a8272;margin-top:10px;">商品または伝票のQRコードにカメラを向けてください</p>
-    <p id="scanStepStatus" style="display:none;font-size:13.5px;font-weight:700;margin-top:6px;"></p>
+    <p id="scanHint" style="font-size:0.75rem;color:#8a8272;margin-top:10px;">商品または伝票のQRコードにカメラを向けてください</p>
+    <p id="scanStepStatus" style="display:none;font-size:0.8438rem;font-weight:700;margin-top:6px;"></p>
     <p class="error-msg" id="scanError"></p>
     <div class="modal-actions">
       <button class="btn-secondary" id="scanCloseBtn">閉じる</button>
