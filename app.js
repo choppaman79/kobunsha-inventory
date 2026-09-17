@@ -152,6 +152,7 @@ function init() {
   document.getElementById("slipDetailScanBtn").addEventListener("click", () => openScanModal("slip-item"));
   document.getElementById("slipReceivingLabelBtn").addEventListener("click", () => printSlipReceivingLabels(openSlipId));
   document.getElementById("slipPickLabelBtn").addEventListener("click", () => printSlipPickLabels(openSlipId));
+  document.getElementById("slipPickLabelPhomemoBtn").addEventListener("click", () => printSlipPickLabelsPhomemo(openSlipId));
 
   // ---- Phase4: 発注管理 ----
   document.getElementById("lowStockCreateOrderBtn").addEventListener("click", handleCreateOrderFromLowStock);
@@ -590,6 +591,7 @@ function openQrBulkPrint() {
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "qr-bulk-grid";
   grid.innerHTML = "";
+  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
   document.getElementById("qrBulkTitle").textContent = "QRラベル一括印刷";
   items.forEach(p => {
     const cell = document.createElement("div");
@@ -618,6 +620,7 @@ function printSlipReceivingLabels(slipId) {
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "qr-bulk-grid";
   grid.innerHTML = "";
+  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
   document.getElementById("qrBulkTitle").textContent = "入荷QRラベル印刷";
   items.forEach(item => {
     // 実際に入荷（検品）した数量ぶんラベルを発行する
@@ -652,7 +655,8 @@ function printSlipPickLabels(slipId) {
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "qr-bulk-grid qr-bulk-grid-2col";
   grid.innerHTML = "";
-  document.getElementById("qrBulkTitle").textContent = "検品シール印刷";
+  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
+  document.getElementById("qrBulkTitle").textContent = "検品シール印刷（A4）";
   items.forEach(item => {
     const amount = Number(item.unitPrice || 0) * item.plannedQty;
     const cell = document.createElement("div");
@@ -673,6 +677,47 @@ function printSlipPickLabels(slipId) {
     grid.appendChild(cell);
     // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
     new QRCode(qrBox, { text: buildProductUrl(item.productId), width: 88, height: 88, correctLevel: QRCode.CorrectLevel.M });
+  });
+  document.getElementById("qrBulkOverlay").classList.add("show");
+}
+
+// ---- Phomemo（40×30mmラベル機）向け：暫定の検品シール印刷 ----
+function printSlipPickLabelsPhomemo(slipId) {
+  const s = allSlips.find(x => x.id === slipId);
+  if (!s) return;
+  const items = s.items || [];
+  if (items.length === 0) {
+    showToast("印刷対象の品目がありません");
+    return;
+  }
+  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  const shipTo = s.shipTo || s.partner || "";
+  const grid = document.getElementById("qrBulkGrid");
+  grid.className = "phomemo-label-list";
+  grid.innerHTML = "";
+  document.getElementById("qrBulkPrintArea").classList.add("phomemo-mode");
+  document.getElementById("qrBulkTitle").textContent = "検品シール印刷（Phomemo 40×30mm）";
+  items.forEach((item, idx) => {
+    const amount = Number(item.unitPrice || 0) * item.plannedQty;
+    const page = document.createElement("div");
+    page.className = "phomemo-label-page";
+    page.innerHTML = `
+      <div class="phomemo-label-row">
+        <div class="phomemo-qr" id="phomemoQr${idx}"></div>
+        <div class="phomemo-main">
+          <div class="phomemo-name">${escapeHtml(item.productName || "")}</div>
+          <div class="phomemo-line">伝票№ ${escapeHtml(s.slipNumber || "")}</div>
+          <div class="phomemo-amount">¥${amount.toLocaleString()}</div>
+        </div>
+      </div>
+      <div class="phomemo-foot">
+        <span class="phomemo-shipto">${escapeHtml(shipTo)}</span>
+        <span class="phomemo-date">${issueDate}</span>
+      </div>
+    `;
+    grid.appendChild(page);
+    // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
+    new QRCode(document.getElementById(`phomemoQr${idx}`), { text: buildProductUrl(item.productId), width: 56, height: 56, correctLevel: QRCode.CorrectLevel.M });
   });
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
@@ -1751,6 +1796,14 @@ function openScanModal(mode) {
     mode === "slip-item" ? "商品QRをスキャン（検品）" : "QRコードをスキャン";
   document.getElementById("scanHint").textContent =
     mode === "slip-item" ? "現品のQRと検品シールのQRを順に1回ずつスキャンしてください（2回で1件確認）" : "商品または伝票のQRコードにカメラを向けてください";
+  const stepStatus = document.getElementById("scanStepStatus");
+  if (mode === "slip-item") {
+    stepStatus.style.display = "block";
+    stepStatus.style.color = "#8a8272";
+    stepStatus.textContent = "① 現品または検品シールのどちらか一方をスキャンしてください";
+  } else {
+    stepStatus.style.display = "none";
+  }
   document.getElementById("scanError").textContent = "";
   document.getElementById("scanOverlay").classList.add("show");
   startScanCamera();
@@ -1918,10 +1971,18 @@ function playWarningAlert() {
 // ===================== Phase2: 入出庫（検品スキャン処理） =====================
 // 検品シール方式：現品のQRと検品シールのQRを順にスキャンし、2回とも同じ商品であれば1件確認とする
 function handleSlipItemVerifyScan(productId) {
+  const stepStatus = document.getElementById("scanStepStatus");
+  const p = allProducts.find(x => x.id === productId);
+  const pname = p ? p.name : "商品";
+
   if (pendingSlipScanCode === null) {
     pendingSlipScanCode = productId;
     playTone(660, 60, "sine");
     showToast("1回目OK。もう一方のQR（現品／検品シール）をスキャンしてください");
+    if (stepStatus) {
+      stepStatus.style.color = "var(--indigo-deep)";
+      stepStatus.textContent = `① ${pname} を確認しました → ② もう一方のQRをスキャンしてください`;
+    }
     return;
   }
   const firstCode = pendingSlipScanCode;
@@ -1929,9 +1990,17 @@ function handleSlipItemVerifyScan(productId) {
   if (firstCode !== productId) {
     playWarningAlert();
     showToast("⚠️ 現品と検品シールの商品が一致しません");
+    if (stepStatus) {
+      stepStatus.style.color = "var(--warn-text, #a3392b)";
+      stepStatus.textContent = "⚠️ 一致しませんでした。もう一度、現品→検品シールの順にスキャンしてください";
+    }
     return;
   }
   handleSlipItemScan(productId);
+  if (stepStatus) {
+    stepStatus.style.color = "var(--ok-text, #0f6e56)";
+    stepStatus.textContent = `✅ ${pname} を確認しました。次の商品をスキャンしてください`;
+  }
 }
 
 function handleSlipItemScan(productId) {
@@ -2159,4 +2228,3 @@ function showToast(msg) {
 }
 
 init();
-
