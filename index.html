@@ -574,6 +574,13 @@
   .qr-label { text-align: center; border: 1px dashed var(--line); border-radius: 8px; padding: 10px; }
   .qr-label-text { font-size: 11px; margin-top: 6px; color: var(--ink); line-height: 1.4; }
 
+  .qr-bulk-grid-2col { grid-template-columns: repeat(2, 1fr); }
+  .qr-label-detail { display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 12px; }
+  .qr-label-qr { flex: 0 0 auto; }
+  .qr-label-fields { flex: 1; min-width: 0; }
+  .qr-label-field { font-size: 11px; line-height: 1.55; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qr-label-field span { display: inline-block; width: 46px; color: #8a8272; }
+
   /* ---------- 印刷用スタイル ---------- */
   @media print {
     body * { visibility: hidden; }
@@ -860,7 +867,7 @@
 <!-- ===================== QRラベル一括印刷 (Phase2) ===================== -->
 <div class="modal-overlay" id="qrBulkOverlay">
   <div class="modal" id="qrBulkPrintArea" style="max-width:680px;">
-    <h2 class="no-print">QRラベル一括印刷</h2>
+    <h2 class="no-print" id="qrBulkTitle">QRラベル一括印刷</h2>
     <div class="qr-bulk-grid" id="qrBulkGrid"></div>
     <div class="modal-actions no-print">
       <button class="btn-secondary" id="qrBulkCloseBtn">閉じる</button>
@@ -993,7 +1000,7 @@
       <p style="font-size:11px;color:#8a8272;text-align:center;margin:-6px 0 14px;">↑ この伝票のQR（スキャンすると直接この画面を開けます）</p>
 
       <div style="margin-bottom:10px;">
-        <input type="text" id="slipItemScannerInput" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄（検品用）" style="margin-bottom:8px;">
+        <input type="text" id="slipItemScannerInput" class="scanner-input" placeholder="🔫 現品→検品シールの順にスキャン（検品用）" style="margin-bottom:8px;">
         <button type="button" class="btn-secondary-inline" id="slipDetailScanBtn">📷 商品をスキャンして検品</button>
       </div>
 
@@ -1020,6 +1027,9 @@
 
       <div id="slipReceivingLabelWrap" style="display:none;margin-top:10px;">
         <button type="button" class="btn-secondary-inline" id="slipReceivingLabelBtn">🏷️ 受入QRラベルを印刷</button>
+      </div>
+      <div style="margin-top:10px;">
+        <button type="button" class="btn-secondary-inline" id="slipPickLabelBtn">🏷️ 検品シールを印刷</button>
       </div>
     </div>
 
