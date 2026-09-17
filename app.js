@@ -142,7 +142,6 @@ function init() {
   document.getElementById("slipItemPrice").addEventListener("input", updateSlipItemAmountPreview);
 
   document.getElementById("slipDetailCloseBtn").addEventListener("click", closeSlipDetailModal);
-  document.getElementById("slipDetailPrintPickBtn").addEventListener("click", () => printSlipSheet("pick"));
   document.getElementById("slipDetailPrintCheckBtn").addEventListener("click", () => printSlipSheet("check"));
   document.getElementById("slipDetailPrintDeliveryBtn").addEventListener("click", () => printSlipSheet("delivery"));
   document.getElementById("slipDetailCompleteBtn").addEventListener("click", handleSlipComplete);
@@ -1150,7 +1149,7 @@ function openSlipDetailModal(id) {
 
   const qrBox = document.getElementById("slipQrBox");
   qrBox.innerHTML = "";
-  new QRCode(qrBox, { text: buildSlipUrl(id), width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
+  new QRCode(qrBox, { text: buildSlipUrl(id), width: 84, height: 84, correctLevel: QRCode.CorrectLevel.M });
   const qrLabel = document.createElement("div");
   qrLabel.style.cssText = "font-size:11px;color:#8a8272;";
   qrLabel.textContent = s.slipNumber || "";
@@ -1201,7 +1200,7 @@ function closeSlipDetailModal() {
   document.getElementById("slipDetailOverlay").classList.remove("show");
 }
 
-// ---- 伝票の印刷（ピック表／検品表／納品書） ----
+// ---- 伝票の印刷（検品表／納品書） ----
 function companyLetterheadHtml() {
   return `
     <div class="slip-formal-companybox">
@@ -1217,44 +1216,14 @@ function printSlipSheet(mode) {
   const s = allSlips.find(x => x.id === openSlipId);
   if (!s) return;
   const sheet = document.getElementById("slipPrintSheet");
-  if (mode === "pick") sheet.innerHTML = buildPickSheetHtml(s);
-  else if (mode === "check") sheet.innerHTML = buildCheckSheetHtml(s);
+  if (mode === "check") sheet.innerHTML = buildCheckSheetHtml(s);
   else sheet.innerHTML = buildDeliverySheetHtml(s);
 
   const qrHost = document.getElementById("printSheetQr");
   if (qrHost) {
-    new QRCode(qrHost, { text: buildSlipUrl(s.id), width: 90, height: 90, correctLevel: QRCode.CorrectLevel.M });
+    new QRCode(qrHost, { text: buildSlipUrl(s.id), width: 80, height: 80, correctLevel: QRCode.CorrectLevel.M });
   }
   setTimeout(() => window.print(), 30);
-}
-
-function buildPickSheetHtml(s) {
-  const typeLabel = s.type === "in" ? "入荷" : "出荷";
-  const shipToLabel = s.type === "in" ? "入荷元" : "出荷先";
-  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
-  const rows = (s.items || []).map(item => `
-    <tr>
-      <td>${escapeHtml(item.code || "")}</td>
-      <td>${escapeHtml(item.productName)}</td>
-      <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
-      <td class="checkbox-glyph">☐</td>
-    </tr>
-  `).join("");
-  return `
-    <div class="slip-formal-header">
-      <h2 style="margin:0;">ピック表（${typeLabel}）</h2>
-      ${companyLetterheadHtml()}
-    </div>
-    <table class="slip-formal-table">
-      <tr><th>伝票番号</th><td>${escapeHtml(s.slipNumber || "")}</td><th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td></tr>
-      <tr><th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td><th>作成日</th><td>${issueDate}</td></tr>
-    </table>
-    <table class="slip-detail-table">
-      <thead><tr><th>商品コード</th><th>商品名</th><th>数量</th><th>ピック済</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
-  `;
 }
 
 function buildCheckSheetHtml(s) {
@@ -1273,6 +1242,7 @@ function buildCheckSheetHtml(s) {
   return `
     <div class="slip-formal-header">
       <h2 style="margin:0;">検品表（${typeLabel}）</h2>
+      <div class="slip-formal-qrbox" id="printSheetQr"></div>
       ${companyLetterheadHtml()}
     </div>
     <table class="slip-formal-table">
@@ -1283,7 +1253,6 @@ function buildCheckSheetHtml(s) {
       <thead><tr><th>商品コード</th><th>商品名</th><th>数量（予定）</th><th>確認数</th><th>検品済</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
   `;
 }
 
@@ -1310,6 +1279,7 @@ function buildDeliverySheetHtml(s) {
   return `
     <div class="slip-formal-header">
       <h2 style="margin:0;">${typeLabel}</h2>
+      <div class="slip-formal-qrbox" id="printSheetQr"></div>
       ${companyLetterheadHtml()}
     </div>
     <table class="slip-formal-table">
@@ -1348,7 +1318,6 @@ function buildDeliverySheetHtml(s) {
       </tfoot>
     </table>
     <p style="font-size:13px;margin-top:12px;">備考：${escapeHtml(s.memo || "")}</p>
-    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
   `;
 }
 
