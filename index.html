@@ -581,6 +581,32 @@
   .qr-label-field { font-size: 11px; line-height: 1.55; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .qr-label-field span { display: inline-block; width: 46px; color: #8a8272; }
 
+  /* ---------- Phomemo 40×30mmラベル（暫定） ---------- */
+  @page phomemo-label { size: 40mm 30mm; margin: 0; }
+  .phomemo-label-list { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .phomemo-label-page {
+    width: 40mm; height: 30mm; box-sizing: border-box; padding: 1.3mm;
+    border: 1px dashed var(--line); border-radius: 2px;
+    display: flex; flex-direction: column; justify-content: space-between;
+    background: #fff; color: #000;
+  }
+  .phomemo-label-row { display: flex; gap: 1.3mm; flex: 1; min-height: 0; }
+  .phomemo-qr { flex: 0 0 auto; width: 15mm; height: 15mm; }
+  .phomemo-qr canvas, .phomemo-qr img { width: 15mm !important; height: 15mm !important; }
+  .phomemo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.5mm; overflow: hidden; }
+  .phomemo-name {
+    font-size: 6.5pt; font-weight: 700; line-height: 1.2;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .phomemo-line { font-size: 5.3pt; line-height: 1.3; }
+  .phomemo-amount { font-size: 6.5pt; font-weight: 700; }
+  .phomemo-foot {
+    display: flex; justify-content: space-between; gap: 2mm; font-size: 4.6pt; color: #333;
+    border-top: 0.3mm solid #000; padding-top: 0.5mm; white-space: nowrap;
+  }
+  .phomemo-shipto { max-width: 25mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   /* ---------- 印刷用スタイル ---------- */
   @media print {
     body * { visibility: hidden; }
@@ -591,6 +617,11 @@
       position: absolute; left: 0; top: 0; width: 100%; max-width: none;
       box-shadow: none; border: none;
     }
+    #qrBulkPrintArea.phomemo-mode {
+      width: 40mm; max-width: 40mm; padding: 0; page: phomemo-label;
+    }
+    .phomemo-label-page { break-inside: avoid; border: none; }
+    .phomemo-label-page + .phomemo-label-page { break-before: page; }
     .no-print { display: none !important; }
     .print-sheet { display: block !important; }
     .print-only { display: table-cell !important; }
@@ -1028,8 +1059,9 @@
       <div id="slipReceivingLabelWrap" style="display:none;margin-top:10px;">
         <button type="button" class="btn-secondary-inline" id="slipReceivingLabelBtn">🏷️ 受入QRラベルを印刷</button>
       </div>
-      <div style="margin-top:10px;">
-        <button type="button" class="btn-secondary-inline" id="slipPickLabelBtn">🏷️ 検品シールを印刷</button>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn-secondary-inline" id="slipPickLabelBtn">🏷️ 検品シールを印刷（A4）</button>
+        <button type="button" class="btn-secondary-inline" id="slipPickLabelPhomemoBtn">🏷️ 検品シールを印刷（Phomemo 40×30mm）</button>
       </div>
     </div>
 
@@ -1130,6 +1162,7 @@
       <div class="scan-frame"></div>
     </div>
     <p id="scanHint" style="font-size:12px;color:#8a8272;margin-top:10px;">商品または伝票のQRコードにカメラを向けてください</p>
+    <p id="scanStepStatus" style="display:none;font-size:13.5px;font-weight:700;margin-top:6px;"></p>
     <p class="error-msg" id="scanError"></p>
     <div class="modal-actions">
       <button class="btn-secondary" id="scanCloseBtn">閉じる</button>
