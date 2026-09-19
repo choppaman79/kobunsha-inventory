@@ -142,6 +142,7 @@ function init() {
   document.getElementById("slipItemPrice").addEventListener("input", updateSlipItemAmountPreview);
 
   document.getElementById("slipDetailCloseBtn").addEventListener("click", closeSlipDetailModal);
+  document.getElementById("slipDetailPrintPickBtn").addEventListener("click", () => printSlipSheet("pick"));
   document.getElementById("slipDetailPrintCheckBtn").addEventListener("click", () => printSlipSheet("check"));
   document.getElementById("slipDetailPrintDeliveryBtn").addEventListener("click", () => printSlipSheet("delivery"));
   document.getElementById("slipDetailCompleteBtn").addEventListener("click", handleSlipComplete);
@@ -151,7 +152,7 @@ function init() {
   document.getElementById("slipDetailScanBtn").addEventListener("click", () => openScanModal("slip-item"));
   document.getElementById("slipReceivingLabelBtn").addEventListener("click", () => printSlipReceivingLabels(openSlipId));
   document.getElementById("slipPickLabelBtn").addEventListener("click", () => printSlipPickLabels(openSlipId));
-  document.getElementById("slipPickLabelPhomemoBtn").addEventListener("click", () => printSlipPickLabelsPhomemo(openSlipId));
+  document.getElementById("slipPickLabelSMBtn").addEventListener("click", () => printSlipPickLabelsSM200(openSlipId));
 
   // ---- Phase4: 発注管理 ----
   document.getElementById("lowStockCreateOrderBtn").addEventListener("click", handleCreateOrderFromLowStock);
@@ -590,7 +591,7 @@ function openQrBulkPrint() {
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "qr-bulk-grid";
   grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
+  document.getElementById("qrBulkPrintArea").classList.remove("smlabel-mode");
   document.getElementById("qrBulkTitle").textContent = "QRラベル一括印刷";
   items.forEach(p => {
     const cell = document.createElement("div");
@@ -619,7 +620,7 @@ function printSlipReceivingLabels(slipId) {
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "qr-bulk-grid";
   grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
+  document.getElementById("qrBulkPrintArea").classList.remove("smlabel-mode");
   document.getElementById("qrBulkTitle").textContent = "入荷QRラベル印刷";
   items.forEach(item => {
     // 実際に入荷（検品）した数量ぶんラベルを発行する
@@ -654,34 +655,38 @@ function printSlipPickLabels(slipId) {
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "qr-bulk-grid qr-bulk-grid-2col";
   grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
+  document.getElementById("qrBulkPrintArea").classList.remove("smlabel-mode");
   document.getElementById("qrBulkTitle").textContent = "検品シール印刷（A4）";
   items.forEach(item => {
-    const amount = Number(item.unitPrice || 0) * item.plannedQty;
-    const cell = document.createElement("div");
-    cell.className = "qr-label qr-label-detail";
-    const qrBox = document.createElement("div");
-    qrBox.className = "qr-label-qr";
-    cell.appendChild(qrBox);
-    const fields = document.createElement("div");
-    fields.className = "qr-label-fields";
-    fields.innerHTML = `
-      <div class="qr-label-field"><span>宛先</span>${escapeHtml(shipTo)}</div>
-      <div class="qr-label-field"><span>発行日</span>${issueDate}</div>
-      <div class="qr-label-field"><span>品名</span>${escapeHtml(item.productName || "")}</div>
-      <div class="qr-label-field"><span>伝票№</span>${escapeHtml(s.slipNumber || "")}</div>
-      <div class="qr-label-field"><span>金額</span>¥${amount.toLocaleString()}</div>
-    `;
-    cell.appendChild(fields);
-    grid.appendChild(cell);
-    // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
-    new QRCode(qrBox, { text: buildProductUrl(item.productId), width: 88, height: 88, correctLevel: QRCode.CorrectLevel.M });
+    // 品目分ではなく、注文数量ぶんのシールを1枚ずつ発行する（数量2なら2枚）
+    const unitPrice = Number(item.unitPrice || 0);
+    const qty = Math.max(1, Number(item.plannedQty) || 1);
+    for (let i = 1; i <= qty; i++) {
+      const cell = document.createElement("div");
+      cell.className = "qr-label qr-label-detail";
+      const qrBox = document.createElement("div");
+      qrBox.className = "qr-label-qr";
+      cell.appendChild(qrBox);
+      const fields = document.createElement("div");
+      fields.className = "qr-label-fields";
+      fields.innerHTML = `
+        <div class="qr-label-field"><span>宛先</span>${escapeHtml(shipTo)}</div>
+        <div class="qr-label-field"><span>発行日</span>${issueDate}</div>
+        <div class="qr-label-field"><span>品名</span>${escapeHtml(item.productName || "")}${qty > 1 ? `（${i}/${qty}）` : ""}</div>
+        <div class="qr-label-field"><span>伝票№</span>${escapeHtml(s.slipNumber || "")}</div>
+        <div class="qr-label-field"><span>金額</span>¥${unitPrice.toLocaleString()}</div>
+      `;
+      cell.appendChild(fields);
+      grid.appendChild(cell);
+      // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
+      new QRCode(qrBox, { text: buildProductUrl(item.productId), width: 88, height: 88, correctLevel: QRCode.CorrectLevel.M });
+    }
   });
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
 
-// ---- Phomemo（40×30mmラベル機）向け：暫定の検品シール印刷 ----
-function printSlipPickLabelsPhomemo(slipId) {
+// ---- SM-L200（58mm連続ロール紙）向け：検品シール印刷 ----
+function printSlipPickLabelsSM200(slipId) {
   const s = allSlips.find(x => x.id === slipId);
   if (!s) return;
   const items = s.items || [];
@@ -692,31 +697,37 @@ function printSlipPickLabelsPhomemo(slipId) {
   const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
   const shipTo = s.shipTo || s.partner || "";
   const grid = document.getElementById("qrBulkGrid");
-  grid.className = "phomemo-label-list";
+  grid.className = "smlabel-list";
   grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.add("phomemo-mode");
-  document.getElementById("qrBulkTitle").textContent = "検品シール印刷（Phomemo 40×30mm）";
-  items.forEach((item, idx) => {
-    const amount = Number(item.unitPrice || 0) * item.plannedQty;
-    const page = document.createElement("div");
-    page.className = "phomemo-label-page";
-    page.innerHTML = `
-      <div class="phomemo-label-row">
-        <div class="phomemo-qr" id="phomemoQr${idx}"></div>
-        <div class="phomemo-main">
-          <div class="phomemo-name">${escapeHtml(item.productName || "")}</div>
-          <div class="phomemo-line">伝票№ ${escapeHtml(s.slipNumber || "")}</div>
-          <div class="phomemo-amount">¥${amount.toLocaleString()}</div>
+  document.getElementById("qrBulkPrintArea").classList.add("smlabel-mode");
+  document.getElementById("qrBulkTitle").textContent = "検品シール印刷（SM-L200 58mm）";
+  let labelIdx = 0;
+  items.forEach(item => {
+    // 品目分ではなく、注文数量ぶんのシールを1枚ずつ発行する（数量2なら2枚）
+    const unitPrice = Number(item.unitPrice || 0);
+    const qty = Math.max(1, Number(item.plannedQty) || 1);
+    for (let i = 1; i <= qty; i++) {
+      const idx = labelIdx++;
+      const page = document.createElement("div");
+      page.className = "smlabel-page";
+      page.innerHTML = `
+        <div class="smlabel-row">
+          <div class="smlabel-qr" id="smlabelQr${idx}"></div>
+          <div class="smlabel-main">
+            <div class="smlabel-name">${escapeHtml(item.productName || "")}${qty > 1 ? `（${i}/${qty}）` : ""}</div>
+            <div class="smlabel-line">伝票№ ${escapeHtml(s.slipNumber || "")}</div>
+            <div class="smlabel-amount">¥${unitPrice.toLocaleString()}</div>
+          </div>
         </div>
-      </div>
-      <div class="phomemo-foot">
-        <span class="phomemo-shipto">${escapeHtml(shipTo)}</span>
-        <span class="phomemo-date">${issueDate}</span>
-      </div>
-    `;
-    grid.appendChild(page);
-    // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
-    new QRCode(document.getElementById(`phomemoQr${idx}`), { text: buildProductUrl(item.productId), width: 56, height: 56, correctLevel: QRCode.CorrectLevel.M });
+        <div class="smlabel-foot">
+          <span class="smlabel-shipto">${escapeHtml(shipTo)}</span>
+          <span class="smlabel-date">${issueDate}</span>
+        </div>
+      `;
+      grid.appendChild(page);
+      // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
+      new QRCode(document.getElementById(`smlabelQr${idx}`), { text: buildProductUrl(item.productId), width: 76, height: 76, correctLevel: QRCode.CorrectLevel.M });
+    }
   });
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
@@ -1149,7 +1160,7 @@ function openSlipDetailModal(id) {
 
   const qrBox = document.getElementById("slipQrBox");
   qrBox.innerHTML = "";
-  new QRCode(qrBox, { text: buildSlipUrl(id), width: 84, height: 84, correctLevel: QRCode.CorrectLevel.M });
+  new QRCode(qrBox, { text: buildSlipUrl(id), width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
   const qrLabel = document.createElement("div");
   qrLabel.style.cssText = "font-size:11px;color:#8a8272;";
   qrLabel.textContent = s.slipNumber || "";
@@ -1200,7 +1211,7 @@ function closeSlipDetailModal() {
   document.getElementById("slipDetailOverlay").classList.remove("show");
 }
 
-// ---- 伝票の印刷（検品表／納品書） ----
+// ---- 伝票の印刷（ピック表／検品表／納品書） ----
 function companyLetterheadHtml() {
   return `
     <div class="slip-formal-companybox">
@@ -1216,14 +1227,44 @@ function printSlipSheet(mode) {
   const s = allSlips.find(x => x.id === openSlipId);
   if (!s) return;
   const sheet = document.getElementById("slipPrintSheet");
-  if (mode === "check") sheet.innerHTML = buildCheckSheetHtml(s);
+  if (mode === "pick") sheet.innerHTML = buildPickSheetHtml(s);
+  else if (mode === "check") sheet.innerHTML = buildCheckSheetHtml(s);
   else sheet.innerHTML = buildDeliverySheetHtml(s);
 
   const qrHost = document.getElementById("printSheetQr");
   if (qrHost) {
-    new QRCode(qrHost, { text: buildSlipUrl(s.id), width: 80, height: 80, correctLevel: QRCode.CorrectLevel.M });
+    new QRCode(qrHost, { text: buildSlipUrl(s.id), width: 90, height: 90, correctLevel: QRCode.CorrectLevel.M });
   }
   setTimeout(() => window.print(), 30);
+}
+
+function buildPickSheetHtml(s) {
+  const typeLabel = s.type === "in" ? "入荷" : "出荷";
+  const shipToLabel = s.type === "in" ? "入荷元" : "出荷先";
+  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  const rows = (s.items || []).map(item => `
+    <tr>
+      <td>${escapeHtml(item.code || "")}</td>
+      <td>${escapeHtml(item.productName)}</td>
+      <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
+      <td class="checkbox-glyph">☐</td>
+    </tr>
+  `).join("");
+  return `
+    <div class="slip-formal-header">
+      <h2 style="margin:0;">ピック表（${typeLabel}）</h2>
+      ${companyLetterheadHtml()}
+    </div>
+    <table class="slip-formal-table">
+      <tr><th>伝票番号</th><td>${escapeHtml(s.slipNumber || "")}</td><th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td></tr>
+      <tr><th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td><th>作成日</th><td>${issueDate}</td></tr>
+    </table>
+    <table class="slip-detail-table">
+      <thead><tr><th>商品コード</th><th>商品名</th><th>数量</th><th>ピック済</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
+  `;
 }
 
 function buildCheckSheetHtml(s) {
@@ -1242,7 +1283,6 @@ function buildCheckSheetHtml(s) {
   return `
     <div class="slip-formal-header">
       <h2 style="margin:0;">検品表（${typeLabel}）</h2>
-      <div class="slip-formal-qrbox" id="printSheetQr"></div>
       ${companyLetterheadHtml()}
     </div>
     <table class="slip-formal-table">
@@ -1253,6 +1293,7 @@ function buildCheckSheetHtml(s) {
       <thead><tr><th>商品コード</th><th>商品名</th><th>数量（予定）</th><th>確認数</th><th>検品済</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
   `;
 }
 
@@ -1279,7 +1320,6 @@ function buildDeliverySheetHtml(s) {
   return `
     <div class="slip-formal-header">
       <h2 style="margin:0;">${typeLabel}</h2>
-      <div class="slip-formal-qrbox" id="printSheetQr"></div>
       ${companyLetterheadHtml()}
     </div>
     <table class="slip-formal-table">
@@ -1318,6 +1358,7 @@ function buildDeliverySheetHtml(s) {
       </tfoot>
     </table>
     <p style="font-size:13px;margin-top:12px;">備考：${escapeHtml(s.memo || "")}</p>
+    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
   `;
 }
 
