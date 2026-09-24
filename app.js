@@ -142,7 +142,6 @@ function init() {
   document.getElementById("slipItemPrice").addEventListener("input", updateSlipItemAmountPreview);
 
   document.getElementById("slipDetailCloseBtn").addEventListener("click", closeSlipDetailModal);
-  document.getElementById("slipDetailPrintPickBtn").addEventListener("click", () => printSlipSheet("pick"));
   document.getElementById("slipDetailPrintCheckBtn").addEventListener("click", () => printSlipSheet("check"));
   document.getElementById("slipDetailPrintDeliveryBtn").addEventListener("click", () => printSlipSheet("delivery"));
   document.getElementById("slipDetailCompleteBtn").addEventListener("click", handleSlipComplete);
@@ -152,7 +151,12 @@ function init() {
   document.getElementById("slipDetailScanBtn").addEventListener("click", () => openScanModal("slip-item"));
   document.getElementById("slipReceivingLabelBtn").addEventListener("click", () => printSlipReceivingLabels(openSlipId));
   document.getElementById("slipPickLabelBtn").addEventListener("click", () => printSlipPickLabels(openSlipId));
-  document.getElementById("slipPickLabelSMBtn").addEventListener("click", () => printSlipPickLabelsSM200(openSlipId));
+  document.getElementById("slipPickLabelPhomemoBtn").addEventListener("click", () => printSlipPickLabelsPhomemo(openSlipId));
+  document.getElementById("slipPickLabelPhomemoImageBtn").addEventListener("click", () => openSlipPickLabelsBluetooth(openSlipId, "phomemo"));
+  document.getElementById("slipPickLabelBtLabelBtn").addEventListener("click", () => openSlipPickLabelsBluetooth(openSlipId, "smL200"));
+  document.getElementById("btLabelCloseBtn").addEventListener("click", () => {
+    document.getElementById("btLabelOverlay").classList.remove("show");
+  });
 
   // ---- Phase4: 発注管理 ----
   document.getElementById("lowStockCreateOrderBtn").addEventListener("click", handleCreateOrderFromLowStock);
@@ -591,7 +595,7 @@ function openQrBulkPrint() {
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "qr-bulk-grid";
   grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.remove("smlabel-mode");
+  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
   document.getElementById("qrBulkTitle").textContent = "QRラベル一括印刷";
   items.forEach(p => {
     const cell = document.createElement("div");
@@ -620,7 +624,7 @@ function printSlipReceivingLabels(slipId) {
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "qr-bulk-grid";
   grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.remove("smlabel-mode");
+  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
   document.getElementById("qrBulkTitle").textContent = "入荷QRラベル印刷";
   items.forEach(item => {
     // 実際に入荷（検品）した数量ぶんラベルを発行する
@@ -655,38 +659,34 @@ function printSlipPickLabels(slipId) {
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "qr-bulk-grid qr-bulk-grid-2col";
   grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.remove("smlabel-mode");
+  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
   document.getElementById("qrBulkTitle").textContent = "検品シール印刷（A4）";
   items.forEach(item => {
-    // 品目分ではなく、注文数量ぶんのシールを1枚ずつ発行する（数量2なら2枚）
-    const unitPrice = Number(item.unitPrice || 0);
-    const qty = Math.max(1, Number(item.plannedQty) || 1);
-    for (let i = 1; i <= qty; i++) {
-      const cell = document.createElement("div");
-      cell.className = "qr-label qr-label-detail";
-      const qrBox = document.createElement("div");
-      qrBox.className = "qr-label-qr";
-      cell.appendChild(qrBox);
-      const fields = document.createElement("div");
-      fields.className = "qr-label-fields";
-      fields.innerHTML = `
-        <div class="qr-label-field"><span>宛先</span>${escapeHtml(shipTo)}</div>
-        <div class="qr-label-field"><span>発行日</span>${issueDate}</div>
-        <div class="qr-label-field"><span>品名</span>${escapeHtml(item.productName || "")}${qty > 1 ? `（${i}/${qty}）` : ""}</div>
-        <div class="qr-label-field"><span>伝票№</span>${escapeHtml(s.slipNumber || "")}</div>
-        <div class="qr-label-field"><span>金額</span>¥${unitPrice.toLocaleString()}</div>
-      `;
-      cell.appendChild(fields);
-      grid.appendChild(cell);
-      // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
-      new QRCode(qrBox, { text: buildProductUrl(item.productId), width: 88, height: 88, correctLevel: QRCode.CorrectLevel.M });
-    }
+    const amount = Number(item.unitPrice || 0) * item.plannedQty;
+    const cell = document.createElement("div");
+    cell.className = "qr-label qr-label-detail";
+    const qrBox = document.createElement("div");
+    qrBox.className = "qr-label-qr";
+    cell.appendChild(qrBox);
+    const fields = document.createElement("div");
+    fields.className = "qr-label-fields";
+    fields.innerHTML = `
+      <div class="qr-label-field"><span>宛先</span>${escapeHtml(shipTo)}</div>
+      <div class="qr-label-field"><span>発行日</span>${issueDate}</div>
+      <div class="qr-label-field"><span>品名</span>${escapeHtml(item.productName || "")}</div>
+      <div class="qr-label-field"><span>伝票№</span>${escapeHtml(s.slipNumber || "")}</div>
+      <div class="qr-label-field"><span>金額</span>¥${amount.toLocaleString()}</div>
+    `;
+    cell.appendChild(fields);
+    grid.appendChild(cell);
+    // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
+    new QRCode(qrBox, { text: buildProductUrl(item.productId), width: 88, height: 88, correctLevel: QRCode.CorrectLevel.M });
   });
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
 
-// ---- SM-L200（58mm連続ロール紙）向け：検品シール印刷 ----
-function printSlipPickLabelsSM200(slipId) {
+// ---- Phomemo（40×30mmラベル機）向け：暫定の検品シール印刷 ----
+function printSlipPickLabelsPhomemo(slipId) {
   const s = allSlips.find(x => x.id === slipId);
   if (!s) return;
   const items = s.items || [];
@@ -697,39 +697,168 @@ function printSlipPickLabelsSM200(slipId) {
   const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
   const shipTo = s.shipTo || s.partner || "";
   const grid = document.getElementById("qrBulkGrid");
-  grid.className = "smlabel-list";
+  grid.className = "phomemo-label-list";
   grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.add("smlabel-mode");
-  document.getElementById("qrBulkTitle").textContent = "検品シール印刷（SM-L200 58mm）";
-  let labelIdx = 0;
-  items.forEach(item => {
-    // 品目分ではなく、注文数量ぶんのシールを1枚ずつ発行する（数量2なら2枚）
-    const unitPrice = Number(item.unitPrice || 0);
-    const qty = Math.max(1, Number(item.plannedQty) || 1);
-    for (let i = 1; i <= qty; i++) {
-      const idx = labelIdx++;
-      const page = document.createElement("div");
-      page.className = "smlabel-page";
-      page.innerHTML = `
-        <div class="smlabel-row">
-          <div class="smlabel-qr" id="smlabelQr${idx}"></div>
-          <div class="smlabel-main">
-            <div class="smlabel-name">${escapeHtml(item.productName || "")}${qty > 1 ? `（${i}/${qty}）` : ""}</div>
-            <div class="smlabel-line">伝票№ ${escapeHtml(s.slipNumber || "")}</div>
-            <div class="smlabel-amount">¥${unitPrice.toLocaleString()}</div>
-          </div>
+  document.getElementById("qrBulkPrintArea").classList.add("phomemo-mode");
+  document.getElementById("qrBulkTitle").textContent = "検品シール印刷（Phomemo 40×30mm）";
+  items.forEach((item, idx) => {
+    const amount = Number(item.unitPrice || 0) * item.plannedQty;
+    const page = document.createElement("div");
+    page.className = "phomemo-label-page";
+    page.innerHTML = `
+      <div class="phomemo-label-row">
+        <div class="phomemo-qr" id="phomemoQr${idx}"></div>
+        <div class="phomemo-main">
+          <div class="phomemo-name">${escapeHtml(item.productName || "")}</div>
+          <div class="phomemo-line">伝票№ ${escapeHtml(s.slipNumber || "")}</div>
+          <div class="phomemo-amount">¥${amount.toLocaleString()}</div>
         </div>
-        <div class="smlabel-foot">
-          <span class="smlabel-shipto">${escapeHtml(shipTo)}</span>
-          <span class="smlabel-date">${issueDate}</span>
-        </div>
-      `;
-      grid.appendChild(page);
-      // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
-      new QRCode(document.getElementById(`smlabelQr${idx}`), { text: buildProductUrl(item.productId), width: 76, height: 76, correctLevel: QRCode.CorrectLevel.M });
-    }
+      </div>
+      <div class="phomemo-foot">
+        <span class="phomemo-shipto">${escapeHtml(shipTo)}</span>
+        <span class="phomemo-date">${issueDate}</span>
+      </div>
+    `;
+    grid.appendChild(page);
+    // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
+    new QRCode(document.getElementById(`phomemoQr${idx}`), { text: buildProductUrl(item.productId), width: 56, height: 56, correctLevel: QRCode.CorrectLevel.M });
   });
   document.getElementById("qrBulkOverlay").classList.add("show");
+}
+
+// ---- Bluetooth・専用アプリ経由（Phomemo / SM-L200など）向け：検品シールを画像として生成・共有 ----
+const BT_LABEL_PX_PER_MM = 8; // 約203dpi相当
+const BT_LABEL_PROFILES = {
+  phomemo: { widthMm: 40, heightMm: 30, title: "検品シール画像（Phomemo・アプリ共有用）" },
+  smL200: { widthMm: 58, heightMm: 30, title: "検品シール画像（SM-L200・Bluetooth用）" }
+};
+
+function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+  const chars = Array.from(text || "");
+  const lines = [];
+  let line = "";
+  for (let i = 0; i < chars.length; i++) {
+    const test = line + chars[i];
+    if (line && ctx.measureText(test).width > maxWidth) {
+      lines.push(line);
+      line = chars[i];
+      if (lines.length === maxLines) break;
+    } else {
+      line = test;
+    }
+  }
+  if (lines.length < maxLines) lines.push(line);
+  const consumed = lines.join("").length;
+  if (consumed < chars.length) {
+    let last = lines[lines.length - 1];
+    while (last.length > 0 && ctx.measureText(last + "…").width > maxWidth) {
+      last = last.slice(0, -1);
+    }
+    lines[lines.length - 1] = last + "…";
+  }
+  lines.forEach((l, idx) => ctx.fillText(l, x, y + idx * lineHeight));
+}
+
+function buildBluetoothLabelCanvas(item, s, shipTo, issueDate, widthMm, heightMm) {
+  const mm = BT_LABEL_PX_PER_MM;
+  const w = widthMm * mm;
+  const h = heightMm * mm;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = "#000";
+  ctx.textBaseline = "top";
+
+  // QRコードを一時的なDOMに生成し、canvasへ転写する
+  const tempDiv = document.createElement("div");
+  tempDiv.style.position = "fixed";
+  tempDiv.style.left = "-9999px";
+  document.body.appendChild(tempDiv);
+  new QRCode(tempDiv, { text: buildProductUrl(item.productId), width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+  const qrCanvas = tempDiv.querySelector("canvas");
+  const qrSize = Math.min(20 * mm, h - 4 * mm);
+  const pad = 1.4 * mm;
+  const qrX = pad;
+  const qrY = (h - qrSize) / 2;
+  if (qrCanvas) ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
+  document.body.removeChild(tempDiv);
+
+  const textX = qrX + qrSize + pad;
+  const maxTextWidth = w - textX - pad;
+
+  ctx.font = "bold 22px sans-serif";
+  wrapCanvasText(ctx, item.productName || "", textX, qrY, maxTextWidth, 26, 2);
+
+  ctx.font = "16px sans-serif";
+  wrapCanvasText(ctx, `伝票№ ${s.slipNumber || ""}`, textX, qrY + 58, maxTextWidth, 18, 1);
+
+  const amount = Number(item.unitPrice || 0) * item.plannedQty;
+  ctx.font = "bold 20px sans-serif";
+  wrapCanvasText(ctx, `¥${amount.toLocaleString()}`, textX, qrY + 84, maxTextWidth, 22, 1);
+
+  const footY = h - pad - 16;
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, footY - 6);
+  ctx.lineTo(w - pad, footY - 6);
+  ctx.stroke();
+
+  ctx.font = "14px sans-serif";
+  const dateW = ctx.measureText(issueDate).width;
+  wrapCanvasText(ctx, shipTo, pad, footY, w - pad * 2 - dateW - 8, 16, 1);
+  ctx.fillText(issueDate, w - pad - dateW, footY);
+
+  return canvas;
+}
+
+function openSlipPickLabelsBluetooth(slipId, profileKey) {
+  const profile = BT_LABEL_PROFILES[profileKey] || BT_LABEL_PROFILES.phomemo;
+  const s = allSlips.find(x => x.id === slipId);
+  if (!s) return;
+  const items = s.items || [];
+  if (items.length === 0) {
+    showToast("印刷対象の品目がありません");
+    return;
+  }
+  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  const shipTo = s.shipTo || s.partner || "";
+  document.getElementById("btLabelTitle").textContent = profile.title;
+  const list = document.getElementById("btLabelList");
+  list.innerHTML = "";
+  items.forEach((item) => {
+    const canvas = buildBluetoothLabelCanvas(item, s, shipTo, issueDate, profile.widthMm, profile.heightMm);
+    const dataUrl = canvas.toDataURL("image/png");
+    const card = document.createElement("div");
+    card.className = "bt-label-card";
+    const img = document.createElement("img");
+    img.src = dataUrl;
+    img.alt = item.productName || "検品シール";
+    card.appendChild(img);
+    const shareBtn = document.createElement("button");
+    shareBtn.type = "button";
+    shareBtn.className = "btn-secondary-inline";
+    shareBtn.textContent = "📤 共有する";
+    shareBtn.addEventListener("click", async () => {
+      try {
+        const blob = await (await fetch(dataUrl)).blob();
+        const file = new File([blob], `${(item.productName || "label").replace(/[\\/:*?"<>|]/g, "")}.png`, { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: item.productName || "検品シール" });
+        } else {
+          showToast("この端末では共有機能が使えません。画像を長押しして保存してください");
+        }
+      } catch (err) {
+        // ユーザーが共有をキャンセルした場合などは何もしない
+      }
+    });
+    card.appendChild(shareBtn);
+    list.appendChild(card);
+  });
+  document.getElementById("btLabelOverlay").classList.add("show");
 }
 
 // ===================== Phase2: エクセル一括登録 =====================
@@ -1160,9 +1289,9 @@ function openSlipDetailModal(id) {
 
   const qrBox = document.getElementById("slipQrBox");
   qrBox.innerHTML = "";
-  new QRCode(qrBox, { text: buildSlipUrl(id), width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
+  new QRCode(qrBox, { text: buildSlipUrl(id), width: 64, height: 64, correctLevel: QRCode.CorrectLevel.M });
   const qrLabel = document.createElement("div");
-  qrLabel.style.cssText = "font-size:11px;color:#8a8272;";
+  qrLabel.style.cssText = "font-size:clamp(9px,2.4vw,10.5px);color:#8a8272;margin-top:2px;";
   qrLabel.textContent = s.slipNumber || "";
   qrBox.appendChild(qrLabel);
 
@@ -1227,44 +1356,14 @@ function printSlipSheet(mode) {
   const s = allSlips.find(x => x.id === openSlipId);
   if (!s) return;
   const sheet = document.getElementById("slipPrintSheet");
-  if (mode === "pick") sheet.innerHTML = buildPickSheetHtml(s);
-  else if (mode === "check") sheet.innerHTML = buildCheckSheetHtml(s);
+  if (mode === "check") sheet.innerHTML = buildCheckSheetHtml(s);
   else sheet.innerHTML = buildDeliverySheetHtml(s);
 
   const qrHost = document.getElementById("printSheetQr");
   if (qrHost) {
-    new QRCode(qrHost, { text: buildSlipUrl(s.id), width: 90, height: 90, correctLevel: QRCode.CorrectLevel.M });
+    new QRCode(qrHost, { text: buildSlipUrl(s.id), width: 64, height: 64, correctLevel: QRCode.CorrectLevel.M });
   }
   setTimeout(() => window.print(), 30);
-}
-
-function buildPickSheetHtml(s) {
-  const typeLabel = s.type === "in" ? "入荷" : "出荷";
-  const shipToLabel = s.type === "in" ? "入荷元" : "出荷先";
-  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
-  const rows = (s.items || []).map(item => `
-    <tr>
-      <td>${escapeHtml(item.code || "")}</td>
-      <td>${escapeHtml(item.productName)}</td>
-      <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
-      <td class="checkbox-glyph">☐</td>
-    </tr>
-  `).join("");
-  return `
-    <div class="slip-formal-header">
-      <h2 style="margin:0;">ピック表（${typeLabel}）</h2>
-      ${companyLetterheadHtml()}
-    </div>
-    <table class="slip-formal-table">
-      <tr><th>伝票番号</th><td>${escapeHtml(s.slipNumber || "")}</td><th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td></tr>
-      <tr><th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td><th>作成日</th><td>${issueDate}</td></tr>
-    </table>
-    <table class="slip-detail-table">
-      <thead><tr><th>商品コード</th><th>商品名</th><th>数量</th><th>ピック済</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
-  `;
 }
 
 function buildCheckSheetHtml(s) {
@@ -1283,6 +1382,10 @@ function buildCheckSheetHtml(s) {
   return `
     <div class="slip-formal-header">
       <h2 style="margin:0;">検品表（${typeLabel}）</h2>
+      <div class="slip-formal-header-qr">
+        <div id="printSheetQr"></div>
+        <span class="slip-formal-header-qr-label">${escapeHtml(s.slipNumber || "")}</span>
+      </div>
       ${companyLetterheadHtml()}
     </div>
     <table class="slip-formal-table">
@@ -1293,7 +1396,6 @@ function buildCheckSheetHtml(s) {
       <thead><tr><th>商品コード</th><th>商品名</th><th>数量（予定）</th><th>確認数</th><th>検品済</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
   `;
 }
 
@@ -1320,6 +1422,10 @@ function buildDeliverySheetHtml(s) {
   return `
     <div class="slip-formal-header">
       <h2 style="margin:0;">${typeLabel}</h2>
+      <div class="slip-formal-header-qr">
+        <div id="printSheetQr"></div>
+        <span class="slip-formal-header-qr-label">${escapeHtml(s.slipNumber || "")}</span>
+      </div>
       ${companyLetterheadHtml()}
     </div>
     <table class="slip-formal-table">
@@ -1358,7 +1464,6 @@ function buildDeliverySheetHtml(s) {
       </tfoot>
     </table>
     <p style="font-size:13px;margin-top:12px;">備考：${escapeHtml(s.memo || "")}</p>
-    <div id="printSheetQr" style="margin-top:16px;display:flex;flex-direction:column;align-items:center;"></div>
   `;
 }
 
