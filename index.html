@@ -594,7 +594,7 @@
   .qr-label-text { font-size: 11px; margin-top: 6px; color: var(--ink); line-height: 1.4; }
 
   .qr-bulk-grid-2col { grid-template-columns: repeat(2, 1fr); }
-  .qr-label-detail { display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 12px; }
+  .qr-label-detail { display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 12px; min-width: 0; }
   .qr-label-qr { flex: 0 0 auto; }
   .qr-label-fields { flex: 1; min-width: 0; }
   .qr-label-field { font-size: 11px; line-height: 1.55; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -636,24 +636,26 @@
   .bt-label-hint { font-size: 12px; color: #8a8272; text-align: center; margin: 0 0 14px; line-height: 1.6; }
 
   /* ---------- 印刷用スタイル ---------- */
+  @page { margin: 10mm; }
   @media print {
     body * { visibility: hidden; }
     #qrPrintArea, #qrPrintArea *,
     #qrBulkPrintArea, #qrBulkPrintArea *,
     #slipDetailPrintArea, #slipDetailPrintArea * { visibility: visible; }
     #qrPrintArea, #qrBulkPrintArea, #slipDetailPrintArea {
-      position: absolute; left: 0; top: 0; width: 100%; max-width: none;
+      position: absolute; left: 0; top: 0;
+      width: 100% !important; max-width: none !important;
       box-shadow: none; border: none;
     }
     #qrBulkPrintArea.phomemo-mode {
-      width: 40mm; max-width: 40mm; padding: 0; page: phomemo-label;
+      width: 40mm !important; max-width: 40mm !important; padding: 0; page: phomemo-label;
     }
     .phomemo-label-page { break-inside: avoid; border: none; }
     .phomemo-label-page + .phomemo-label-page { break-before: page; }
     .no-print { display: none !important; }
     .print-sheet { display: block !important; }
     .print-only { display: table-cell !important; }
-    .modal-overlay { background: none !important; position: static !important; }
+    .modal-overlay { background: none !important; position: static !important; display: block !important; padding: 0 !important; }
   }
 
   /* ---------- カメラスキャン (Phase3) ---------- */
