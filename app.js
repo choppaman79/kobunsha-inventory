@@ -663,7 +663,7 @@ function printSlipPickLabels(slipId) {
   document.getElementById("qrBulkTitle").textContent = "検品シール印刷（A4）";
   let seq = 0;
   items.forEach(item => {
-    const amount = Number(item.unitPrice || 0) * item.plannedQty;
+    const unitPrice = Number(item.unitPrice || 0);
     const qty = Math.max(1, Number(item.plannedQty) || 1);
     for (let i = 1; i <= qty; i++) {
       seq++;
@@ -680,7 +680,7 @@ function printSlipPickLabels(slipId) {
         <div class="qr-label-field"><span>発行日</span>${issueDate}</div>
         <div class="qr-label-field"><span>品名</span>${escapeHtml(item.productName || "")}${qty > 1 ? `（${i}/${qty}）` : ""}</div>
         <div class="qr-label-field"><span>伝票№</span>${escapeHtml(s.slipNumber || "")}</div>
-        <div class="qr-label-field"><span>金額</span>¥${amount.toLocaleString()}</div>
+        <div class="qr-label-field"><span>単価</span>¥${unitPrice.toLocaleString()}</div>
       `;
       cell.appendChild(fields);
       grid.appendChild(cell);
@@ -716,7 +716,7 @@ function printSlipPickLabelsPhomemo(slipId) {
   document.getElementById("qrBulkTitle").textContent = "検品シール印刷（Phomemo 40×30mm）";
   let seq = 0;
   items.forEach(item => {
-    const amount = Number(item.unitPrice || 0) * item.plannedQty;
+    const unitPrice = Number(item.unitPrice || 0);
     const qty = Math.max(1, Number(item.plannedQty) || 1);
     for (let i = 1; i <= qty; i++) {
       seq++;
@@ -728,7 +728,7 @@ function printSlipPickLabelsPhomemo(slipId) {
           <div class="phomemo-main">
             <div class="phomemo-name">${escapeHtml(item.productName || "")}${qty > 1 ? `（${i}/${qty}）` : ""}</div>
             <div class="phomemo-line">伝票№ ${escapeHtml(s.slipNumber || "")}</div>
-            <div class="phomemo-amount">¥${amount.toLocaleString()}</div>
+            <div class="phomemo-amount">¥${unitPrice.toLocaleString()}</div>
           </div>
         </div>
         <div class="phomemo-foot">
@@ -828,9 +828,9 @@ function buildBluetoothLabelCanvas(item, s, shipTo, issueDate, widthMm, heightMm
   ctx.font = "16px sans-serif";
   wrapCanvasText(ctx, `伝票№ ${s.slipNumber || ""}`, textX, qrY + 58, maxTextWidth, 18, 1);
 
-  const amount = Number(item.unitPrice || 0) * item.plannedQty;
+  const unitPrice = Number(item.unitPrice || 0);
   ctx.font = "bold 20px sans-serif";
-  wrapCanvasText(ctx, `¥${amount.toLocaleString()}`, textX, qrY + 84, maxTextWidth, 22, 1);
+  wrapCanvasText(ctx, `¥${unitPrice.toLocaleString()}`, textX, qrY + 84, maxTextWidth, 22, 1);
 
   const footY = h - pad - 16;
   ctx.strokeStyle = "#000";
