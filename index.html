@@ -638,24 +638,26 @@
   /* ---------- 印刷用スタイル ---------- */
   @page { margin: 10mm; }
   @media print {
-    body * { visibility: hidden; }
-    #qrPrintArea, #qrPrintArea *,
-    #qrBulkPrintArea, #qrBulkPrintArea *,
-    #slipDetailPrintArea, #slipDetailPrintArea * { visibility: visible; }
-    #qrPrintArea, #qrBulkPrintArea, #slipDetailPrintArea {
-      position: absolute; left: 0; top: 0;
-      width: 100% !important; max-width: none !important;
-      box-shadow: none; border: none;
+    #loginScreen, #appScreen { display: none !important; }
+    .modal-overlay { display: none !important; }
+    .modal-overlay.show {
+      display: block !important; position: static !important;
+      background: none !important; padding: 0 !important;
+    }
+    .modal-overlay.show .modal {
+      width: 100% !important; max-width: 100% !important;
+      max-height: none !important; overflow: visible !important;
+      box-shadow: none !important; border: none !important;
+      margin: 0 !important; padding: 0 !important;
     }
     #qrBulkPrintArea.phomemo-mode {
-      width: 40mm !important; max-width: 40mm !important; padding: 0; page: phomemo-label;
+      width: 40mm !important; max-width: 40mm !important; page: phomemo-label;
     }
     .phomemo-label-page { break-inside: avoid; border: none; }
     .phomemo-label-page + .phomemo-label-page { break-before: page; }
     .no-print { display: none !important; }
     .print-sheet { display: block !important; }
     .print-only { display: table-cell !important; }
-    .modal-overlay { background: none !important; position: static !important; display: block !important; padding: 0 !important; }
   }
 
   /* ---------- カメラスキャン (Phase3) ---------- */
