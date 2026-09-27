@@ -9,6 +9,13 @@ const db = firebase.firestore();
 auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
 
 let allProducts = [];
+let bulkMode = false;
+const bulkSelected = new Set();
+const STOCKTAKES = "inventory_stocktakes";
+const FESTIVALS = "inventory_festival_plans";
+const DISASTER_PRODUCTS = "inventory_disaster_products";
+const DISASTER_MOVEMENTS = "inventory_disaster_movements";
+let stocktakeRecord = null, festivalRecord = null, disasterProducts = [], disasterMovements = [];
 let allMovements = [];
 let allSlips = [];
 let activeCategory = "すべて";
@@ -55,6 +62,7 @@ function init() {
   });
 
   renderCategoryChips();
+  initWorkModules();
 
   document.getElementById("loginBtn").addEventListener("click", handleLogin);
   document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
@@ -258,6 +266,7 @@ function showApp(user) {
   subscribeMovements();
   subscribeSlips();
   subscribeOrders();
+  subscribeDisaster();
   browserNotifyEnabled = (typeof Notification !== "undefined" && Notification.permission === "granted");
   updateNotifyBtnLabel();
 }
@@ -270,6 +279,10 @@ function switchTab(tab) {
   document.getElementById("tabHistory").style.display = tab === "history" ? "block" : "none";
   document.getElementById("tabSlips").style.display = tab === "slips" ? "block" : "none";
   document.getElementById("tabOrders").style.display = tab === "orders" ? "block" : "none";
+  ["stocktake","festival","disaster"].forEach(t => { const panel = document.getElementById("tab" + t[0].toUpperCase() + t.slice(1)); if (panel) panel.style.display = tab === t ? "block" : "none"; });
+  document.querySelectorAll("main > section").forEach(el => el.classList.toggle("print-target", el.style.display !== "none"));
+  if (tab === "stocktake" && $w("stocktakeDate")) loadStocktake();
+  if (tab === "festival" && $w("festivalMonth")) loadFestival();
   if (tab === "history") renderHistoryList();
   if (tab === "slips") renderSlipList("all");
   if (tab === "orders") { renderLowStockAlert(); renderOrderList(getActiveOrderFilter()); }
@@ -284,6 +297,7 @@ function subscribeProducts() {
     allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderSummary();
     renderProductList();
+    renderStocktake(); renderFestival();
     checkLowStockAutoNotify();
     if (document.getElementById("tabOrders").style.display !== "none") renderLowStockAlert();
     handlePendingHash();
@@ -347,6 +361,7 @@ function renderProductList() {
     const row = document.createElement("div");
     row.className = "product-row" + (isLow ? " low" : "");
     row.innerHTML = `
+      ${bulkMode ? `<input type="checkbox" class="bulk-check" data-id="${p.id}" ${bulkSelected.has(p.id) ? "checked" : ""} aria-label="${escapeHtml(p.name)}を選択" style="width:20px;flex-shrink:0;">` : ""}
       <div class="product-main">
         <div class="product-name">
           <span class="cat-tag">${p.category || "未分類"}</span>${escapeHtml(p.name || "")}
@@ -364,6 +379,7 @@ function renderProductList() {
     listEl.appendChild(row);
   });
 
+  listEl.querySelectorAll(".bulk-check").forEach(box => box.addEventListener("change", () => { if (box.checked) bulkSelected.add(box.dataset.id); else bulkSelected.delete(box.dataset.id); updateBulkButton(); }));
   listEl.querySelectorAll(".btn-move").forEach(btn => {
     btn.addEventListener("click", () => openMoveModal(btn.dataset.id));
   });
@@ -2377,6 +2393,199 @@ function showToast(msg) {
   el.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+// ===================== 試作運用：棚卸し・月始祭・防災備品 =====================
+const $w = id => document.getElementById(id);
+const integer = value => Number.isInteger(Number(value)) && Number(value) >= 0;
+const safe = value => escapeHtml(String(value ?? ""));
+const stamp = () => firebase.firestore.FieldValue.serverTimestamp();
+const dateLabel = value => value && value.toDate ? formatDateTime(value.toDate()) : "―";
+const currentMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,"0")}`; };
+function initWorkModules() {
+  // HTML がまだ旧版でも、ログインボタンの登録を止めない。
+  if (!$w("stocktakeDate")) return;
+  $w("stocktakeDate").value = todayDateInputValue();
+  $w("festivalMonth").value = currentMonth();
+  $w("bulkModeBtn").onclick = () => { bulkMode = !bulkMode; bulkSelected.clear(); updateBulkButton(); renderProductList(); };
+  $w("bulkDeleteBtn").onclick = bulkDeleteProducts;
+  $w("stocktakeLoadBtn").onclick = loadStocktake;
+  $w("stocktakeDate").onchange = () => { stocktakeRecord=null; renderStocktake(); loadStocktake(); };
+  $w("stocktakeSaveBtn").onclick = saveStocktake;
+  $w("stocktakeApplyBtn").onclick = applyStocktake;
+  $w("stocktakePrintBtn").onclick = () => printWork("stocktake");
+  $w("festivalLoadBtn").onclick = loadFestival;
+  $w("festivalMonth").onchange = () => { festivalRecord=null; renderFestival(); loadFestival(); };
+  $w("festivalSaveBtn").onclick = saveFestival;
+  $w("festivalCommitBtn").onclick = () => changeFestival(true);
+  $w("festivalReturnBtn").onclick = () => changeFestival(false);
+  $w("festivalPrintBtn").onclick = () => printWork("festival");
+  $w("disasterAddBtn").onclick = addDisasterProduct;
+  $w("disasterMoveBtn").onclick = recordDisasterMovement;
+}
+function updateBulkButton() {
+  $w("bulkModeBtn").textContent = bulkMode ? "選択を終了" : "商品を選んで一括削除";
+  $w("bulkDeleteBtn").style.display = bulkMode ? "inline-block" : "none";
+  $w("bulkDeleteBtn").textContent = `選択した商品を削除（${bulkSelected.size}件）`;
+}
+async function bulkDeleteProducts() {
+  const ids = [...bulkSelected].filter(id => allProducts.some(p => p.id === id));
+  if (!ids.length) return showToast("商品を選択してください");
+  const typed = prompt(`${ids.length}件の商品詳細を削除します。伝票・入出庫の履歴は残ります。確認のため件数「${ids.length}」を入力してください。`);
+  if (typed !== String(ids.length)) return;
+  const btn = $w("bulkDeleteBtn"); btn.disabled = true;
+  try {
+    // Firestore のバッチ上限を考慮。途中失敗時は残りを選択状態で保持する。
+    for (let i=0; i<ids.length; i+=400) {
+      const batch = db.batch();
+      ids.slice(i,i+400).forEach(id => batch.delete(db.collection(COLLECTION).doc(id)));
+      await batch.commit();
+      ids.slice(i,i+400).forEach(id => bulkSelected.delete(id));
+    }
+    showToast(`${ids.length}件を削除しました`);
+  } catch (err) { console.error(err); showToast("削除が途中で止まりました。残りの選択を確認してください"); }
+  finally { btn.disabled = false; updateBulkButton(); renderProductList(); }
+}
+function printWork(tab) { switchTab(tab); document.body.classList.add("work-print"); setTimeout(() => window.print(), 150); }
+window.addEventListener("afterprint", () => document.body.classList.remove("work-print"));
+const stocktakeKey = () => $w("stocktakeDate").value;
+function renderStocktake() {
+  const body = $w("stocktakeRows"); if (!body) return;
+  const saved = new Map((stocktakeRecord?.items || []).map(item => [item.productId,item]));
+  const products = stocktakeRecord?.status === "applied" ? (stocktakeRecord.items || []) : allProducts.map(p => ({
+    productId:p.id, name:p.name, code:p.code, category:p.category, unit:p.unit,
+    bookQty:saved.has(p.id) ? saved.get(p.id).bookQty : Number(p.currentStock || 0),
+    actualQty:saved.get(p.id)?.actualQty ?? null, note:saved.get(p.id)?.note || ""
+  }));
+  body.innerHTML = products.map(item => `<tr data-id="${safe(item.productId)}"><td>${safe(item.code)}</td><td>${safe(item.name)}</td><td>${safe(item.category)}</td><td>${safe(item.bookQty)} ${safe(item.unit)}</td><td><input class="actual" type="number" min="0" step="1" value="${item.actualQty ?? ""}" ${stocktakeRecord?.status === "applied" ? "disabled" : ""}></td><td class="difference">${item.actualQty === null ? "―" : Number(item.actualQty)-Number(item.bookQty)}</td><td><input class="note" type="text" value="${safe(item.note)}" ${stocktakeRecord?.status === "applied" ? "disabled" : ""}></td></tr>`).join("");
+  body.querySelectorAll(".actual").forEach(input => input.oninput = () => { const book=Number(input.closest("tr").children[3].textContent.split(" ")[0]); input.closest("tr").querySelector(".difference").textContent=input.value==="" ? "―" : Number(input.value)-book; });
+  $w("stocktakeStatus").textContent = stocktakeRecord?.status === "applied" ? "確定済み（在庫反映済み）" : stocktakeRecord ? "入力保存済み・未確定" : "新規の棚卸し表";
+  $w("stocktakeSaveBtn").disabled = $w("stocktakeApplyBtn").disabled = stocktakeRecord?.status === "applied";
+}
+async function loadStocktake() {
+  const key=stocktakeKey(); if (!key) return showToast("棚卸日を選択してください");
+  try { const doc=await db.collection(STOCKTAKES).doc(key).get(); stocktakeRecord=doc.exists?doc.data():null; renderStocktake(); }
+  catch(err) { console.error(err); showToast("棚卸し表を開けませんでした"); }
+}
+function collectStocktake() {
+  const previous=new Map((stocktakeRecord?.items || []).map(i=>[i.productId,i]));
+  return [...$w("stocktakeRows").querySelectorAll("tr")].map(row => {
+    const id=row.dataset.id, p=allProducts.find(x=>x.id===id), old=previous.get(id);
+    const actual=row.querySelector(".actual").value;
+    if (actual!=="" && !integer(actual)) throw Error("実数は0以上の整数で入力してください");
+    return {productId:id, name:p?.name||old?.name||"", code:p?.code||old?.code||"", category:p?.category||old?.category||"", unit:p?.unit||old?.unit||"", bookQty:old ? Number(old.bookQty) : Number(p.currentStock||0), actualQty:actual===""?null:Number(actual), note:row.querySelector(".note").value.trim()};
+  });
+}
+async function saveStocktake() {
+  if (!stocktakeKey() || stocktakeRecord?.status === "applied") return;
+  try {
+    const items=collectStocktake();
+    await db.collection(STOCKTAKES).doc(stocktakeKey()).set({date:stocktakeKey(), items, status:"draft", updatedBy:currentStaffName, updatedAt:stamp()});
+    stocktakeRecord={items,status:"draft"}; renderStocktake(); showToast("棚卸し表を保存しました");
+  } catch(err) { console.error(err); showToast(err.message||"保存に失敗しました"); }
+}
+async function applyStocktake() {
+  if (!stocktakeKey() || stocktakeRecord?.status === "applied") return;
+  let items; try { items=collectStocktake(); } catch(err) { return showToast(err.message); }
+  if (!items.length || items.some(i=>i.actualQty===null)) return showToast("すべての商品の実数を入力してください");
+  if (items.length>180) return showToast("一度に確定できる商品は180件までです。分類を分けて運用してください");
+  if (!confirm(`${items.length}件の棚卸し差異を在庫に反映します。確定後は編集できません。よろしいですか？`)) return;
+  const ref=db.collection(STOCKTAKES).doc(stocktakeKey()), btn=$w("stocktakeApplyBtn"); btn.disabled=true;
+  try {
+    await db.runTransaction(async tx => {
+      const prior=await tx.get(ref); if (prior.exists && prior.data().status==="applied") throw Error("既に確定済みです");
+      const docs=await Promise.all(items.map(i=>tx.get(db.collection(COLLECTION).doc(i.productId))));
+      docs.forEach((doc,index) => { if (!doc.exists || Number(doc.data().currentStock||0)!==items[index].bookQty) throw Error("在庫が変更されています。棚卸し表を確認してください"); });
+      items.forEach((item,index) => { const diff=item.actualQty-item.bookQty; if (!diff) return;
+        tx.update(docs[index].ref,{currentStock:item.actualQty});
+        tx.set(db.collection(MOVEMENTS_COLLECTION).doc(),{productId:item.productId,productName:item.name,unit:item.unit,type:diff>0?"in":"out",qty:Math.abs(diff),note:`棚卸し ${stocktakeKey()}：${item.note||"差異調整"}`,staff:currentStaffName,createdAt:stamp()});
+      });
+      tx.set(ref,{date:stocktakeKey(),items,status:"applied",appliedBy:currentStaffName,appliedAt:stamp()});
+    });
+    stocktakeRecord={items,status:"applied"}; renderStocktake(); showToast("棚卸しを在庫に反映しました");
+  } catch(err) { console.error(err); showToast(err.message||"棚卸しの反映に失敗しました"); } finally { btn.disabled=stocktakeRecord?.status==="applied"; }
+}
+const festivalKey=()=>$w("festivalMonth").value;
+function renderFestival() {
+  const body=$w("festivalRows"); if (!body) return;
+  const saved=new Map((festivalRecord?.items||[]).map(i=>[i.productId,i]));
+  const rows=festivalRecord?.status==="prepared" ? festivalRecord.items : allProducts.map(p=>({productId:p.id,name:p.name,code:p.code,unit:p.unit,qty:saved.get(p.id)?.qty||0}));
+  body.innerHTML=rows.map(i=>{ const p=allProducts.find(x=>x.id===i.productId), stock=Number(p?.currentStock||0); return `<tr data-id="${safe(i.productId)}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${stock} ${safe(i.unit)}</td><td><input type="number" class="qty" min="0" step="1" value="${i.qty}" ${festivalRecord?.status==="prepared"?"disabled":""}></td><td class="remaining">${festivalRecord?.status==="prepared"?"準備済":stock-Number(i.qty)}</td></tr>`; }).join("");
+  body.querySelectorAll(".qty").forEach(input=>input.oninput=()=>{ const row=input.closest("tr"), stock=Number(allProducts.find(p=>p.id===row.dataset.id)?.currentStock||0); row.querySelector(".remaining").textContent=integer(input.value)?stock-Number(input.value):"―"; });
+  $w("festivalStatus").textContent=festivalRecord?.status==="prepared"?"準備確定済み（在庫から出庫済み）":festivalRecord?"準備リスト保存済み・未確定":"新規の準備リスト";
+  $w("festivalSaveBtn").disabled=$w("festivalCommitBtn").disabled=festivalRecord?.status==="prepared";
+  $w("festivalReturnBtn").disabled=festivalRecord?.status!=="prepared";
+}
+async function loadFestival() {
+  const key=festivalKey(); if (!/^\d{4}-\d{2}$/.test(key)) return showToast("対象月を選択してください");
+  try { const doc=await db.collection(FESTIVALS).doc(key).get(); festivalRecord=doc.exists?doc.data():null; renderFestival(); }
+  catch(err) { console.error(err); showToast("準備リストを開けませんでした"); }
+}
+function collectFestival() {
+  return [...$w("festivalRows").querySelectorAll("tr")].map(row=>{ const qty=row.querySelector(".qty").value; if (!integer(qty)) throw Error("準備数量は0以上の整数で入力してください"); const p=allProducts.find(x=>x.id===row.dataset.id); return {productId:row.dataset.id,name:p?.name||"",code:p?.code||"",unit:p?.unit||"",qty:Number(qty)}; }).filter(i=>i.qty>0);
+}
+async function saveFestival() {
+  if (!festivalKey() || festivalRecord?.status==="prepared") return;
+  try { const items=collectFestival(); await db.collection(FESTIVALS).doc(festivalKey()).set({month:festivalKey(),items,status:"draft",updatedBy:currentStaffName,updatedAt:stamp()}); festivalRecord={items,status:"draft"}; renderFestival(); showToast("準備リストを保存しました"); }
+  catch(err) { console.error(err); showToast(err.message||"保存に失敗しました"); }
+}
+async function changeFestival(prepare) {
+  const month=festivalKey(); if (!month) return;
+  let items; try { items=prepare?collectFestival():festivalRecord?.items; } catch(err) { return showToast(err.message); }
+  if (!items?.length) return showToast("準備する商品を入力してください");
+  if (items.length>180) return showToast("一度に確定できる商品は180件までです");
+  if (!confirm(prepare?`${month}の準備数量を通常在庫から出庫します。よろしいですか？`:`${month}の準備分を通常在庫に戻します。よろしいですか？`)) return;
+  const ref=db.collection(FESTIVALS).doc(month), btn=prepare?$w("festivalCommitBtn"):$w("festivalReturnBtn"); btn.disabled=true;
+  try {
+    await db.runTransaction(async tx=>{
+      const plan=await tx.get(ref), status=plan.exists?plan.data().status:"draft";
+      if (prepare && status==="prepared" || !prepare && status!=="prepared") throw Error("準備状態が変更されています。開き直してください");
+      const actualItems=prepare?items:plan.data().items;
+      const docs=await Promise.all(actualItems.map(i=>tx.get(db.collection(COLLECTION).doc(i.productId))));
+      docs.forEach((doc,index)=>{ if (!doc.exists || prepare && Number(doc.data().currentStock||0)<actualItems[index].qty) throw Error(`在庫不足または商品削除：${actualItems[index].name}`); });
+      actualItems.forEach((item,index)=>{
+        tx.update(docs[index].ref,{currentStock:Number(docs[index].data().currentStock||0)+(prepare?-item.qty:item.qty)});
+        tx.set(db.collection(MOVEMENTS_COLLECTION).doc(),{productId:item.productId,productName:item.name,unit:item.unit,type:prepare?"out":"in",qty:item.qty,note:`月始祭 ${month} ${prepare?"準備":"準備取消"}`,staff:currentStaffName,createdAt:stamp()});
+      });
+      tx.set(ref,{month,items:actualItems,status:prepare?"prepared":"draft",updatedBy:currentStaffName,updatedAt:stamp()});
+      items=actualItems;
+    });
+    festivalRecord={items,status:prepare?"prepared":"draft"}; renderFestival(); showToast(prepare?"準備分を出庫しました":"準備分を在庫に戻しました");
+  } catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); } finally { btn.disabled=false; renderFestival(); }
+}
+function subscribeDisaster() {
+  db.collection(DISASTER_PRODUCTS).orderBy("name").onSnapshot(s=>{disasterProducts=s.docs.map(d=>({id:d.id,...d.data()}));renderDisaster();},err=>{console.error(err);showToast("防災備品を取得できませんでした");});
+  db.collection(DISASTER_MOVEMENTS).orderBy("createdAt","desc").limit(200).onSnapshot(s=>{disasterMovements=s.docs.map(d=>({id:d.id,...d.data()}));renderDisaster();},err=>{console.error(err);showToast("防災履歴を取得できませんでした");});
+}
+function renderDisaster() {
+  if (!$w("disasterProduct")) return;
+  const selected=$w("disasterProduct").value;
+  $w("disasterProduct").innerHTML='<option value="">備品を選択</option>'+disasterProducts.map(p=>`<option value="${safe(p.id)}">${safe(p.name)}</option>`).join("");
+  $w("disasterProduct").value=selected;
+  $w("disasterProducts").innerHTML=disasterProducts.map(p=>`<tr><td>${safe(p.code)}</td><td>${safe(p.name)}</td><td>${safe(p.currentStock)} ${safe(p.unit)}</td></tr>`).join("");
+  $w("disasterHistory").innerHTML=disasterMovements.map(m=>`<tr><td>${safe(dateLabel(m.createdAt))}</td><td>${safe(m.productName)}</td><td>${m.type==="in"?"入庫":"出荷"}</td><td>${safe(m.qty)}</td><td>${safe(m.destination)}</td><td>${m.type==="out" ? m.shippedAt ? `発送済 ${safe(dateLabel(m.shippedAt))}` : `<button class="btn-secondary-inline shipped-btn" data-id="${safe(m.id)}">発送済みにする</button>` : "―"}</td></tr>`).join("");
+  $w("disasterHistory").querySelectorAll(".shipped-btn").forEach(b=>b.onclick=()=>markDisasterShipped(b.dataset.id));
+}
+async function addDisasterProduct() {
+  const name=$w("disasterName").value.trim(), code=$w("disasterCode").value.trim(), unit=$w("disasterUnit").value.trim()||"個", initial=$w("disasterInitial").value;
+  if (!name || !integer(initial)) return showToast("備品名と0以上の初期在庫を入力してください");
+  try { await db.collection(DISASTER_PRODUCTS).add({name,code,unit,currentStock:Number(initial),createdAt:stamp()}); $w("disasterName").value=$w("disasterCode").value=""; $w("disasterInitial").value="0"; showToast("防災備品を登録しました"); }
+  catch(err) { console.error(err); showToast("登録に失敗しました"); }
+}
+async function recordDisasterMovement() {
+  const id=$w("disasterProduct").value, type=$w("disasterType").value, qty=Number($w("disasterQty").value), destination=$w("disasterDestination").value.trim();
+  if (!id || !Number.isInteger(qty) || qty<1) return showToast("備品と1以上の数量を指定してください");
+  if (type==="out" && !destination) return showToast("出荷先を入力してください");
+  const ref=db.collection(DISASTER_PRODUCTS).doc(id), move=db.collection(DISASTER_MOVEMENTS).doc();
+  try { await db.runTransaction(async tx=>{ const doc=await tx.get(ref); if (!doc.exists) throw Error("備品が見つかりません"); const n=Number(doc.data().currentStock||0)+(type==="in"?qty:-qty); if(n<0) throw Error("在庫が不足しています"); tx.update(ref,{currentStock:n}); tx.set(move,{productId:id,productName:doc.data().name,type,qty,destination,staff:currentStaffName,createdAt:stamp(),shipmentStatus:type==="out"?"pending":null}); });
+    $w("disasterQty").value="1"; $w("disasterDestination").value=""; showToast("入出荷を記録しました");
+  } catch(err) { console.error(err); showToast(err.message||"記録に失敗しました"); }
+}
+async function markDisasterShipped(id) {
+  if (!confirm("この出荷を発送済みにしますか？")) return;
+  const ref=db.collection(DISASTER_MOVEMENTS).doc(id);
+  try { await db.runTransaction(async tx=>{ const doc=await tx.get(ref); if(!doc.exists||doc.data().type!=="out"||doc.data().shippedAt) throw Error("既に処理されています"); tx.update(ref,{shipmentStatus:"shipped",shippedAt:stamp(),shippedBy:currentStaffName}); }); showToast("発送済みを記録しました"); }
+  catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
 init();
