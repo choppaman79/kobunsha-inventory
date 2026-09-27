@@ -645,31 +645,43 @@ function openQrBulkPrint() {
 function printSlipReceivingLabels(slipId) {
   const s = allSlips.find(x => x.id === slipId);
   if (!s) return;
-  const items = s.items || [];
-  if (items.length === 0) {
+  // 同じ商品が伝票内で複数行に分かれていても、商品ごとにまとめる。
+  const groups = new Map();
+  (s.items || []).forEach(item => {
+    const qty = Number(item.checkedQty ?? item.plannedQty);
+    if (!item.productId || !Number.isInteger(qty) || qty <= 0) return;
+    groups.set(item.productId, (groups.get(item.productId) || 0) + qty);
+  });
+  if (groups.size === 0) {
     showToast("印刷対象の品目がありません");
     return;
   }
   const grid = document.getElementById("qrBulkGrid");
-  grid.className = "qr-bulk-grid";
+  grid.className = "receiving-label-list";
   grid.innerHTML = "";
   document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
-  document.getElementById("qrBulkTitle").textContent = "入荷QRラベル印刷";
-  items.forEach(item => {
-    // 実際に入荷（検品）した数量ぶんラベルを発行する
-    const qty = Math.max(1, Number(item.checkedQty ?? item.plannedQty) || 1);
-    for (let i = 1; i <= qty; i++) {
+  document.getElementById("qrBulkTitle").textContent = "入荷：商品QRラベル印刷";
+  [...groups].forEach(([productId, qty], index) => {
+    const group = document.createElement("section");
+    group.className = "receiving-group";
+    if (groups.size > 1) {
+      const heading = document.createElement("div");
+      heading.className = "receiving-group-title";
+      heading.textContent = `商品 ${index + 1} / ${groups.size}　${qty}枚`;
+      group.appendChild(heading);
+    }
+    const labels = document.createElement("div");
+    labels.className = "qr-bulk-grid";
+    for (let i = 0; i < qty; i++) {
       const cell = document.createElement("div");
-      cell.className = "qr-label";
+      cell.className = "qr-label receiving-qr-only";
       const qrBox = document.createElement("div");
       cell.appendChild(qrBox);
-      const label = document.createElement("div");
-      label.className = "qr-label-text";
-      label.innerHTML = `${escapeHtml(item.productName || "")}${item.code ? "<br>" + escapeHtml(item.code) : ""}${qty > 1 ? `<br>(${i}/${qty})` : ""}`;
-      cell.appendChild(label);
-      grid.appendChild(cell);
-      new QRCode(qrBox, { text: buildProductUrl(item.productId), width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
+      labels.appendChild(cell);
+      new QRCode(qrBox, { text: buildProductUrl(productId), width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
     }
+    group.appendChild(labels);
+    grid.appendChild(group);
   });
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
@@ -2772,5 +2784,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-09-27-label-v3";
+window.KOBUNSHA_APP_VERSION = "2026-09-27-receiving-v4";
 init();
