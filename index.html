@@ -714,12 +714,22 @@
   .work-status { margin:10px 0; font-weight:600; }
   .work-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
   .work-grid .btn-primary { max-width:250px; }
-  @media print { body.work-print .modal-overlay.show { display:none !important; }
-    body.work-print #appScreen { display:block !important; }
-    .tabs,.topbar,.work-actions,.work-panel .toolbar button,.work-grid,#disasterProducts,#disasterHistory { display:none !important; }
-    #appScreen,main,.work-panel { display:block !important; padding:0 !important; margin:0 !important; border:0 !important; }
-    main > section:not(.print-target) { display:none !important; }
-    .work-table input { border:0; background:transparent; } .work-table { min-width:0; } }
+  @media print {
+    body.work-print .modal-overlay.show { display:none !important; }
+    body.work-print #appScreen,
+    body.work-print main,
+    body.work-print .work-panel { display:block !important; padding:0 !important; margin:0 !important; border:0 !important; }
+    body.work-print .tabs,
+    body.work-print .topbar,
+    body.work-print .work-actions,
+    body.work-print .work-panel .toolbar button,
+    body.work-print .work-grid,
+    body.work-print #disasterProducts,
+    body.work-print #disasterHistory,
+    body.work-print main > section:not(.print-target) { display:none !important; }
+    body.work-print .work-table input { border:0; background:transparent; }
+    body.work-print .work-table { min-width:0; }
+  }
   @media (max-width: 480px) { .work-grid { grid-template-columns:1fr; }
     .product-row { flex-wrap: wrap; }
     .edit-link { margin-left: 0; }
