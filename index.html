@@ -592,6 +592,9 @@
   }
   .qr-label { text-align: center; border: 1px dashed var(--line); border-radius: 8px; padding: 10px; }
   .qr-label-text { font-size: 11px; margin-top: 6px; color: var(--ink); line-height: 1.4; }
+  .receiving-group { margin-bottom: 18px; }
+  .receiving-group-title { font-size: 13px; font-weight: 700; color: var(--indigo-deep); margin: 0 0 8px; break-after: avoid; }
+  .receiving-qr-only { display: flex; align-items: center; justify-content: center; min-height: 136px; break-inside: avoid; }
 
   .qr-bulk-grid-2col { grid-template-columns: repeat(2, 1fr); }
   .qr-label-detail { display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 12px; min-width: 0; }
@@ -1300,9 +1303,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=20260927-label-v3"></script>
+<script src="app.js?v=20260927-receiving-v4"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-09-27-label-v3") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-09-27-receiving-v4") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
