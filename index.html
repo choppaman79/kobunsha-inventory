@@ -640,6 +640,9 @@
   @media print {
     #loginScreen, #appScreen { display: none !important; }
     .modal-overlay { display: none !important; }
+    body.label-print .modal-overlay.show:not(#qrBulkOverlay) { display: none !important; }
+    body.slip-print .modal-overlay.show:not(#slipDetailOverlay) { display: none !important; }
+    body.label-print #slipPrintSheet { display: none !important; }
     .modal-overlay.show {
       display: block !important; position: static !important;
       background: none !important; padding: 0 !important;
@@ -1287,9 +1290,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=20260927-select-v2"></script>
+<script src="app.js?v=20260927-label-v3"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-09-27-select-v2") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-09-27-label-v3") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
