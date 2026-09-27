@@ -758,7 +758,7 @@
       <button class="tab-btn" data-tab="slips">伝票・検品</button>
       <button class="tab-btn" data-tab="stocktake">棚卸し</button>
       <button class="tab-btn" data-tab="festival">月始祭準備</button>
-      <button class="tab-btn" data-tab="disaster">防災備品</button>
+      <button class="tab-btn" data-tab="disaster">防災用品</button>
       <button class="tab-btn" data-tab="orders">発注管理<span id="orderLowBadge" class="tab-badge" style="display:none;"></span></button>
     </div>
 
@@ -773,6 +773,7 @@
         <button class="btn-secondary-inline" id="scanGlobalBtn">📷 スキャン</button>
         <button class="btn-secondary-inline" id="qrBulkPrintBtn">QRラベル印刷</button>
         <button class="btn-secondary-inline" id="bulkModeBtn">商品を選んで一括削除</button>
+        <button class="btn-secondary-inline" id="bulkSelectAllBtn" style="display:none;">表示中をすべて選択</button>
         <button class="btn-danger" id="bulkDeleteBtn" style="display:none;">選択した商品を削除</button>
         <button class="btn-add" id="openAddBtn">＋ 商品を登録</button>
       </div>
@@ -831,6 +832,8 @@
     <section id="tabHistory" style="display:none;">
       <div class="toolbar">
         <input type="text" id="historySearchBox" placeholder="商品名で検索">
+        <button class="btn-secondary-inline" id="historySelectAllBtn">表示中をすべて選択</button>
+        <button class="btn-danger" id="historyDeleteBtn">選択した履歴を削除（0件）</button>
       </div>
       <div class="history-list" id="historyList"></div>
       <div class="empty-state" id="historyEmptyState" style="display:none;">履歴がありません</div>
@@ -852,36 +855,37 @@
         <button class="btn-add" id="slipCreateOutBtn">＋ 出荷伝票を作成</button>
         <button class="btn-add btn-add-in" id="slipCreateInBtn">＋ 入荷伝票を作成</button>
       </div>
+      <div class="toolbar"><button class="btn-secondary-inline" id="slipSelectAllBtn">表示中をすべて選択</button><button class="btn-danger" id="slipDeleteBtn">選択した伝票を削除（0件）</button></div>
       <div class="slip-list" id="slipList"></div>
       <div class="empty-state" id="slipEmptyState" style="display:none;">伝票がありません</div>
     </section>
 
     <section id="tabStocktake" class="work-panel" style="display:none;">
       <h2>棚卸し表</h2>
-      <p>帳簿数は現在庫から取得します。実数を入力して保存し、「差異を在庫に反映」で確定します。</p>
+      <p>帳簿合計は通常在庫から取得します。翌月の月始祭準備分を別に数え、倉庫実数と準備分実数の合計を在庫として確定します。</p>
       <div class="toolbar"><label>棚卸日 <input type="date" id="stocktakeDate"></label><div class="spacer"></div>
         <button class="btn-secondary-inline" id="stocktakeLoadBtn">この日の表を開く</button>
         <button class="btn-secondary-inline" id="stocktakePrintBtn">印刷</button></div>
       <div id="stocktakeStatus" class="work-status"></div>
-      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>帳簿数</th><th>実数</th><th>差異</th><th>備考</th></tr></thead><tbody id="stocktakeRows"></tbody></table></div>
+      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>翌月準備（帳簿）</th><th>倉庫（帳簿）</th><th>帳簿合計</th><th>準備分実数</th><th>倉庫実数</th><th>実数合計</th><th>差異</th><th>備考</th></tr></thead><tbody id="stocktakeRows"></tbody></table></div>
       <div class="work-actions"><button class="btn-secondary-inline" id="stocktakeSaveBtn">入力内容を保存</button><button class="btn-primary" id="stocktakeApplyBtn">差異を在庫に反映</button></div>
     </section>
 
     <section id="tabFestival" class="work-panel" style="display:none;">
-      <h2>月始祭準備リスト</h2><p>月別に準備数を保存します。確定すると通常在庫から出庫し、戻す場合は在庫に戻します。</p>
+      <h2>月始祭準備・頒布集計</h2><p>翌月分を事前に準備します。準備確定後も準備分は総在庫に含まれます。み祭り後に戻り数などを入力して売上数を確定します。</p>
       <div class="toolbar"><label>対象月 <input type="month" id="festivalMonth"></label><div class="spacer"></div>
         <button class="btn-secondary-inline" id="festivalLoadBtn">この月を開く</button><button class="btn-secondary-inline" id="festivalPrintBtn">印刷</button></div>
       <div id="festivalStatus" class="work-status"></div>
-      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>準備数量</th><th>準備後残数</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
-      <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">リストを保存</button><button class="btn-primary" id="festivalCommitBtn">準備確定・出庫</button><button class="btn-secondary-inline" id="festivalReturnBtn">準備を取り消して在庫に戻す</button></div>
+      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>総在庫</th><th>準備（S1出）</th><th>追加</th><th>直送</th><th>戻り</th><th>乱丁</th><th>見本</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
+      <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">入力を保存</button><button class="btn-primary" id="festivalCommitBtn">準備を確定</button><button class="btn-secondary-inline" id="festivalReturnBtn">準備を取り消す</button><button class="btn-primary" id="festivalSettleBtn">頒布を精算・在庫反映</button></div>
     </section>
 
     <section id="tabDisaster" class="work-panel" style="display:none;">
-      <h2>防災備品</h2><p>通常の商品在庫とは別に管理します。出荷を記録した後で発送済みに変更できます。</p>
-      <div class="work-grid"><div><label>備品名</label><input type="text" id="disasterName" placeholder="例：保存水"><label>品番</label><input type="text" id="disasterCode"><label>単位</label><input type="text" id="disasterUnit" value="個"><label>初期在庫</label><input type="number" id="disasterInitial" min="0" value="0" step="1"><button class="btn-primary" id="disasterAddBtn">備品を登録</button></div>
-      <div><label>対象備品</label><select id="disasterProduct"></select><label>区分</label><select id="disasterType"><option value="in">入庫</option><option value="out">出荷</option></select><label>数量</label><input type="number" id="disasterQty" min="1" value="1" step="1"><label>発送先・備考</label><input type="text" id="disasterDestination"><button class="btn-primary" id="disasterMoveBtn">入出荷を記録</button></div></div>
-      <h3>防災備品の在庫</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>品番</th><th>備品名</th><th>在庫数</th></tr></thead><tbody id="disasterProducts"></tbody></table></div>
-      <h3>入出荷・発送履歴</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>日時</th><th>備品</th><th>区分</th><th>数量</th><th>発送先・備考</th><th>発送状況</th></tr></thead><tbody id="disasterHistory"></tbody></table></div>
+      <h2>防災用品</h2><p>通常の商品在庫とは別に管理します。出荷を記録した後で発送済みに変更できます。</p>
+      <div class="work-grid"><div><label>用品名</label><input type="text" id="disasterName" placeholder="例：保存水"><label>品番</label><input type="text" id="disasterCode"><label>単位</label><input type="text" id="disasterUnit" value="個"><label>初期在庫</label><input type="number" id="disasterInitial" min="0" value="0" step="1"><button class="btn-primary" id="disasterAddBtn">用品を登録</button></div>
+      <div><label>対象用品</label><select id="disasterProduct"></select><label>区分</label><select id="disasterType"><option value="in">入庫</option><option value="out">出荷</option></select><label>数量</label><input type="number" id="disasterQty" min="1" value="1" step="1"><label>発送先・備考</label><input type="text" id="disasterDestination"><button class="btn-primary" id="disasterMoveBtn">入出荷を記録</button></div></div>
+      <h3>防災用品の在庫</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>品番</th><th>用品名</th><th>在庫数</th></tr></thead><tbody id="disasterProducts"></tbody></table></div>
+      <h3>入出荷・発送履歴</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>日時</th><th>用品</th><th>区分</th><th>数量</th><th>発送先・備考</th><th>発送状況</th></tr></thead><tbody id="disasterHistory"></tbody></table></div>
     </section>
 
     <!-- ---- 発注管理タブ (Phase4) ---- -->
