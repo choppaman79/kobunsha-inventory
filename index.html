@@ -695,7 +695,29 @@
     background: #fff;
   }
 
-  @media (max-width: 480px) {
+  .work-panel { background:#fff; padding:20px; border:1px solid var(--line); border-radius:10px; }
+  .work-panel h2 { margin:0 0 8px; font-size:20px; }
+  .work-panel p { color:#6b6357; font-size:13px; }
+  .work-panel label { font-size:13px; }
+  .work-panel input[type=month], .work-panel input[type=date] { padding:8px; border:1px solid var(--line); border-radius:6px; }
+  .work-scroll { overflow-x:auto; }
+  .work-table { border-collapse:collapse; width:100%; min-width:650px; font-size:13px; }
+  .work-table th,.work-table td { border:1px solid var(--line); padding:7px; text-align:left; }
+  .work-table th { background:#eee9df; }
+  .work-table input { margin:0; min-width:72px; padding:6px; }
+  .work-table input[type=number] { width:95px; }
+  .work-actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+  .work-actions .btn-primary { width:auto; }
+  .work-status { margin:10px 0; font-weight:600; }
+  .work-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
+  .work-grid .btn-primary { max-width:250px; }
+  @media print { body.work-print .modal-overlay.show { display:none !important; }
+    body.work-print #appScreen { display:block !important; }
+    .tabs,.topbar,.work-actions,.work-panel .toolbar button,.work-grid,#disasterProducts,#disasterHistory { display:none !important; }
+    #appScreen,main,.work-panel { display:block !important; padding:0 !important; margin:0 !important; border:0 !important; }
+    main > section:not(.print-target) { display:none !important; }
+    .work-table input { border:0; background:transparent; } .work-table { min-width:0; } }
+  @media (max-width: 480px) { .work-grid { grid-template-columns:1fr; }
     .product-row { flex-wrap: wrap; }
     .edit-link { margin-left: 0; }
     .qr-bulk-grid { grid-template-columns: repeat(2, 1fr); }
@@ -734,6 +756,9 @@
       <button class="tab-btn" data-tab="register">商品登録</button>
       <button class="tab-btn" data-tab="history">入出庫履歴</button>
       <button class="tab-btn" data-tab="slips">伝票・検品</button>
+      <button class="tab-btn" data-tab="stocktake">棚卸し</button>
+      <button class="tab-btn" data-tab="festival">月始祭準備</button>
+      <button class="tab-btn" data-tab="disaster">防災備品</button>
       <button class="tab-btn" data-tab="orders">発注管理<span id="orderLowBadge" class="tab-badge" style="display:none;"></span></button>
     </div>
 
@@ -747,6 +772,8 @@
         <div class="spacer"></div>
         <button class="btn-secondary-inline" id="scanGlobalBtn">📷 スキャン</button>
         <button class="btn-secondary-inline" id="qrBulkPrintBtn">QRラベル印刷</button>
+        <button class="btn-secondary-inline" id="bulkModeBtn">商品を選んで一括削除</button>
+        <button class="btn-danger" id="bulkDeleteBtn" style="display:none;">選択した商品を削除</button>
         <button class="btn-add" id="openAddBtn">＋ 商品を登録</button>
       </div>
       <div class="chip-group" id="categoryChips"></div>
@@ -827,6 +854,34 @@
       </div>
       <div class="slip-list" id="slipList"></div>
       <div class="empty-state" id="slipEmptyState" style="display:none;">伝票がありません</div>
+    </section>
+
+    <section id="tabStocktake" class="work-panel" style="display:none;">
+      <h2>棚卸し表</h2>
+      <p>帳簿数は現在庫から取得します。実数を入力して保存し、「差異を在庫に反映」で確定します。</p>
+      <div class="toolbar"><label>棚卸日 <input type="date" id="stocktakeDate"></label><div class="spacer"></div>
+        <button class="btn-secondary-inline" id="stocktakeLoadBtn">この日の表を開く</button>
+        <button class="btn-secondary-inline" id="stocktakePrintBtn">印刷</button></div>
+      <div id="stocktakeStatus" class="work-status"></div>
+      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>帳簿数</th><th>実数</th><th>差異</th><th>備考</th></tr></thead><tbody id="stocktakeRows"></tbody></table></div>
+      <div class="work-actions"><button class="btn-secondary-inline" id="stocktakeSaveBtn">入力内容を保存</button><button class="btn-primary" id="stocktakeApplyBtn">差異を在庫に反映</button></div>
+    </section>
+
+    <section id="tabFestival" class="work-panel" style="display:none;">
+      <h2>月始祭準備リスト</h2><p>月別に準備数を保存します。確定すると通常在庫から出庫し、戻す場合は在庫に戻します。</p>
+      <div class="toolbar"><label>対象月 <input type="month" id="festivalMonth"></label><div class="spacer"></div>
+        <button class="btn-secondary-inline" id="festivalLoadBtn">この月を開く</button><button class="btn-secondary-inline" id="festivalPrintBtn">印刷</button></div>
+      <div id="festivalStatus" class="work-status"></div>
+      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>準備数量</th><th>準備後残数</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
+      <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">リストを保存</button><button class="btn-primary" id="festivalCommitBtn">準備確定・出庫</button><button class="btn-secondary-inline" id="festivalReturnBtn">準備を取り消して在庫に戻す</button></div>
+    </section>
+
+    <section id="tabDisaster" class="work-panel" style="display:none;">
+      <h2>防災備品</h2><p>通常の商品在庫とは別に管理します。出荷を記録した後で発送済みに変更できます。</p>
+      <div class="work-grid"><div><label>備品名</label><input type="text" id="disasterName" placeholder="例：保存水"><label>品番</label><input type="text" id="disasterCode"><label>単位</label><input type="text" id="disasterUnit" value="個"><label>初期在庫</label><input type="number" id="disasterInitial" min="0" value="0" step="1"><button class="btn-primary" id="disasterAddBtn">備品を登録</button></div>
+      <div><label>対象備品</label><select id="disasterProduct"></select><label>区分</label><select id="disasterType"><option value="in">入庫</option><option value="out">出荷</option></select><label>数量</label><input type="number" id="disasterQty" min="1" value="1" step="1"><label>発送先・備考</label><input type="text" id="disasterDestination"><button class="btn-primary" id="disasterMoveBtn">入出荷を記録</button></div></div>
+      <h3>防災備品の在庫</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>品番</th><th>備品名</th><th>在庫数</th></tr></thead><tbody id="disasterProducts"></tbody></table></div>
+      <h3>入出荷・発送履歴</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>日時</th><th>備品</th><th>区分</th><th>数量</th><th>発送先・備考</th><th>発送状況</th></tr></thead><tbody id="disasterHistory"></tbody></table></div>
     </section>
 
     <!-- ---- 発注管理タブ (Phase4) ---- -->
