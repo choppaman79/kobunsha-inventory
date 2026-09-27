@@ -2470,6 +2470,7 @@ function toggleVisibleSelection(selector, selected) {
     if (allChecked) selected.delete(box.dataset.id); else selected.add(box.dataset.id);
   });
   updateBulkButton(); updateSelectionButtons();
+  showToast(allChecked ? `${boxes.length}件の選択を解除しました` : `${boxes.length}件を選択しました`);
 }
 async function deleteSelectedRecords(collection, selected, records, label) {
   const ids = [...selected].filter(id => records.some(record => record.id === id));
@@ -2765,4 +2766,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
+window.KOBUNSHA_APP_VERSION = "2026-09-27-select-v2";
 init();
