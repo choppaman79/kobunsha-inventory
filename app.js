@@ -1,1288 +1,2589 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>弘文社 在庫管理</title>
-<style>
-  :root {
-    --ink: #23282b;
-    --paper: #f6f3ec;
-    --panel: #ffffff;
-    --line: #ddd6c4;
-    --indigo: #2f4156;
-    --indigo-deep: #1f2d3d;
-    --bronze: #a8763e;
-    --bronze-soft: #e9dcc3;
-    --warn-bg: #fbeceb;
-    --warn-text: #a3392b;
-    --ok-text: #4a6b4f;
-    --radius: 10px;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
-    background: var(--paper);
-    color: var(--ink);
-    -webkit-font-smoothing: antialiased;
-  }
+// ===================== 設定 =====================
+const MEMBERS = ["仙波","山崎","田中","落合","川野","迫","佐藤","二神","森重","小鷹","山根","熊澤"];
+const CATEGORIES = ["神具","仏具","神向き用品","チェーン","非常用品","その他"];
+const COLLECTION = "inventory_products"; // 予定管理アプリのコレクションとは別名にして衝突を防止
+const MOVEMENTS_COLLECTION = "inventory_movements"; // Phase2: 入出庫履歴
 
-  /* ---------- ログイン画面 ---------- */
-  #loginScreen {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-  }
-  .login-card {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 36px 30px;
-    width: 100%;
-    max-width: 360px;
-  }
-  .login-card h1 {
-    font-size: 20px;
-    letter-spacing: .02em;
-    margin: 0 0 4px;
-    color: var(--indigo-deep);
-  }
-  .login-card p.sub {
-    margin: 0 0 24px;
-    color: #6b6357;
-    font-size: 13px;
-  }
-  select, input[type=password], input[type=text], input[type=number], input[type=date] {
-    width: 100%;
-    padding: 11px 12px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--paper);
-    font-size: 15px;
-    color: var(--ink);
-    margin-bottom: 14px;
-  }
-  select:focus, input:focus {
-    outline: none;
-    border-color: var(--bronze);
-    box-shadow: 0 0 0 3px var(--bronze-soft);
-  }
-  button {
-    font-family: inherit;
-    cursor: pointer;
-    border: none;
-  }
-  .btn-primary {
-    width: 100%;
-    padding: 12px;
-    background: var(--indigo);
-    color: #fff;
-    border-radius: 8px;
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: .02em;
-  }
-  .btn-primary:hover { background: var(--indigo-deep); }
-  .error-msg {
-    color: var(--warn-text);
-    font-size: 13px;
-    margin: -6px 0 14px;
-    min-height: 16px;
-  }
+const auth = firebase.auth();
+const db = firebase.firestore();
+auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
 
-  /* ---------- アプリ本体 ---------- */
-  #appScreen { display: none; min-height: 100vh; }
-  header.topbar {
-    background: var(--indigo-deep);
-    color: #f2efe6;
-    padding: 14px 20px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
-  header.topbar .title {
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: .03em;
-  }
-  header.topbar .who {
-    font-size: 12px;
-    color: #c9c2b0;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  header.topbar button.logout {
-    background: transparent;
-    color: #c9c2b0;
-    font-size: 12px;
-    text-decoration: underline;
-    padding: 4px;
-  }
+let allProducts = [];
+let bulkMode = false;
+const bulkSelected = new Set();
+const STOCKTAKES = "inventory_stocktakes";
+const FESTIVALS = "inventory_festival_plans";
+const DISASTER_PRODUCTS = "inventory_disaster_products";
+const DISASTER_MOVEMENTS = "inventory_disaster_movements";
+let stocktakeRecord = null, festivalRecord = null, disasterProducts = [], disasterMovements = [];
+let allMovements = [];
+let allSlips = [];
+let activeCategory = "すべて";
+let editingId = null;
+let movingProductId = null;
+let currentStaffName = "";
+let qrProductId = null;
+let currentSlipItems = []; // 伝票作成中の品目リスト
+let openSlipId = null;     // 現在開いている伝票詳細のID
+const SLIPS_COLLECTION = "inventory_slips"; // Phase2追加: 出荷/入荷伝票
 
-  main {
-    max-width: 920px;
-    margin: 0 auto;
-    padding: 20px 16px 80px;
-  }
+// ---- Phase4: 発注管理・在庫僅少の自動通知 ----
+const ORDERS_COLLECTION = "inventory_orders";
+let allOrders = [];
+let currentOrderItems = []; // 発注作成中の品目リスト
+let openOrderId = null;
+let previousLowStockIds = null; // 直近の「発注が必要な在庫僅少商品」ID集合（差分検知用。nullは未計算＝初回）
+let browserNotifyEnabled = false;
 
-  .tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 18px;
-    border-bottom: 1px solid var(--line);
-  }
-  .tab-btn {
-    background: transparent;
-    padding: 10px 16px;
-    font-size: 14px;
-    color: #756b5c;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-  }
-  .tab-btn.active {
-    color: var(--indigo-deep);
-    border-bottom-color: var(--bronze);
-    font-weight: 600;
-  }
-  .tab-badge {
-    display: inline-block;
-    min-width: 18px;
-    padding: 1px 5px;
-    margin-left: 4px;
-    border-radius: 999px;
-    background: var(--warn-text);
-    color: #fff;
-    font-size: 10px;
-    font-weight: 700;
-    vertical-align: middle;
-  }
+// ---- Phase3: カメラスキャン関連 ----
+let scanStream = null;
+let scanRAF = null;
+let scanMode = "global"; // "global" または "slip-item"
+let pendingHashHandled = false;
+let pendingSlipScanCode = null; // 検品シール照合：1回目にスキャンしたコードを一時保持
 
-  /* ---------- Phase4: 発注管理 ---------- */
-  .low-stock-alert {
-    background: var(--warn-bg);
-    border: 1px solid #e3b2ab;
-    border-radius: var(--radius);
-    padding: 14px 16px;
-    margin-bottom: 16px;
-  }
-  .low-stock-alert-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 8px;
-    color: var(--warn-text);
-  }
-  .low-stock-alert-row {
-    font-size: 12.5px;
-    color: var(--ink);
-    padding: 3px 0;
-  }
-  .slip-status.cancelled { background: #ece7dd; color: #756b5c; }
+// ===================== 初期化 =====================
+function init() {
+  const loginSelect = document.getElementById("loginName");
+  MEMBERS.forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    loginSelect.appendChild(opt);
+  });
 
-  .toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 16px;
-    align-items: center;
-  }
-  .toolbar input[type=text] { margin: 0; max-width: 220px; }
-  .toolbar select { margin: 0; max-width: 160px; }
-  .chip-group { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip {
-    padding: 6px 12px;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--panel);
-    font-size: 13px;
-    color: #5c5648;
-  }
-  .chip.active {
-    background: var(--indigo);
-    border-color: var(--indigo);
-    color: #fff;
-  }
+  [document.getElementById("regCategory"), document.getElementById("editCategory")].forEach(sel => {
+    CATEGORIES.forEach(cat => {
+      const opt = document.createElement("option");
+      opt.value = cat;
+      opt.textContent = cat;
+      sel.appendChild(opt);
+    });
+  });
 
-  .spacer { flex: 1; }
-  .btn-add {
-    background: var(--bronze);
-    color: #fff;
-    padding: 9px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .btn-add:hover { background: #8f622f; }
+  renderCategoryChips();
+  initWorkModules();
 
-  .summary-row {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
-  }
-  .summary-card {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 12px 16px;
-    min-width: 110px;
-  }
-  .summary-card .num { font-size: 22px; font-weight: 700; color: var(--indigo-deep); }
-  .summary-card .lbl { font-size: 11px; color: #8a8272; margin-top: 2px; }
-  .summary-card.warn .num { color: var(--warn-text); }
+  document.getElementById("loginBtn").addEventListener("click", handleLogin);
+  document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
+  document.getElementById("searchBox").addEventListener("input", renderProductList);
+  document.getElementById("openAddBtn").addEventListener("click", () => switchTab("register"));
+  document.getElementById("regSubmitBtn").addEventListener("click", handleRegisterSubmit);
 
-  .product-list { display: flex; flex-direction: column; gap: 8px; }
-  .product-row {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 12px 14px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .product-row.low { border-color: #e3b2ab; background: var(--warn-bg); }
-  .product-main { flex: 1; min-width: 0; }
-  .product-name { font-size: 14.5px; font-weight: 600; color: var(--indigo-deep); }
-  .product-meta { font-size: 12px; color: #8a8272; margin-top: 2px; }
-  .cat-tag {
-    display: inline-block;
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: var(--bronze-soft);
-    color: #6b4a20;
-    margin-right: 6px;
-  }
-  .stock-control {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .stock-btn {
-    width: 30px; height: 30px;
-    border-radius: 6px;
-    background: var(--paper);
-    border: 1px solid var(--line);
-    font-size: 16px;
-    color: var(--indigo-deep);
-    display: flex; align-items: center; justify-content: center;
-  }
-  .stock-btn:hover { background: var(--bronze-soft); }
-  .stock-num { min-width: 42px; text-align: center; font-size: 16px; font-weight: 700; }
-  .stock-num.low { color: var(--warn-text); }
-  .edit-link {
-    font-size: 12px;
-    color: #8a8272;
-    text-decoration: underline;
-    margin-left: 8px;
-    white-space: nowrap;
-  }
-  .btn-move {
-    background: var(--indigo);
-    color: #fff;
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .btn-move:hover { background: var(--indigo-deep); }
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+  });
 
-  /* ---------- 入出庫モーダル ---------- */
-  .move-type-group {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 14px;
-  }
-  .move-type-btn {
-    flex: 1;
-    padding: 10px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--paper);
-    font-size: 14px;
-    font-weight: 600;
-    color: #6b6357;
-  }
-  .move-type-btn.active[data-type="in"] {
-    background: #e8f0e9;
-    border-color: var(--ok-text);
-    color: var(--ok-text);
-  }
-  .move-type-btn.active[data-type="out"] {
-    background: var(--warn-bg);
-    border-color: var(--warn-text);
-    color: var(--warn-text);
-  }
+  document.getElementById("editCancelBtn").addEventListener("click", closeEditModal);
+  document.getElementById("editSaveBtn").addEventListener("click", handleEditSave);
+  document.getElementById("editDeleteBtn").addEventListener("click", handleEditDelete);
+  document.getElementById("editOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "editOverlay") closeEditModal();
+  });
 
-  /* ---------- 入出庫履歴 ---------- */
-  .history-list { display: flex; flex-direction: column; gap: 8px; }
-  .history-row {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 12px 14px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .history-main { flex: 1; min-width: 0; }
-  .history-top { display: flex; align-items: center; gap: 8px; }
-  .history-type {
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 999px;
-  }
-  .history-type.in { background: #e8f0e9; color: var(--ok-text); }
-  .history-type.out { background: var(--warn-bg); color: var(--warn-text); }
-  .history-name { font-size: 14px; font-weight: 600; color: var(--indigo-deep); }
-  .history-meta { font-size: 12px; color: #8a8272; margin-top: 3px; }
-  .history-qty { font-size: 16px; font-weight: 700; white-space: nowrap; }
-  .history-qty.in { color: var(--ok-text); }
-  .history-qty.out { color: var(--warn-text); }
+  // ---- Phase2: 入出庫モーダル ----
+  document.getElementById("moveCancelBtn").addEventListener("click", closeMoveModal);
+  document.getElementById("moveSaveBtn").addEventListener("click", handleMoveSave);
+  document.getElementById("moveOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "moveOverlay") closeMoveModal();
+  });
+  document.querySelectorAll(".move-type-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".move-type-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("moveType").value = btn.dataset.type;
+    });
+  });
 
-  .empty-state {
-    text-align: center;
-    padding: 60px 20px;
-    color: #8a8272;
-    font-size: 14px;
-  }
+  // ---- Phase2: 入出庫履歴タブ ----
+  document.getElementById("historySearchBox").addEventListener("input", renderHistoryList);
 
-  /* ---------- モーダル ---------- */
-  .modal-overlay {
-    display: none;
-    position: fixed; inset: 0;
-    background: rgba(31,45,61,.45);
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    z-index: 100;
-  }
-  .modal-overlay.show { display: flex; }
-  .modal {
-    background: var(--panel);
-    border-radius: var(--radius);
-    padding: 26px 24px;
-    width: 100%;
-    max-width: 400px;
-    max-height: 90vh;
-    overflow-y: auto;
-  }
-  .modal h2 { font-size: 16px; margin: 0 0 18px; color: var(--indigo-deep); }
-  .modal label {
-    display: block;
-    font-size: 12px;
-    color: #6b6357;
-    margin: 0 0 4px;
-  }
-  .modal-actions {
-    display: flex;
-    gap: 10px;
-    margin-top: 8px;
-  }
-  .btn-secondary {
-    flex: 1;
-    padding: 11px;
-    background: var(--paper);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    font-size: 14px;
-    color: #6b6357;
-  }
-  .btn-danger {
-    padding: 11px 14px;
-    background: transparent;
-    border: 1px solid #e3b2ab;
-    color: var(--warn-text);
-    border-radius: 8px;
-    font-size: 13px;
-  }
-  .modal .btn-primary { flex: 2; }
+  // ---- Phase2: QRモーダル ----
+  document.getElementById("qrCloseBtn").addEventListener("click", closeQrModal);
+  document.getElementById("qrPrintBtn").addEventListener("click", () => window.print());
+  document.getElementById("qrOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "qrOverlay") closeQrModal();
+  });
+  document.getElementById("qrBulkPrintBtn").addEventListener("click", openQrBulkPrint);
+  document.getElementById("qrBulkCloseBtn").addEventListener("click", () => {
+    document.getElementById("qrBulkOverlay").classList.remove("show");
+  });
+  document.getElementById("qrBulkPrintOkBtn").addEventListener("click", () => window.print());
+  document.getElementById("qrBulkOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "qrBulkOverlay") document.getElementById("qrBulkOverlay").classList.remove("show");
+  });
 
-  .toast {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%) translateY(20px);
-    background: var(--indigo-deep);
-    color: #fff;
-    padding: 11px 20px;
-    border-radius: 8px;
-    font-size: 13px;
-    opacity: 0;
-    pointer-events: none;
-    transition: all .25s ease;
-    z-index: 200;
-  }
-  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  // ---- Phase2: エクセル一括登録 ----
+  document.getElementById("excelFileInput").addEventListener("change", handleExcelFile);
+  document.getElementById("excelImportBtn").addEventListener("click", handleExcelImport);
 
-  .btn-qr {
-    background: var(--paper);
-    border: 1px solid var(--line);
-    color: var(--indigo-deep);
-    padding: 8px 12px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .btn-qr:hover { background: var(--bronze-soft); }
-  .btn-secondary-inline {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    color: #5c5648;
-    padding: 9px 14px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .btn-secondary-inline:hover { background: var(--bronze-soft); }
-
-  .section-divider { border: none; border-top: 1px solid var(--line); margin: 26px 0 20px; }
-  .section-title { font-size: 15px; color: var(--indigo-deep); margin: 0 0 6px; }
-
-  /* ---------- エクセルプレビュー ---------- */
-  .excel-preview-scroll { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
-  .excel-preview-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  .excel-preview-table th, .excel-preview-table td {
-    padding: 7px 10px;
-    border-bottom: 1px solid var(--line);
-    text-align: left;
-    white-space: nowrap;
-  }
-  .excel-preview-table th { background: var(--paper); position: sticky; top: 0; }
-
-  /* ---------- 伝票一覧 ---------- */
-  .slip-list { display: flex; flex-direction: column; gap: 8px; }
-  .slip-row {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 12px 14px;
-    cursor: pointer;
-  }
-  .slip-row:hover { border-color: var(--bronze); }
-  .slip-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .slip-number { font-size: 13px; font-weight: 700; color: var(--indigo-deep); }
-  .slip-status {
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: var(--warn-bg);
-    color: var(--warn-text);
-  }
-  .slip-status.done { background: #e8f0e9; color: var(--ok-text); }
-
-  .btn-add-in { background: var(--ok-text, #3d7a4d); }
-  .btn-add-in:hover { filter: brightness(0.95); }
-
-  .slip-type-badge {
-    display: inline-block;
-    font-size: 12px;
-    font-weight: 700;
-    padding: 4px 12px;
-    border-radius: 999px;
-    margin-bottom: 16px;
-  }
-  .slip-type-badge.out { background: var(--warn-bg); color: var(--warn-text); }
-  .slip-type-badge.in { background: #e8f0e9; color: var(--ok-text); }
-
-  /* ---------- 伝票作成：品目エディタ ---------- */
-  .slip-items-editor { display: flex; flex-direction: column; gap: 6px; }
-  .slip-item-row {
-    display: flex; align-items: center; gap: 10px;
-    background: var(--paper);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 8px 10px;
-    font-size: 13px;
-  }
-  .slip-item-name { flex: 1; }
-  .slip-item-remove {
-    background: transparent; color: var(--warn-text); font-size: 16px; font-weight: 700; padding: 0 4px;
-  }
-
-  .slip-selected-card {
-    background: #e8f0e9;
-    border: 1px solid var(--ok-text, #3d7a4d);
-    border-radius: 8px;
-    padding: 10px 12px;
-    margin-bottom: 10px;
-  }
-  .slip-selected-name { font-size: 14.5px; font-weight: 700; color: var(--indigo-deep); }
-  .slip-selected-meta { font-size: 12px; color: #4c6b53; margin-top: 2px; }
-  .slip-item-price { font-size: 12px; color: #6b6357; margin-top: 2px; }
-  .slip-item-remark { font-size: 12px; color: #6b6357; font-style: italic; }
-
-  /* ---------- 伝票フォーマル表示（発行日・取引先・自社情報など） ---------- */
-  .slip-formal-header {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: start;
-    gap: 10px;
-    margin-bottom: 12px;
-  }
-  .slip-formal-header h2 {
-    font-size: clamp(15px, 4.2vw, 18px);
-  }
-  .slip-formal-header-qr {
-    justify-self: center;
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-  }
-  .slip-formal-header-qr .slip-formal-header-qr-label {
-    font-size: clamp(9px, 2.4vw, 10.5px);
-    color: #8a8272;
-  }
-  .slip-formal-companybox {
-    justify-self: end;
-    text-align: left; font-size: clamp(10px, 2.6vw, 11.5px); color: #6b6357; line-height: 1.6; white-space: nowrap;
-  }
-  .slip-formal-companyname {
-    font-size: clamp(12.5px, 3.4vw, 14.5px); font-weight: 700; color: var(--indigo-deep); margin-top: 3px;
-  }
-  .slip-formal-table {
-    width: 100%; border-collapse: collapse; font-size: clamp(11px, 3vw, 12.5px); margin-bottom: 12px;
-  }
-  .slip-formal-table th, .slip-formal-table td {
-    border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top;
-  }
-  .slip-formal-table th {
-    background: var(--paper); color: #6b6357; font-weight: 700; width: 84px; white-space: nowrap;
-  }
-
-  /* ---------- 伝票詳細テーブル ---------- */
-  .slip-detail-head { display: flex; justify-content: space-between; align-items: baseline; }
-  .slip-detail-table { width: 100%; border-collapse: collapse; font-size: clamp(11px, 3vw, 12.5px); margin-top: 6px; }
-  .slip-detail-table th, .slip-detail-table td {
-    padding: 8px 6px;
-    border-bottom: 1px solid var(--line);
-    text-align: left;
-  }
-  .slip-detail-table tfoot td { border-bottom: none; border-top: 2px solid var(--ink); padding-top: 10px; }
-  .slip-check-qty { width: 64px; margin: 0; padding: 6px; }
-  .print-only { display: none; }
-  .print-sheet { display: none; }
-  .print-sheet .fill-blank { border-bottom: 1px solid var(--ink); display: inline-block; width: 100%; min-height: 16px; }
-  .print-sheet .checkbox-glyph { font-size: 15px; text-align: center; }
-
-  /* ---------- QRラベル一括印刷 ---------- */
-  .qr-bulk-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 14px;
-  }
-  .qr-label { text-align: center; border: 1px dashed var(--line); border-radius: 8px; padding: 10px; }
-  .qr-label-text { font-size: 11px; margin-top: 6px; color: var(--ink); line-height: 1.4; }
-
-  .qr-bulk-grid-2col { grid-template-columns: repeat(2, 1fr); }
-  .qr-label-detail { display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 12px; min-width: 0; }
-  .qr-label-qr { flex: 0 0 auto; }
-  .qr-label-fields { flex: 1; min-width: 0; }
-  .qr-label-field { font-size: 11px; line-height: 1.55; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .qr-label-field span { display: inline-block; width: 46px; color: #8a8272; }
-
-  /* ---------- Phomemo 40×30mmラベル（暫定） ---------- */
-  @page phomemo-label { size: 40mm 30mm; margin: 0; }
-  .phomemo-label-list { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-  .phomemo-label-page {
-    width: 40mm; height: 30mm; box-sizing: border-box; padding: 1.3mm;
-    border: 1px dashed var(--line); border-radius: 2px;
-    display: flex; flex-direction: column; justify-content: space-between;
-    background: #fff; color: #000;
-  }
-  .phomemo-label-row { display: flex; gap: 1.3mm; flex: 1; min-height: 0; }
-  .phomemo-qr { flex: 0 0 auto; width: 15mm; height: 15mm; }
-  .phomemo-qr canvas, .phomemo-qr img { width: 15mm !important; height: 15mm !important; }
-  .phomemo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.5mm; overflow: hidden; }
-  .phomemo-name {
-    font-size: 6.5pt; font-weight: 700; line-height: 1.2;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .phomemo-line { font-size: 5.3pt; line-height: 1.3; }
-  .phomemo-amount { font-size: 6.5pt; font-weight: 700; }
-  .phomemo-foot {
-    display: flex; justify-content: space-between; gap: 2mm; font-size: 4.6pt; color: #333;
-    border-top: 0.3mm solid #000; padding-top: 0.5mm; white-space: nowrap;
-  }
-  .phomemo-shipto { max-width: 25mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-  /* ---------- SM-L200（Bluetooth）向け：画像共有ラベル ---------- */
-  .bt-label-list { display: flex; flex-direction: column; gap: 14px; }
-  .bt-label-card {
-    border: 1px solid var(--line); border-radius: 10px; padding: 12px;
-    display: flex; flex-direction: column; align-items: center; gap: 8px;
-  }
-  .bt-label-card img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; }
-  .bt-label-hint { font-size: 12px; color: #8a8272; text-align: center; margin: 0 0 14px; line-height: 1.6; }
-
-  /* ---------- 印刷用スタイル ---------- */
-  @page { margin: 10mm; }
-  @media print {
-    #loginScreen, #appScreen { display: none !important; }
-    .modal-overlay { display: none !important; }
-    .modal-overlay.show {
-      display: block !important; position: static !important;
-      background: none !important; padding: 0 !important;
+  // ---- Phase2: 伝票（出荷/入荷）----
+  document.getElementById("slipCreateOutBtn").addEventListener("click", () => openSlipCreateModal("out"));
+  document.getElementById("slipCreateInBtn").addEventListener("click", () => openSlipCreateModal("in"));
+  document.querySelectorAll(".slip-filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".slip-filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderSlipList(btn.dataset.filter);
+    });
+  });
+  document.getElementById("slipCreateCancelBtn").addEventListener("click", closeSlipCreateModal);
+  document.getElementById("slipCreateSaveBtn").addEventListener("click", handleSlipCreateSave);
+  document.getElementById("slipCreateOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "slipCreateOverlay") closeSlipCreateModal();
+  });
+  document.getElementById("slipItemAddBtn").addEventListener("click", handleSlipItemAdd);
+  document.getElementById("slipItemProduct").addEventListener("change", handleSlipItemProductChange);
+  document.getElementById("slipItemCodeInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSlipItemCodeLookup();
     }
-    .modal-overlay.show .modal {
-      width: 100% !important; max-width: 100% !important;
-      max-height: none !important; overflow: visible !important;
-      box-shadow: none !important; border: none !important;
-      margin: 0 !important; padding: 0 !important;
+  });
+  document.getElementById("slipItemQty").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSlipItemAdd();
     }
-    #qrBulkPrintArea.phomemo-mode {
-      width: 40mm !important; max-width: 40mm !important; page: phomemo-label;
+  });
+  document.getElementById("slipItemQty").addEventListener("input", updateSlipItemAmountPreview);
+  document.getElementById("slipItemPrice").addEventListener("input", updateSlipItemAmountPreview);
+
+  document.getElementById("slipDetailCloseBtn").addEventListener("click", closeSlipDetailModal);
+  document.getElementById("slipDetailPrintCheckBtn").addEventListener("click", () => printSlipSheet("check"));
+  document.getElementById("slipDetailPrintDeliveryBtn").addEventListener("click", () => printSlipSheet("delivery"));
+  document.getElementById("slipDetailCompleteBtn").addEventListener("click", handleSlipComplete);
+  document.getElementById("slipDetailOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "slipDetailOverlay") closeSlipDetailModal();
+  });
+  document.getElementById("slipDetailScanBtn").addEventListener("click", () => openScanModal("slip-item"));
+  document.getElementById("slipReceivingLabelBtn").addEventListener("click", () => printSlipReceivingLabels(openSlipId));
+  document.getElementById("slipPickLabelBtn").addEventListener("click", () => printSlipPickLabels(openSlipId));
+  document.getElementById("slipPickLabelPhomemoBtn").addEventListener("click", () => printSlipPickLabelsPhomemo(openSlipId));
+  document.getElementById("slipPickLabelPhomemoImageBtn").addEventListener("click", () => openSlipPickLabelsBluetooth(openSlipId, "phomemo"));
+  document.getElementById("slipPickLabelBtLabelBtn").addEventListener("click", () => openSlipPickLabelsBluetooth(openSlipId, "smL200"));
+  document.getElementById("btLabelCloseBtn").addEventListener("click", () => {
+    document.getElementById("btLabelOverlay").classList.remove("show");
+  });
+
+  // ---- Phase4: 発注管理 ----
+  document.getElementById("lowStockCreateOrderBtn").addEventListener("click", handleCreateOrderFromLowStock);
+  document.getElementById("orderNotifyBtn").addEventListener("click", handleEnableBrowserNotify);
+  document.querySelectorAll(".order-filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".order-filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderOrderList(btn.dataset.filter);
+    });
+  });
+  document.getElementById("orderCreateBtn").addEventListener("click", () => openOrderCreateModal());
+  document.getElementById("orderCreateCancelBtn").addEventListener("click", closeOrderCreateModal);
+  document.getElementById("orderCreateSaveBtn").addEventListener("click", handleOrderCreateSave);
+  document.getElementById("orderCreateOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "orderCreateOverlay") closeOrderCreateModal();
+  });
+  document.getElementById("orderItemAddBtn").addEventListener("click", handleOrderItemAdd);
+  document.getElementById("orderItemProduct").addEventListener("change", handleOrderItemProductChange);
+  document.getElementById("orderItemCodeInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); handleOrderItemCodeLookup(); }
+  });
+  document.getElementById("orderItemQty").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); handleOrderItemAdd(); }
+  });
+  document.getElementById("orderDetailCloseBtn").addEventListener("click", closeOrderDetailModal);
+  document.getElementById("orderMarkOrderedBtn").addEventListener("click", handleOrderMarkOrdered);
+  document.getElementById("orderMarkReceivedBtn").addEventListener("click", handleOrderMarkReceived);
+  document.getElementById("orderCancelBtn").addEventListener("click", handleOrderCancel);
+  document.getElementById("orderDetailOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "orderDetailOverlay") closeOrderDetailModal();
+  });
+
+  // ---- Phase3: カメラスキャン ----
+  document.getElementById("scanGlobalBtn").addEventListener("click", () => openScanModal("global"));
+  document.getElementById("scanGlobalBtn2").addEventListener("click", () => openScanModal("global"));
+  document.getElementById("scanCloseBtn").addEventListener("click", closeScanModal);
+  document.getElementById("scanOverlay").addEventListener("click", (e) => {
+    if (e.target.id === "scanOverlay") closeScanModal();
+  });
+
+  // ---- Phase3.5: ハンディスキャナー（キーボード入力）----
+  ["scannerInput", "scannerInputSlips"].forEach(id => {
+    document.getElementById(id).addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleScannerWedgeInput(e.target, "global");
+      }
+    });
+  });
+  document.getElementById("slipItemScannerInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleScannerWedgeInput(e.target, "slip-item");
     }
-    .phomemo-label-page { break-inside: avoid; border: none; }
-    .phomemo-label-page + .phomemo-label-page { break-before: page; }
-    .no-print { display: none !important; }
-    .print-sheet { display: block !important; }
-    .print-only { display: table-cell !important; }
+  });
+
+  auth.onAuthStateChanged(user => {
+    if (user) {
+      showApp(user);
+    } else {
+      showLogin();
+    }
+  });
+}
+
+// ===================== ログイン =====================
+function handleLogin() {
+  const name = document.getElementById("loginName").value;
+  const password = document.getElementById("loginPassword").value;
+  const errorEl = document.getElementById("loginError");
+  errorEl.textContent = "";
+
+  if (!name || !password) {
+    errorEl.textContent = "名前とパスワードを入力してください";
+    return;
   }
 
-  /* ---------- カメラスキャン (Phase3) ---------- */
-  .scan-video-wrap {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    background: #000;
-    border-radius: 10px;
-    overflow: hidden;
-  }
-  .scan-video-wrap video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .scan-frame {
-    position: absolute;
-    top: 15%; left: 15%; right: 15%; bottom: 15%;
-    border: 2px solid #fff;
-    border-radius: 10px;
-    box-shadow: 0 0 0 999px rgba(0,0,0,.25);
-    pointer-events: none;
-  }
+  const email = `${name}@koubunsha.com`;
+  auth.signInWithEmailAndPassword(email, password)
+    .catch(err => {
+      errorEl.textContent = "ログインできませんでした。パスワードをご確認ください。";
+      console.error(err);
+    });
+}
 
-  /* ---------- ハンディスキャナー入力欄 (Phase3.5) ---------- */
-  .scanner-input {
-    border: 1.5px dashed var(--bronze);
-    background: var(--bronze-soft, #f5efe4);
-    font-size: 13px;
-    max-width: 260px;
-  }
-  .scanner-input:focus {
-    border-style: solid;
-    background: #fff;
-  }
+function showLogin() {
+  document.getElementById("loginScreen").style.display = "flex";
+  document.getElementById("appScreen").style.display = "none";
+}
 
-  .work-panel { background:#fff; padding:20px; border:1px solid var(--line); border-radius:10px; }
-  .work-panel h2 { margin:0 0 8px; font-size:20px; }
-  .work-panel p { color:#6b6357; font-size:13px; }
-  .work-panel label { font-size:13px; }
-  .work-panel input[type=month], .work-panel input[type=date] { padding:8px; border:1px solid var(--line); border-radius:6px; }
-  .work-scroll { overflow-x:auto; }
-  .work-table { border-collapse:collapse; width:100%; min-width:650px; font-size:13px; }
-  .work-table th,.work-table td { border:1px solid var(--line); padding:7px; text-align:left; }
-  .work-table th { background:#eee9df; }
-  .work-table input { margin:0; min-width:72px; padding:6px; }
-  .work-table input[type=number] { width:95px; }
-  .work-actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
-  .work-actions .btn-primary { width:auto; }
-  .work-status { margin:10px 0; font-weight:600; }
-  .work-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
-  .work-grid .btn-primary { max-width:250px; }
-  @media print { body.work-print .modal-overlay.show { display:none !important; }
-    body.work-print #appScreen { display:block !important; }
-    .tabs,.topbar,.work-actions,.work-panel .toolbar button,.work-grid,#disasterProducts,#disasterHistory { display:none !important; }
-    #appScreen,main,.work-panel { display:block !important; padding:0 !important; margin:0 !important; border:0 !important; }
-    main > section:not(.print-target) { display:none !important; }
-    .work-table input { border:0; background:transparent; } .work-table { min-width:0; } }
-  @media (max-width: 480px) { .work-grid { grid-template-columns:1fr; }
-    .product-row { flex-wrap: wrap; }
-    .edit-link { margin-left: 0; }
-    .qr-bulk-grid { grid-template-columns: repeat(2, 1fr); }
-  }
-</style>
-</head>
-<body>
+function showApp(user) {
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("appScreen").style.display = "block";
+  const name = user.email.split("@")[0];
+  currentStaffName = name;
+  document.getElementById("whoAmI").textContent = `${name} さん`;
+  subscribeProducts();
+  subscribeMovements();
+  subscribeSlips();
+  subscribeOrders();
+  subscribeDisaster();
+  browserNotifyEnabled = (typeof Notification !== "undefined" && Notification.permission === "granted");
+  updateNotifyBtnLabel();
+}
 
-<!-- ===================== ログイン画面 ===================== -->
-<div id="loginScreen">
-  <div class="login-card">
-    <h1>弘文社 在庫管理</h1>
-    <p class="sub">担当者を選んでログインしてください</p>
-    <select id="loginName">
-      <option value="">名前を選択...</option>
-    </select>
-    <input type="password" id="loginPassword" placeholder="パスワード">
-    <div class="error-msg" id="loginError"></div>
-    <button class="btn-primary" id="loginBtn">ログイン</button>
-  </div>
-</div>
+// ===================== タブ切り替え =====================
+function switchTab(tab) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  document.getElementById("tabList").style.display = tab === "list" ? "block" : "none";
+  document.getElementById("tabRegister").style.display = tab === "register" ? "block" : "none";
+  document.getElementById("tabHistory").style.display = tab === "history" ? "block" : "none";
+  document.getElementById("tabSlips").style.display = tab === "slips" ? "block" : "none";
+  document.getElementById("tabOrders").style.display = tab === "orders" ? "block" : "none";
+  ["stocktake","festival","disaster"].forEach(t => document.getElementById("tab" + t[0].toUpperCase() + t.slice(1)).style.display = tab === t ? "block" : "none");
+  document.querySelectorAll("main > section").forEach(el => el.classList.toggle("print-target", el.style.display !== "none"));
+  if (tab === "stocktake") loadStocktake();
+  if (tab === "festival") loadFestival();
+  if (tab === "history") renderHistoryList();
+  if (tab === "slips") renderSlipList("all");
+  if (tab === "orders") { renderLowStockAlert(); renderOrderList(getActiveOrderFilter()); }
+  // ハンディスキャナーがすぐ使えるよう、該当タブの入力欄に自動でフォーカス
+  if (tab === "list") setTimeout(() => document.getElementById("scannerInput").focus(), 50);
+  if (tab === "slips") setTimeout(() => document.getElementById("scannerInputSlips").focus(), 50);
+}
 
-<!-- ===================== アプリ本体 ===================== -->
-<div id="appScreen">
-  <header class="topbar">
-    <div class="title">弘文社 在庫管理</div>
-    <div class="who">
-      <span id="whoAmI"></span>
-      <button class="logout" id="logoutBtn">ログアウト</button>
+// ===================== 商品データ購読 =====================
+function subscribeProducts() {
+  db.collection(COLLECTION).orderBy("name").onSnapshot(snapshot => {
+    allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    renderSummary();
+    renderProductList();
+    renderStocktake(); renderFestival();
+    checkLowStockAutoNotify();
+    if (document.getElementById("tabOrders").style.display !== "none") renderLowStockAlert();
+    handlePendingHash();
+  }, err => {
+    console.error(err);
+    showToast("データの取得に失敗しました");
+  });
+}
+
+// ===================== カテゴリチップ =====================
+function renderCategoryChips() {
+  const wrap = document.getElementById("categoryChips");
+  wrap.innerHTML = "";
+  ["すべて", ...CATEGORIES].forEach(cat => {
+    const chip = document.createElement("button");
+    chip.className = "chip" + (cat === activeCategory ? " active" : "");
+    chip.textContent = cat;
+    chip.addEventListener("click", () => {
+      activeCategory = cat;
+      renderCategoryChips();
+      renderProductList();
+    });
+    wrap.appendChild(chip);
+  });
+}
+
+// ===================== サマリー =====================
+function renderSummary() {
+  const total = allProducts.length;
+  const lowCount = allProducts.filter(p => Number(p.currentStock) <= Number(p.minStock)).length;
+  const wrap = document.getElementById("summaryRow");
+  wrap.innerHTML = `
+    <div class="summary-card">
+      <div class="num">${total}</div>
+      <div class="lbl">登録商品数</div>
     </div>
-  </header>
-
-  <main>
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="list">在庫一覧</button>
-      <button class="tab-btn" data-tab="register">商品登録</button>
-      <button class="tab-btn" data-tab="history">入出庫履歴</button>
-      <button class="tab-btn" data-tab="slips">伝票・検品</button>
-      <button class="tab-btn" data-tab="stocktake">棚卸し</button>
-      <button class="tab-btn" data-tab="festival">月始祭準備</button>
-      <button class="tab-btn" data-tab="disaster">防災備品</button>
-      <button class="tab-btn" data-tab="orders">発注管理<span id="orderLowBadge" class="tab-badge" style="display:none;"></span></button>
+    <div class="summary-card ${lowCount > 0 ? "warn" : ""}">
+      <div class="num">${lowCount}</div>
+      <div class="lbl">在庫僅少</div>
     </div>
+  `;
+}
 
-    <!-- ---- 在庫一覧タブ ---- -->
-    <section id="tabList">
-      <div class="summary-row" id="summaryRow"></div>
+// ===================== 商品一覧 =====================
+function renderProductList() {
+  const keyword = document.getElementById("searchBox").value.trim().toLowerCase();
+  const listEl = document.getElementById("productList");
+  const emptyEl = document.getElementById("emptyState");
 
-      <div class="toolbar">
-        <input type="text" id="searchBox" placeholder="商品名で検索">
-        <input type="text" id="scannerInput" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄（ここをクリックしてスキャン）">
-        <div class="spacer"></div>
-        <button class="btn-secondary-inline" id="scanGlobalBtn">📷 スキャン</button>
-        <button class="btn-secondary-inline" id="qrBulkPrintBtn">QRラベル印刷</button>
-        <button class="btn-secondary-inline" id="bulkModeBtn">商品を選んで一括削除</button>
-        <button class="btn-danger" id="bulkDeleteBtn" style="display:none;">選択した商品を削除</button>
-        <button class="btn-add" id="openAddBtn">＋ 商品を登録</button>
-      </div>
-      <div class="chip-group" id="categoryChips"></div>
-      <br>
+  let items = allProducts.filter(p => {
+    const matchCat = activeCategory === "すべて" || p.category === activeCategory;
+    const matchKeyword = !keyword || (p.name || "").toLowerCase().includes(keyword);
+    return matchCat && matchKeyword;
+  });
 
-      <div class="product-list" id="productList"></div>
-      <div class="empty-state" id="emptyState" style="display:none;">該当する商品がありません</div>
-    </section>
+  listEl.innerHTML = "";
+  emptyEl.style.display = items.length === 0 ? "block" : "none";
 
-    <!-- ---- 商品登録タブ（一覧と同じフォームをモーダルなしで表示） ---- -->
-    <section id="tabRegister" style="display:none;">
-      <p style="font-size:13px;color:#6b6357;margin-bottom:16px;">
-        新しい商品をここから登録できます。既存商品の編集は「在庫一覧」の各行から行ってください。
-      </p>
-      <label>商品名</label>
-      <input type="text" id="regName" placeholder="例：御神鏡 5寸">
-      <label>商品コード（任意）</label>
-      <input type="text" id="regCode" placeholder="例：K-1023">
-      <label>分類</label>
-      <select id="regCategory"></select>
-      <label>単位</label>
-      <input type="text" id="regUnit" placeholder="例：個、箱、セット" value="個">
-      <label>売価（任意・円）</label>
-      <input type="number" id="regPrice" placeholder="例：3000" min="0">
-      <label>現在庫数</label>
-      <input type="number" id="regStock" value="0" min="0">
-      <label>在庫僅少の目安（この数以下で警告表示）</label>
-      <input type="number" id="regMinStock" value="3" min="0">
-      <label>備考（任意）</label>
-      <input type="text" id="regNote" placeholder="仕入先や型番など">
-      <button class="btn-primary" id="regSubmitBtn" style="max-width:280px;">この内容で登録する</button>
-
-      <hr class="section-divider">
-
-      <h3 class="section-title">エクセル／CSVで一括登録</h3>
-      <p style="font-size:13px;color:#6b6357;margin-bottom:12px;">
-        列名は「商品コード／商品名／分類／単位／売価／現在庫数／在庫僅少ライン／備考」を想定しています（表記ゆれはある程度自動で吸収します）。
-      </p>
-      <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv">
-      <div id="excelPreviewWrap" style="display:none;margin-top:14px;">
-        <p id="excelPreviewCount" style="font-size:13px;color:var(--indigo-deep);font-weight:600;"></p>
-        <div class="excel-preview-scroll">
-          <table class="excel-preview-table">
-            <thead>
-              <tr><th>コード</th><th>商品名</th><th>分類</th><th>単位</th><th>売価</th><th>在庫数</th></tr>
-            </thead>
-            <tbody id="excelPreviewBody"></tbody>
-          </table>
+  items.forEach(p => {
+    const isLow = Number(p.currentStock) <= Number(p.minStock);
+    const row = document.createElement("div");
+    row.className = "product-row" + (isLow ? " low" : "");
+    row.innerHTML = `
+      ${bulkMode ? `<input type="checkbox" class="bulk-check" data-id="${p.id}" ${bulkSelected.has(p.id) ? "checked" : ""} aria-label="${escapeHtml(p.name)}を選択" style="width:20px;flex-shrink:0;">` : ""}
+      <div class="product-main">
+        <div class="product-name">
+          <span class="cat-tag">${p.category || "未分類"}</span>${escapeHtml(p.name || "")}
         </div>
-        <button class="btn-primary" id="excelImportBtn" style="max-width:280px;margin-top:14px;">この内容で一括登録する</button>
+        <div class="product-meta">${p.code ? "商品コード：" + escapeHtml(p.code) + "　/　" : ""}単位：${escapeHtml(p.unit || "-")}　/　僅少ライン：${p.minStock ?? 0}${p.price ? "　/　売価：¥" + Number(p.price).toLocaleString() : ""}${p.note ? "　/　" + escapeHtml(p.note) : ""}</div>
       </div>
-    </section>
-
-    <!-- ---- 入出庫履歴タブ (Phase2) ---- -->
-    <section id="tabHistory" style="display:none;">
-      <div class="toolbar">
-        <input type="text" id="historySearchBox" placeholder="商品名で検索">
+      <div class="stock-control">
+        <div class="stock-num ${isLow ? "low" : ""}">${p.currentStock ?? 0}</div>
+        <span style="font-size:11px;color:#8a8272;">${escapeHtml(p.unit || "")}</span>
       </div>
-      <div class="history-list" id="historyList"></div>
-      <div class="empty-state" id="historyEmptyState" style="display:none;">履歴がありません</div>
-    </section>
+      <button class="btn-move" data-action="move" data-id="${p.id}">入出庫</button>
+      <button class="btn-qr" data-id="${p.id}">QR</button>
+      <a class="edit-link" data-id="${p.id}">編集</a>
+    `;
+    listEl.appendChild(row);
+  });
 
-    <!-- ---- 伝票・検品タブ (Phase2) ---- -->
-    <section id="tabSlips" style="display:none;">
-      <div class="toolbar">
-        <div class="chip-group">
-          <button class="chip slip-filter-btn active" data-filter="all">すべて</button>
-          <button class="chip slip-filter-btn" data-filter="out">出荷</button>
-          <button class="chip slip-filter-btn" data-filter="in">入荷</button>
-          <button class="chip slip-filter-btn" data-filter="draft">未検品</button>
-          <button class="chip slip-filter-btn" data-filter="done">検品完了</button>
+  listEl.querySelectorAll(".bulk-check").forEach(box => box.addEventListener("change", () => { if (box.checked) bulkSelected.add(box.dataset.id); else bulkSelected.delete(box.dataset.id); updateBulkButton(); }));
+  listEl.querySelectorAll(".btn-move").forEach(btn => {
+    btn.addEventListener("click", () => openMoveModal(btn.dataset.id));
+  });
+  listEl.querySelectorAll(".btn-qr").forEach(btn => {
+    btn.addEventListener("click", () => openQrModal(btn.dataset.id));
+  });
+  listEl.querySelectorAll(".edit-link").forEach(link => {
+    link.addEventListener("click", () => openEditModal(link.dataset.id));
+  });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ===================== Phase2: 入出庫記録 =====================
+function openMoveModal(id) {
+  const p = allProducts.find(x => x.id === id);
+  if (!p) return;
+  movingProductId = id;
+  document.getElementById("moveProductName").textContent = p.name || "";
+  document.getElementById("moveCurrentStock").textContent = `現在庫：${p.currentStock ?? 0} ${p.unit || ""}`;
+  document.getElementById("moveQty").value = 1;
+  document.getElementById("moveNote").value = "";
+  document.getElementById("moveType").value = "in";
+  document.querySelectorAll(".move-type-btn").forEach(b => b.classList.toggle("active", b.dataset.type === "in"));
+  document.getElementById("moveError").textContent = "";
+  document.getElementById("moveOverlay").classList.add("show");
+}
+
+function closeMoveModal() {
+  movingProductId = null;
+  document.getElementById("moveOverlay").classList.remove("show");
+}
+
+function handleMoveSave() {
+  if (!movingProductId) return;
+  const product = allProducts.find(p => p.id === movingProductId);
+  if (!product) return;
+
+  const type = document.getElementById("moveType").value; // "in" or "out"
+  const qty = Number(document.getElementById("moveQty").value);
+  const note = document.getElementById("moveNote").value.trim();
+  const errorEl = document.getElementById("moveError");
+  errorEl.textContent = "";
+
+  if (!qty || qty <= 0) {
+    errorEl.textContent = "数量は1以上を入力してください";
+    return;
+  }
+
+  const delta = type === "in" ? qty : -qty;
+  const newStock = Number(product.currentStock || 0) + delta;
+
+  if (newStock < 0) {
+    errorEl.textContent = "現在庫数を超える出庫はできません";
+    return;
+  }
+
+  const productRef = db.collection(COLLECTION).doc(movingProductId);
+  const movementRef = db.collection(MOVEMENTS_COLLECTION).doc();
+
+  db.runTransaction(tx => {
+    return tx.get(productRef).then(doc => {
+      if (!doc.exists) throw new Error("商品が見つかりません");
+      const latestStock = Number(doc.data().currentStock || 0);
+      const latestNewStock = type === "in" ? latestStock + qty : latestStock - qty;
+      if (latestNewStock < 0) throw new Error("在庫不足");
+      tx.update(productRef, { currentStock: latestNewStock });
+      tx.set(movementRef, {
+        productId: movingProductId,
+        productName: product.name || "",
+        category: product.category || "",
+        unit: product.unit || "",
+        type,
+        qty,
+        note,
+        staff: currentStaffName,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+  }).then(() => {
+    showToast(type === "in" ? "入庫を記録しました" : "出庫を記録しました");
+    closeMoveModal();
+  }).catch(err => {
+    console.error(err);
+    if (err.message === "在庫不足") {
+      errorEl.textContent = "現在庫数を超える出庫はできません";
+    } else {
+      errorEl.textContent = "";
+      showToast("記録に失敗しました");
+    }
+  });
+}
+
+// ===================== Phase2: 入出庫履歴 =====================
+function subscribeMovements() {
+  db.collection(MOVEMENTS_COLLECTION).orderBy("createdAt", "desc").limit(200).onSnapshot(snapshot => {
+    allMovements = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    if (document.getElementById("tabHistory").style.display !== "none") {
+      renderHistoryList();
+    }
+  }, err => {
+    console.error(err);
+  });
+}
+
+function renderHistoryList() {
+  const keyword = document.getElementById("historySearchBox").value.trim().toLowerCase();
+  const listEl = document.getElementById("historyList");
+  const emptyEl = document.getElementById("historyEmptyState");
+
+  const items = allMovements.filter(m => !keyword || (m.productName || "").toLowerCase().includes(keyword));
+
+  listEl.innerHTML = "";
+  emptyEl.style.display = items.length === 0 ? "block" : "none";
+
+  items.forEach(m => {
+    const row = document.createElement("div");
+    row.className = "history-row";
+    const dt = m.createdAt && m.createdAt.toDate ? formatDateTime(m.createdAt.toDate()) : "―";
+    const sign = m.type === "in" ? "+" : "−";
+    const typeLabel = m.type === "in" ? "入庫" : "出庫";
+    row.innerHTML = `
+      <div class="history-main">
+        <div class="history-top">
+          <span class="history-type ${m.type}">${typeLabel}</span>
+          <span class="history-name">${escapeHtml(m.productName || "")}</span>
         </div>
-        <div class="spacer"></div>
-        <input type="text" id="scannerInputSlips" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄">
-        <button class="btn-secondary-inline" id="scanGlobalBtn2">📷 伝票をスキャン</button>
-        <button class="btn-add" id="slipCreateOutBtn">＋ 出荷伝票を作成</button>
-        <button class="btn-add btn-add-in" id="slipCreateInBtn">＋ 入荷伝票を作成</button>
+        <div class="history-meta">${dt}　/　${escapeHtml(m.staff || "-")}さん${m.note ? "　/　" + escapeHtml(m.note) : ""}</div>
       </div>
-      <div class="slip-list" id="slipList"></div>
-      <div class="empty-state" id="slipEmptyState" style="display:none;">伝票がありません</div>
-    </section>
+      <div class="history-qty ${m.type}">${sign}${m.qty ?? 0}${escapeHtml(m.unit || "")}</div>
+    `;
+    listEl.appendChild(row);
+  });
+}
 
-    <section id="tabStocktake" class="work-panel" style="display:none;">
-      <h2>棚卸し表</h2>
-      <p>帳簿数は現在庫から取得します。実数を入力して保存し、「差異を在庫に反映」で確定します。</p>
-      <div class="toolbar"><label>棚卸日 <input type="date" id="stocktakeDate"></label><div class="spacer"></div>
-        <button class="btn-secondary-inline" id="stocktakeLoadBtn">この日の表を開く</button>
-        <button class="btn-secondary-inline" id="stocktakePrintBtn">印刷</button></div>
-      <div id="stocktakeStatus" class="work-status"></div>
-      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>帳簿数</th><th>実数</th><th>差異</th><th>備考</th></tr></thead><tbody id="stocktakeRows"></tbody></table></div>
-      <div class="work-actions"><button class="btn-secondary-inline" id="stocktakeSaveBtn">入力内容を保存</button><button class="btn-primary" id="stocktakeApplyBtn">差異を在庫に反映</button></div>
-    </section>
+function formatDateTime(date) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
-    <section id="tabFestival" class="work-panel" style="display:none;">
-      <h2>月始祭準備リスト</h2><p>月別に準備数を保存します。確定すると通常在庫から出庫し、戻す場合は在庫に戻します。</p>
-      <div class="toolbar"><label>対象月 <input type="month" id="festivalMonth"></label><div class="spacer"></div>
-        <button class="btn-secondary-inline" id="festivalLoadBtn">この月を開く</button><button class="btn-secondary-inline" id="festivalPrintBtn">印刷</button></div>
-      <div id="festivalStatus" class="work-status"></div>
-      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>準備数量</th><th>準備後残数</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
-      <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">リストを保存</button><button class="btn-primary" id="festivalCommitBtn">準備確定・出庫</button><button class="btn-secondary-inline" id="festivalReturnBtn">準備を取り消して在庫に戻す</button></div>
-    </section>
+function formatDateOnly(date) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}`;
+}
 
-    <section id="tabDisaster" class="work-panel" style="display:none;">
-      <h2>防災備品</h2><p>通常の商品在庫とは別に管理します。出荷を記録した後で発送済みに変更できます。</p>
-      <div class="work-grid"><div><label>備品名</label><input type="text" id="disasterName" placeholder="例：保存水"><label>品番</label><input type="text" id="disasterCode"><label>単位</label><input type="text" id="disasterUnit" value="個"><label>初期在庫</label><input type="number" id="disasterInitial" min="0" value="0" step="1"><button class="btn-primary" id="disasterAddBtn">備品を登録</button></div>
-      <div><label>対象備品</label><select id="disasterProduct"></select><label>区分</label><select id="disasterType"><option value="in">入庫</option><option value="out">出荷</option></select><label>数量</label><input type="number" id="disasterQty" min="1" value="1" step="1"><label>発送先・備考</label><input type="text" id="disasterDestination"><button class="btn-primary" id="disasterMoveBtn">入出荷を記録</button></div></div>
-      <h3>防災備品の在庫</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>品番</th><th>備品名</th><th>在庫数</th></tr></thead><tbody id="disasterProducts"></tbody></table></div>
-      <h3>入出荷・発送履歴</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>日時</th><th>備品</th><th>区分</th><th>数量</th><th>発送先・備考</th><th>発送状況</th></tr></thead><tbody id="disasterHistory"></tbody></table></div>
-    </section>
+function todayDateInputValue() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
-    <!-- ---- 発注管理タブ (Phase4) ---- -->
-    <section id="tabOrders" style="display:none;">
-      <div class="low-stock-alert" id="lowStockAlertBox" style="display:none;">
-        <div class="low-stock-alert-head">
-          <strong>⚠️ 発注が必要な商品が<span id="lowStockAlertCount">0</span>件あります</strong>
-          <button type="button" class="btn-secondary-inline" id="lowStockCreateOrderBtn">まとめて発注案を作成</button>
+function formatPostingDate(str) {
+  return str ? str.replace(/-/g, "/") : "";
+}
+
+// ===================== Phase3: QR用URL生成・ハッシュルーティング =====================
+function buildProductUrl(id) {
+  return `${location.origin}${location.pathname}#product=${encodeURIComponent(id)}`;
+}
+function buildSlipUrl(id) {
+  return `${location.origin}${location.pathname}#slip=${encodeURIComponent(id)}`;
+}
+
+function handlePendingHash() {
+  if (pendingHashHandled) return;
+  const hash = location.hash;
+  if (!hash) return;
+  const pm = hash.match(/#product=([^&]+)/);
+  const sm = hash.match(/#slip=([^&]+)/);
+  if (pm) {
+    const id = decodeURIComponent(pm[1]);
+    const p = allProducts.find(x => x.id === id);
+    if (p) {
+      pendingHashHandled = true;
+      history.replaceState(null, "", location.pathname);
+      openMoveModal(p.id);
+    }
+  } else if (sm) {
+    const id = decodeURIComponent(sm[1]);
+    const s = allSlips.find(x => x.id === id);
+    if (s) {
+      pendingHashHandled = true;
+      history.replaceState(null, "", location.pathname);
+      switchTab("slips");
+      openSlipDetailModal(s.id);
+    }
+  }
+}
+
+// ===================== Phase2: QRコード =====================
+function openQrModal(id) {
+  const p = allProducts.find(x => x.id === id);
+  if (!p) return;
+  qrProductId = id;
+  document.getElementById("qrProductName").textContent = p.name || "";
+  document.getElementById("qrProductCode").textContent = p.code ? `商品コード：${p.code}` : "";
+  const box = document.getElementById("qrCanvasBox");
+  box.innerHTML = "";
+  // QRコードにはこの商品を直接開くURLを埋め込む（スマホの標準カメラからもアプリを開けるように）
+  new QRCode(box, {
+    text: buildProductUrl(id),
+    width: 180,
+    height: 180,
+    correctLevel: QRCode.CorrectLevel.M
+  });
+  document.getElementById("qrOverlay").classList.add("show");
+}
+
+function closeQrModal() {
+  qrProductId = null;
+  document.getElementById("qrOverlay").classList.remove("show");
+}
+
+function openQrBulkPrint() {
+  const keyword = document.getElementById("searchBox").value.trim().toLowerCase();
+  const items = allProducts.filter(p => {
+    const matchCat = activeCategory === "すべて" || p.category === activeCategory;
+    const matchKeyword = !keyword || (p.name || "").toLowerCase().includes(keyword);
+    return matchCat && matchKeyword;
+  });
+  if (items.length === 0) {
+    showToast("印刷対象の商品がありません");
+    return;
+  }
+  const grid = document.getElementById("qrBulkGrid");
+  grid.className = "qr-bulk-grid";
+  grid.innerHTML = "";
+  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
+  document.getElementById("qrBulkTitle").textContent = "QRラベル一括印刷";
+  items.forEach(p => {
+    const cell = document.createElement("div");
+    cell.className = "qr-label";
+    const qrBox = document.createElement("div");
+    cell.appendChild(qrBox);
+    const label = document.createElement("div");
+    label.className = "qr-label-text";
+    label.innerHTML = `${escapeHtml(p.name || "")}${p.code ? "<br>" + escapeHtml(p.code) : ""}`;
+    cell.appendChild(label);
+    grid.appendChild(cell);
+    new QRCode(qrBox, { text: buildProductUrl(p.id), width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
+  });
+  document.getElementById("qrBulkOverlay").classList.add("show");
+}
+
+// ===================== Phase3.5: 入荷分のQRラベル印刷 =====================
+function printSlipReceivingLabels(slipId) {
+  const s = allSlips.find(x => x.id === slipId);
+  if (!s) return;
+  const items = s.items || [];
+  if (items.length === 0) {
+    showToast("印刷対象の品目がありません");
+    return;
+  }
+  const grid = document.getElementById("qrBulkGrid");
+  grid.className = "qr-bulk-grid";
+  grid.innerHTML = "";
+  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
+  document.getElementById("qrBulkTitle").textContent = "入荷QRラベル印刷";
+  items.forEach(item => {
+    // 実際に入荷（検品）した数量ぶんラベルを発行する
+    const qty = Math.max(1, Number(item.checkedQty ?? item.plannedQty) || 1);
+    for (let i = 1; i <= qty; i++) {
+      const cell = document.createElement("div");
+      cell.className = "qr-label";
+      const qrBox = document.createElement("div");
+      cell.appendChild(qrBox);
+      const label = document.createElement("div");
+      label.className = "qr-label-text";
+      label.innerHTML = `${escapeHtml(item.productName || "")}${item.code ? "<br>" + escapeHtml(item.code) : ""}${qty > 1 ? `<br>(${i}/${qty})` : ""}`;
+      cell.appendChild(label);
+      grid.appendChild(cell);
+      new QRCode(qrBox, { text: buildProductUrl(item.productId), width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
+    }
+  });
+  document.getElementById("qrBulkOverlay").classList.add("show");
+}
+
+// ===================== 検品シール印刷（ピック時に貼付し、現品QRと照合する） =====================
+function printSlipPickLabels(slipId) {
+  const s = allSlips.find(x => x.id === slipId);
+  if (!s) return;
+  const items = s.items || [];
+  if (items.length === 0) {
+    showToast("印刷対象の品目がありません");
+    return;
+  }
+  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  const shipTo = s.shipTo || s.partner || "";
+  const grid = document.getElementById("qrBulkGrid");
+  grid.className = "qr-bulk-grid qr-bulk-grid-2col";
+  grid.innerHTML = "";
+  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
+  document.getElementById("qrBulkTitle").textContent = "検品シール印刷（A4）";
+  let seq = 0;
+  items.forEach(item => {
+    const unitPrice = Number(item.unitPrice || 0);
+    const qty = Math.max(1, Number(item.plannedQty) || 1);
+    for (let i = 1; i <= qty; i++) {
+      seq++;
+      const cell = document.createElement("div");
+      cell.className = "qr-label qr-label-detail";
+      const qrBox = document.createElement("div");
+      qrBox.className = "qr-label-qr";
+      qrBox.id = `pickLabelQr${seq}`;
+      cell.appendChild(qrBox);
+      const fields = document.createElement("div");
+      fields.className = "qr-label-fields";
+      fields.innerHTML = `
+        <div class="qr-label-field"><span>宛先</span>${escapeHtml(shipTo)}</div>
+        <div class="qr-label-field"><span>発行日</span>${issueDate}</div>
+        <div class="qr-label-field"><span>品名</span>${escapeHtml(item.productName || "")}${qty > 1 ? `（${i}/${qty}）` : ""}</div>
+        <div class="qr-label-field"><span>伝票№</span>${escapeHtml(s.slipNumber || "")}</div>
+        <div class="qr-label-field"><span>単価</span>¥${unitPrice.toLocaleString()}</div>
+      `;
+      cell.appendChild(fields);
+      grid.appendChild(cell);
+    }
+  });
+  // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
+  seq = 0;
+  items.forEach(item => {
+    const qty = Math.max(1, Number(item.plannedQty) || 1);
+    for (let i = 1; i <= qty; i++) {
+      seq++;
+      new QRCode(document.getElementById(`pickLabelQr${seq}`), { text: buildProductUrl(item.productId), width: 88, height: 88, correctLevel: QRCode.CorrectLevel.M });
+    }
+  });
+  document.getElementById("qrBulkOverlay").classList.add("show");
+}
+
+// ---- Phomemo（40×30mmラベル機）向け：暫定の検品シール印刷 ----
+function printSlipPickLabelsPhomemo(slipId) {
+  const s = allSlips.find(x => x.id === slipId);
+  if (!s) return;
+  const items = s.items || [];
+  if (items.length === 0) {
+    showToast("印刷対象の品目がありません");
+    return;
+  }
+  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  const shipTo = s.shipTo || s.partner || "";
+  const grid = document.getElementById("qrBulkGrid");
+  grid.className = "phomemo-label-list";
+  grid.innerHTML = "";
+  document.getElementById("qrBulkPrintArea").classList.add("phomemo-mode");
+  document.getElementById("qrBulkTitle").textContent = "検品シール印刷（Phomemo 40×30mm）";
+  let seq = 0;
+  items.forEach(item => {
+    const unitPrice = Number(item.unitPrice || 0);
+    const qty = Math.max(1, Number(item.plannedQty) || 1);
+    for (let i = 1; i <= qty; i++) {
+      seq++;
+      const page = document.createElement("div");
+      page.className = "phomemo-label-page";
+      page.innerHTML = `
+        <div class="phomemo-label-row">
+          <div class="phomemo-qr" id="phomemoQr${seq}"></div>
+          <div class="phomemo-main">
+            <div class="phomemo-name">${escapeHtml(item.productName || "")}${qty > 1 ? `（${i}/${qty}）` : ""}</div>
+            <div class="phomemo-line">伝票№ ${escapeHtml(s.slipNumber || "")}</div>
+            <div class="phomemo-amount">¥${unitPrice.toLocaleString()}</div>
+          </div>
         </div>
-        <div id="lowStockAlertList"></div>
-      </div>
-
-      <div class="toolbar">
-        <div class="chip-group">
-          <button class="chip order-filter-btn active" data-filter="all">すべて</button>
-          <button class="chip order-filter-btn" data-filter="draft">未発注</button>
-          <button class="chip order-filter-btn" data-filter="ordered">発注済み</button>
-          <button class="chip order-filter-btn" data-filter="received">入荷済み</button>
-          <button class="chip order-filter-btn" data-filter="cancelled">キャンセル</button>
+        <div class="phomemo-foot">
+          <span class="phomemo-shipto">${escapeHtml(shipTo)}</span>
+          <span class="phomemo-date">${issueDate}</span>
         </div>
-        <div class="spacer"></div>
-        <button class="btn-secondary-inline" id="orderNotifyBtn">🔕 ブラウザ通知を有効にする</button>
-        <button class="btn-add" id="orderCreateBtn">＋ 発注を作成</button>
+      `;
+      grid.appendChild(page);
+    }
+  });
+  // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
+  seq = 0;
+  items.forEach(item => {
+    const qty = Math.max(1, Number(item.plannedQty) || 1);
+    for (let i = 1; i <= qty; i++) {
+      seq++;
+      new QRCode(document.getElementById(`phomemoQr${seq}`), { text: buildProductUrl(item.productId), width: 56, height: 56, correctLevel: QRCode.CorrectLevel.M });
+    }
+  });
+  document.getElementById("qrBulkOverlay").classList.add("show");
+}
+
+// ---- Bluetooth・専用アプリ経由（Phomemo / SM-L200など）向け：検品シールを画像として生成・共有 ----
+const BT_LABEL_PX_PER_MM = 8; // 約203dpi相当
+const BT_LABEL_PROFILES = {
+  phomemo: { widthMm: 40, heightMm: 30, title: "検品シール画像（Phomemo・アプリ共有用）" },
+  smL200: { widthMm: 58, heightMm: 30, title: "検品シール画像（SM-L200・Bluetooth用）" }
+};
+
+function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+  const chars = Array.from(text || "");
+  const lines = [];
+  let line = "";
+  for (let i = 0; i < chars.length; i++) {
+    const test = line + chars[i];
+    if (line && ctx.measureText(test).width > maxWidth) {
+      lines.push(line);
+      line = chars[i];
+      if (lines.length === maxLines) break;
+    } else {
+      line = test;
+    }
+  }
+  if (lines.length < maxLines) lines.push(line);
+  const consumed = lines.join("").length;
+  if (consumed < chars.length) {
+    let last = lines[lines.length - 1];
+    while (last.length > 0 && ctx.measureText(last + "…").width > maxWidth) {
+      last = last.slice(0, -1);
+    }
+    lines[lines.length - 1] = last + "…";
+  }
+  lines.forEach((l, idx) => ctx.fillText(l, x, y + idx * lineHeight));
+}
+
+function buildBluetoothLabelCanvas(item, s, shipTo, issueDate, widthMm, heightMm, seqIndex, seqTotal) {
+  const mm = BT_LABEL_PX_PER_MM;
+  const w = widthMm * mm;
+  const h = heightMm * mm;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = "#000";
+  ctx.textBaseline = "top";
+
+  // QRコードを一時的なDOMに生成し、canvasへ転写する
+  const tempDiv = document.createElement("div");
+  tempDiv.style.position = "fixed";
+  tempDiv.style.left = "-9999px";
+  document.body.appendChild(tempDiv);
+  new QRCode(tempDiv, { text: buildProductUrl(item.productId), width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+  const qrCanvas = tempDiv.querySelector("canvas");
+  const qrSize = Math.min(20 * mm, h - 4 * mm);
+  const pad = 1.4 * mm;
+  const qrX = pad;
+  const qrY = (h - qrSize) / 2;
+  if (qrCanvas) ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
+  document.body.removeChild(tempDiv);
+
+  const textX = qrX + qrSize + pad;
+  const maxTextWidth = w - textX - pad;
+
+  // 枚数カウンター（品名の折り返しで消えないよう右上に固定表示）
+  if (seqIndex) {
+    ctx.font = "bold 13px sans-serif";
+    const counterText = `${seqIndex}/${seqTotal}`;
+    const counterW = ctx.measureText(counterText).width;
+    ctx.fillText(counterText, w - pad - counterW, pad);
+  }
+
+  ctx.font = "bold 22px sans-serif";
+  wrapCanvasText(ctx, item.productName || "", textX, qrY, maxTextWidth, 26, 2);
+
+  ctx.font = "16px sans-serif";
+  wrapCanvasText(ctx, `伝票№ ${s.slipNumber || ""}`, textX, qrY + 58, maxTextWidth, 18, 1);
+
+  const unitPrice = Number(item.unitPrice || 0);
+  ctx.font = "bold 20px sans-serif";
+  wrapCanvasText(ctx, `¥${unitPrice.toLocaleString()}`, textX, qrY + 84, maxTextWidth, 22, 1);
+
+  const footY = h - pad - 16;
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, footY - 6);
+  ctx.lineTo(w - pad, footY - 6);
+  ctx.stroke();
+
+  ctx.font = "14px sans-serif";
+  const dateW = ctx.measureText(issueDate).width;
+  wrapCanvasText(ctx, shipTo, pad, footY, w - pad * 2 - dateW - 8, 16, 1);
+  ctx.fillText(issueDate, w - pad - dateW, footY);
+
+  return canvas;
+}
+
+function openSlipPickLabelsBluetooth(slipId, profileKey) {
+  const profile = BT_LABEL_PROFILES[profileKey] || BT_LABEL_PROFILES.phomemo;
+  const s = allSlips.find(x => x.id === slipId);
+  if (!s) return;
+  const items = s.items || [];
+  if (items.length === 0) {
+    showToast("印刷対象の品目がありません");
+    return;
+  }
+  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  const shipTo = s.shipTo || s.partner || "";
+  document.getElementById("btLabelTitle").textContent = profile.title;
+  const list = document.getElementById("btLabelList");
+  list.innerHTML = "";
+  items.forEach((item) => {
+    const qty = Math.max(1, Number(item.plannedQty) || 1);
+    for (let i = 1; i <= qty; i++) {
+      const canvas = buildBluetoothLabelCanvas(item, s, shipTo, issueDate, profile.widthMm, profile.heightMm, qty > 1 ? i : null, qty);
+      const dataUrl = canvas.toDataURL("image/png");
+      const card = document.createElement("div");
+      card.className = "bt-label-card";
+      const img = document.createElement("img");
+      img.src = dataUrl;
+      img.alt = item.productName || "検品シール";
+      card.appendChild(img);
+      const shareBtn = document.createElement("button");
+      shareBtn.type = "button";
+      shareBtn.className = "btn-secondary-inline";
+      shareBtn.textContent = qty > 1 ? `📤 共有する（${i}/${qty}）` : "📤 共有する";
+      shareBtn.addEventListener("click", async () => {
+        try {
+          const blob = await (await fetch(dataUrl)).blob();
+          const namePart = `${(item.productName || "label").replace(/[\\/:*?"<>|]/g, "")}${qty > 1 ? `_${i}-${qty}` : ""}`;
+          const file = new File([blob], `${namePart}.png`, { type: "image/png" });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: item.productName || "検品シール" });
+          } else {
+            showToast("この端末では共有機能が使えません。画像を長押しして保存してください");
+          }
+        } catch (err) {
+          // ユーザーが共有をキャンセルした場合などは何もしない
+        }
+      });
+      card.appendChild(shareBtn);
+      list.appendChild(card);
+    }
+  });
+  document.getElementById("btLabelOverlay").classList.add("show");
+}
+
+// ===================== Phase2: エクセル一括登録 =====================
+let excelParsedRows = [];
+
+function handleExcelFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = new Uint8Array(ev.target.result);
+      const workbook = XLSX.read(data, { type: "array" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+      excelParsedRows = rows.map(mapExcelRow).filter(isValidExcelRow);
+      renderExcelPreview();
+    } catch (err) {
+      console.error(err);
+      showToast("ファイルの読み込みに失敗しました");
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// 分類名の表記ゆれを、アプリで使う分類名に寄せる（該当なしは「その他」に）
+const CATEGORY_ALIASES = {
+  "非常用品": "非常用品",
+  "光ミュージアム前売り券": "その他",
+  "レジ袋": "その他"
+};
+
+function normalizeHeader(k) {
+  return String(k).normalize("NFKC").replace(/[\s　]/g, "");
+}
+
+function mapExcelRow(row) {
+  // 列名の表記ゆれを吸収（商品ｺｰﾄﾞ/商品コード/コード/品番、商品名/名称、種別/分類、売上単価/売価/単価 など）
+  const get = (keys) => {
+    for (const k of Object.keys(row)) {
+      const norm = normalizeHeader(k);
+      if (keys.some(kw => norm.includes(kw))) return row[k];
+    }
+    return "";
+  };
+
+  let code = String(get(["商品コード", "コード", "品番", "code"]) || "").trim();
+  if (code === "-" || code === "―" || code === "ー") code = "";
+
+  let rawCategory = String(get(["分類", "カテゴリ", "種別", "category"]) || "").trim();
+  let category = rawCategory;
+  let note = String(get(["備考", "note"]) || "").trim();
+  if (!rawCategory) {
+    category = "その他";
+  } else if (CATEGORY_ALIASES[rawCategory]) {
+    category = CATEGORY_ALIASES[rawCategory];
+    // エイリアスで丸めた場合、元の分類名が消えないよう備考に残す
+    if (category !== rawCategory) {
+      note = note ? `${note}（元の分類：${rawCategory}）` : `元の分類：${rawCategory}`;
+    }
+  }
+
+  return {
+    code,
+    name: String(get(["商品名", "名称", "品名", "name"]) || "").trim(),
+    category,
+    unit: String(get(["単位", "unit"]) || "個").trim(),
+    price: Number(get(["売上単価", "売価", "価格", "単価", "price"])) || 0,
+    minStock: Number(get(["在庫僅少ライン", "僅少ライン", "minStock"])) || 3,
+    stock: Number(get(["現在庫数", "在庫数", "stock"])) || 0,
+    note
+  };
+}
+
+function isValidExcelRow(r) {
+  if (!r.name) return false;
+  // ヘッダー行がデータとして紛れ込んでいる場合（表を複数貼り付けた際など）を除外
+  if (r.name === "商品名") return false;
+  if (normalizeHeader(r.code || "").includes("商品コード")) return false;
+  return true;
+}
+
+function renderExcelPreview() {
+  const wrap = document.getElementById("excelPreviewWrap");
+  const tbody = document.getElementById("excelPreviewBody");
+  tbody.innerHTML = "";
+  if (excelParsedRows.length === 0) {
+    wrap.style.display = "none";
+    return;
+  }
+  excelParsedRows.slice(0, 500).forEach(r => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(r.code)}</td>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.category)}</td>
+      <td>${escapeHtml(r.unit)}</td>
+      <td>${r.price}</td>
+      <td>${r.stock}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  document.getElementById("excelPreviewCount").textContent = `${excelParsedRows.length}件を読み込みました`;
+  wrap.style.display = "block";
+}
+
+function handleExcelImport() {
+  if (excelParsedRows.length === 0) {
+    showToast("先にエクセル/CSVファイルを選択してください");
+    return;
+  }
+  const btn = document.getElementById("excelImportBtn");
+  btn.disabled = true;
+  btn.textContent = "登録中...";
+
+  // Firestoreのバッチ書き込みは1回500件まで
+  const chunks = [];
+  for (let i = 0; i < excelParsedRows.length; i += 400) {
+    chunks.push(excelParsedRows.slice(i, i + 400));
+  }
+
+  const runChunk = (idx) => {
+    if (idx >= chunks.length) {
+      showToast(`${excelParsedRows.length}件の商品を登録しました`);
+      excelParsedRows = [];
+      document.getElementById("excelFileInput").value = "";
+      renderExcelPreview();
+      btn.disabled = false;
+      btn.textContent = "この内容で一括登録する";
+      switchTab("list");
+      return;
+    }
+    const batch = db.batch();
+    chunks[idx].forEach(r => {
+      const ref = db.collection(COLLECTION).doc();
+      batch.set(ref, {
+        name: r.name,
+        code: r.code,
+        category: r.category || CATEGORIES[0],
+        unit: r.unit || "個",
+        price: r.price || 0,
+        currentStock: r.stock || 0,
+        minStock: r.minStock || 3,
+        note: r.note || "",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    batch.commit().then(() => runChunk(idx + 1)).catch(err => {
+      console.error(err);
+      showToast("登録中にエラーが発生しました");
+      btn.disabled = false;
+      btn.textContent = "この内容で一括登録する";
+    });
+  };
+  runChunk(0);
+}
+
+// ===================== Phase2: 伝票（出荷/入荷）・検品 =====================
+function subscribeSlips() {
+  db.collection(SLIPS_COLLECTION).orderBy("createdAt", "desc").limit(200).onSnapshot(snapshot => {
+    allSlips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    if (document.getElementById("tabSlips").style.display !== "none") {
+      renderSlipList(getActiveSlipFilter());
+    }
+    handlePendingHash();
+  }, err => console.error(err));
+}
+
+function getActiveSlipFilter() {
+  const active = document.querySelector(".slip-filter-btn.active");
+  return active ? active.dataset.filter : "all";
+}
+
+function renderSlipList(filter) {
+  const listEl = document.getElementById("slipList");
+  const emptyEl = document.getElementById("slipEmptyState");
+  let items = allSlips;
+  if (filter === "out") items = items.filter(s => s.type === "out");
+  if (filter === "in") items = items.filter(s => s.type === "in");
+  if (filter === "draft") items = items.filter(s => s.status !== "done");
+  if (filter === "done") items = items.filter(s => s.status === "done");
+
+  listEl.innerHTML = "";
+  emptyEl.style.display = items.length === 0 ? "block" : "none";
+
+  items.forEach(s => {
+    const row = document.createElement("div");
+    row.className = "slip-row";
+    const dt = s.createdAt && s.createdAt.toDate ? formatDateTime(s.createdAt.toDate()) : "―";
+    const typeLabel = s.type === "in" ? "入荷" : "出荷";
+    const statusLabel = s.status === "done" ? "検品完了" : "未検品";
+    row.innerHTML = `
+      <div class="slip-main">
+        <div class="slip-top">
+          <span class="history-type ${s.type === "in" ? "in" : "out"}">${typeLabel}</span>
+          <span class="slip-number">${escapeHtml(s.slipNumber || "")}</span>
+          <span class="slip-status ${s.status === "done" ? "done" : ""}">${statusLabel}</span>
+        </div>
+        <div class="history-meta">${escapeHtml(s.partner || "取引先未設定")}　/　${dt}　/　品目数：${(s.items || []).length}</div>
       </div>
-      <div class="slip-list" id="orderList"></div>
-      <div class="empty-state" id="orderEmptyState" style="display:none;">発注がありません</div>
-    </section>
-  </main>
-</div>
+    `;
+    row.addEventListener("click", () => openSlipDetailModal(s.id));
+    listEl.appendChild(row);
+  });
+}
 
-<!-- ===================== 入出庫モーダル (Phase2) ===================== -->
-<div class="modal-overlay" id="moveOverlay">
-  <div class="modal">
-    <h2>入出庫を記録</h2>
-    <p id="moveProductName" style="font-size:14.5px;font-weight:600;color:var(--indigo-deep);margin:0 0 2px;"></p>
-    <p id="moveCurrentStock" style="font-size:12px;color:#8a8272;margin:0 0 16px;"></p>
+// ---- 伝票の新規作成 ----
+function openSlipCreateModal(type) {
+  currentSlipItems = [];
+  document.getElementById("slipCreateType").value = type;
+  document.getElementById("slipCreateTitle").textContent = type === "in" ? "入荷伝票を作成" : "出荷伝票を作成";
+  const badge = document.getElementById("slipCreateTypeBadge");
+  badge.textContent = type === "in" ? "入荷伝票" : "出荷伝票";
+  badge.className = "slip-type-badge " + type;
+  document.getElementById("slipPartnerLabel").textContent = type === "in" ? "仕入先（任意）" : "取引先／納品先（任意）";
+  document.getElementById("slipShipToLabel").textContent = type === "in" ? "入荷元（任意）" : "出荷先（任意）";
+  document.getElementById("slipPartner").value = "";
+  document.getElementById("slipPartnerAddress").value = "";
+  document.getElementById("slipPartnerTel").value = "";
+  document.getElementById("slipShipTo").value = "";
+  document.getElementById("slipPostingDate").value = todayDateInputValue();
+  document.getElementById("slipTransactionType").value = "";
+  document.getElementById("slipWarehouse").value = "";
+  document.getElementById("slipOrderNo").value = "";
+  document.getElementById("slipMemo").value = "";
+  document.getElementById("slipItemCodeInput").value = "";
+  document.getElementById("slipItemCodeError").textContent = "";
+  const productSelect = document.getElementById("slipItemProduct");
+  productSelect.innerHTML = `<option value="">商品を選択...</option>` +
+    allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}${p.code ? "（" + escapeHtml(p.code) + "）" : ""}</option>`).join("");
+  document.getElementById("slipItemQty").value = 1;
+  document.getElementById("slipItemPrice").value = "";
+  document.getElementById("slipItemRemark").value = "";
+  clearSelectedProductCard();
+  updateSlipItemAmountPreview();
+  renderSlipItemsEditor();
+  document.getElementById("slipCreateOverlay").classList.add("show");
+  setTimeout(() => document.getElementById("slipItemCodeInput").focus(), 50);
+}
 
-    <label>区分</label>
-    <div class="move-type-group">
-      <button type="button" class="move-type-btn active" data-type="in">＋ 入庫</button>
-      <button type="button" class="move-type-btn" data-type="out">－ 出庫</button>
-    </div>
-    <input type="hidden" id="moveType" value="in">
+function closeSlipCreateModal() {
+  document.getElementById("slipCreateOverlay").classList.remove("show");
+}
 
-    <label>数量</label>
-    <input type="number" id="moveQty" min="1" value="1">
-    <label>備考（任意）</label>
-    <input type="text" id="moveNote" placeholder="例：〇〇様納品分、棚卸調整など">
-    <div class="error-msg" id="moveError"></div>
-    <div class="modal-actions">
-      <button class="btn-secondary" id="moveCancelBtn">キャンセル</button>
-      <button class="btn-primary" id="moveSaveBtn">記録する</button>
-    </div>
-  </div>
-</div>
+function showSelectedProductCard(p) {
+  const card = document.getElementById("slipItemSelectedCard");
+  if (!p) { clearSelectedProductCard(); return; }
+  document.getElementById("slipSelectedName").textContent = p.name || "";
+  document.getElementById("slipSelectedMeta").textContent =
+    `${p.code ? "コード：" + p.code + "　/　" : ""}現在庫：${p.currentStock ?? 0}${p.unit || ""}${p.price ? "　/　売価：¥" + Number(p.price).toLocaleString() : ""}`;
+  card.style.display = "block";
+  document.getElementById("slipItemPrice").value = p.price != null ? p.price : "";
+  updateSlipItemAmountPreview();
+}
 
-<!-- ===================== 編集モーダル ===================== -->
-<div class="modal-overlay" id="editOverlay">
-  <div class="modal">
-    <h2>商品を編集</h2>
-    <label>商品名</label>
-    <input type="text" id="editName">
-    <label>商品コード（任意）</label>
-    <input type="text" id="editCode">
-    <label>分類</label>
-    <select id="editCategory"></select>
-    <label>単位</label>
-    <input type="text" id="editUnit">
-    <label>売価（任意・円）</label>
-    <input type="number" id="editPrice" min="0">
-    <label>現在庫数</label>
-    <input type="number" id="editStock" min="0">
-    <label>在庫僅少の目安</label>
-    <input type="number" id="editMinStock" min="0">
-    <label>備考</label>
-    <input type="text" id="editNote">
-    <div class="modal-actions">
-      <button class="btn-danger" id="editDeleteBtn">削除</button>
-      <button class="btn-secondary" id="editCancelBtn">キャンセル</button>
-      <button class="btn-primary" id="editSaveBtn">保存</button>
-    </div>
-  </div>
-</div>
+function clearSelectedProductCard() {
+  document.getElementById("slipItemSelectedCard").style.display = "none";
+  updateSlipItemAmountPreview();
+}
 
-<div class="toast" id="toast"></div>
+function updateSlipItemAmountPreview() {
+  const qty = Number(document.getElementById("slipItemQty").value) || 0;
+  const price = Number(document.getElementById("slipItemPrice").value) || 0;
+  const preview = document.getElementById("slipItemAmountPreview");
+  preview.textContent = (qty && price) ? `金額：¥${(qty * price).toLocaleString()}` : "";
+}
 
-<!-- ===================== QRコードモーダル (Phase2) ===================== -->
-<div class="modal-overlay" id="qrOverlay">
-  <div class="modal" id="qrPrintArea">
-    <h2>QRコード</h2>
-    <p id="qrProductName" style="font-size:14.5px;font-weight:600;color:var(--indigo-deep);margin:0 0 4px;"></p>
-    <p id="qrProductCode" style="font-size:12px;color:#8a8272;margin:0 0 16px;"></p>
-    <div id="qrCanvasBox" style="display:flex;justify-content:center;margin-bottom:18px;"></div>
-    <div class="modal-actions no-print">
-      <button class="btn-secondary" id="qrCloseBtn">閉じる</button>
-      <button class="btn-primary" id="qrPrintBtn">印刷する</button>
-    </div>
-  </div>
-</div>
+function handleSlipItemProductChange() {
+  const id = document.getElementById("slipItemProduct").value;
+  const p = allProducts.find(x => x.id === id);
+  document.getElementById("slipItemCodeError").textContent = "";
+  showSelectedProductCard(p);
+}
 
-<!-- ===================== QRラベル一括印刷 (Phase2) ===================== -->
-<div class="modal-overlay" id="qrBulkOverlay">
-  <div class="modal" id="qrBulkPrintArea" style="max-width:680px;">
-    <h2 class="no-print" id="qrBulkTitle">QRラベル一括印刷</h2>
-    <div class="qr-bulk-grid" id="qrBulkGrid"></div>
-    <div class="modal-actions no-print">
-      <button class="btn-secondary" id="qrBulkCloseBtn">閉じる</button>
-      <button class="btn-primary" id="qrBulkPrintOkBtn">印刷する</button>
-    </div>
-  </div>
-</div>
+function handleSlipItemCodeLookup() {
+  const input = document.getElementById("slipItemCodeInput");
+  const code = input.value.trim();
+  const errorEl = document.getElementById("slipItemCodeError");
+  errorEl.textContent = "";
+  if (!code) return;
 
-<!-- ===================== 検品シール画像（Phomemo / SM-L200・アプリ共有用） ===================== -->
-<div class="modal-overlay" id="btLabelOverlay">
-  <div class="modal" style="max-width:480px;">
-    <h2 id="btLabelTitle">検品シール画像</h2>
-    <p class="bt-label-hint">画像を長押しして保存するか、「共有する」ボタンからお使いのラベル印刷アプリ（Phomemoアプリ／Print Masterアプリなど）に送ってください。<br>Phomemo・SM-L200とも、印刷はブラウザの印刷ダイアログではなく専用アプリ経由になります。</p>
-    <div class="bt-label-list" id="btLabelList"></div>
-    <div class="modal-actions">
-      <button class="btn-secondary" id="btLabelCloseBtn">閉じる</button>
-    </div>
-  </div>
-</div>
+  const p = allProducts.find(x => (x.code || "").trim().toLowerCase() === code.toLowerCase());
+  if (!p) {
+    errorEl.textContent = `商品コード「${code}」に該当する商品が見つかりません`;
+    clearSelectedProductCard();
+    document.getElementById("slipItemProduct").value = "";
+    return;
+  }
+  document.getElementById("slipItemProduct").value = p.id;
+  showSelectedProductCard(p);
+  document.getElementById("slipItemQty").focus();
+  document.getElementById("slipItemQty").select();
+}
 
-<!-- ===================== 伝票作成モーダル (Phase2) ===================== -->
-<div class="modal-overlay" id="slipCreateOverlay">
-  <div class="modal" style="max-width:480px;">
-    <h2 id="slipCreateTitle">伝票を作成</h2>
-    <span class="slip-type-badge" id="slipCreateTypeBadge"></span>
-    <input type="hidden" id="slipCreateType" value="out">
+function handleSlipItemAdd() {
+  const productId = document.getElementById("slipItemProduct").value;
+  const qty = Number(document.getElementById("slipItemQty").value);
+  const unitPrice = Number(document.getElementById("slipItemPrice").value) || 0;
+  const remark = document.getElementById("slipItemRemark").value.trim();
+  const p = allProducts.find(x => x.id === productId);
+  if (!p) { showToast("商品コードを入力するか、商品名から選択してください"); return; }
+  if (!qty || qty <= 0) { showToast("数量は1以上を入力してください"); return; }
 
-    <label id="slipPartnerLabel">取引先／納品先（任意）</label>
-    <input type="text" id="slipPartner" placeholder="例：〇〇神社様">
-    <label>取引先住所（任意）</label>
-    <input type="text" id="slipPartnerAddress" placeholder="例：東京都〇〇区……">
-    <label>取引先TEL（任意）</label>
-    <input type="text" id="slipPartnerTel" placeholder="例：03-1234-5678">
-    <label id="slipShipToLabel">出荷先（任意）</label>
-    <input type="text" id="slipShipTo" placeholder="取引先と異なる場合のみ入力">
+  const existing = currentSlipItems.find(i => i.productId === productId);
+  if (existing) {
+    existing.plannedQty += qty;
+    existing.unitPrice = unitPrice || existing.unitPrice;
+    if (remark) existing.remark = remark;
+  } else {
+    currentSlipItems.push({
+      productId, productName: p.name, code: p.code || "", unit: p.unit || "",
+      plannedQty: qty, checkedQty: 0, checked: false, unitPrice, remark
+    });
+  }
+  showToast(`${p.name} を追加しました`);
+  // 次の品目をすぐ入力できるようリセットしてコード欄にフォーカスを戻す
+  document.getElementById("slipItemQty").value = 1;
+  document.getElementById("slipItemPrice").value = "";
+  document.getElementById("slipItemRemark").value = "";
+  document.getElementById("slipItemCodeInput").value = "";
+  document.getElementById("slipItemProduct").value = "";
+  clearSelectedProductCard();
+  updateSlipItemAmountPreview();
+  renderSlipItemsEditor();
+  document.getElementById("slipItemCodeInput").focus();
+}
 
-    <div style="display:flex;gap:10px;">
+function renderSlipItemsEditor() {
+  const wrap = document.getElementById("slipItemsEditor");
+  wrap.innerHTML = "";
+  if (currentSlipItems.length === 0) {
+    wrap.innerHTML = `<p style="font-size:12px;color:#8a8272;">まだ品目がありません</p>`;
+    return;
+  }
+  currentSlipItems.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "slip-item-row";
+    const amount = (item.unitPrice || 0) * item.plannedQty;
+    row.innerHTML = `
       <div style="flex:1;">
-        <label>計上日</label>
-        <input type="date" id="slipPostingDate">
+        <div class="slip-item-name">${escapeHtml(item.productName)}${item.code ? "（" + escapeHtml(item.code) + "）" : ""}</div>
+        <div class="slip-item-price">数量：${item.plannedQty}${escapeHtml(item.unit)}　単価：¥${Number(item.unitPrice || 0).toLocaleString()}　金額：¥${amount.toLocaleString()}</div>
+        ${item.remark ? `<div class="slip-item-remark">摘要：${escapeHtml(item.remark)}</div>` : ""}
       </div>
-      <div style="flex:1;">
-        <label>取引区分（任意）</label>
-        <input type="text" id="slipTransactionType" placeholder="例：掛／現金">
+      <button type="button" class="slip-item-remove" data-idx="${idx}">×</button>
+    `;
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll(".slip-item-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      currentSlipItems.splice(Number(btn.dataset.idx), 1);
+      renderSlipItemsEditor();
+    });
+  });
+}
+
+function generateSlipNumber(type) {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const prefix = type === "in" ? "NYU" : "SYK";
+  const rand = String(Math.floor(Math.random() * 900) + 100);
+  return `${prefix}-${dateStr}-${rand}`;
+}
+
+function handleSlipCreateSave() {
+  if (currentSlipItems.length === 0) {
+    showToast("品目を1件以上追加してください");
+    return;
+  }
+  const type = document.getElementById("slipCreateType").value;
+  const partner = document.getElementById("slipPartner").value.trim();
+  const partnerAddress = document.getElementById("slipPartnerAddress").value.trim();
+  const partnerTel = document.getElementById("slipPartnerTel").value.trim();
+  const shipTo = document.getElementById("slipShipTo").value.trim();
+  const postingDate = document.getElementById("slipPostingDate").value;
+  const transactionType = document.getElementById("slipTransactionType").value.trim();
+  const warehouse = document.getElementById("slipWarehouse").value.trim();
+  const orderNo = document.getElementById("slipOrderNo").value.trim();
+  const memo = document.getElementById("slipMemo").value.trim();
+
+  db.collection(SLIPS_COLLECTION).add({
+    type,
+    slipNumber: generateSlipNumber(type),
+    partner,
+    partnerAddress,
+    partnerTel,
+    shipTo,
+    postingDate,
+    transactionType,
+    warehouse,
+    orderNo,
+    memo,
+    status: "draft",
+    items: currentSlipItems,
+    staff: currentStaffName,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(() => {
+    showToast("伝票を作成しました");
+    closeSlipCreateModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("伝票の作成に失敗しました");
+  });
+}
+
+// ---- 伝票の詳細・検品・印刷 ----
+function openSlipDetailModal(id) {
+  const s = allSlips.find(x => x.id === id);
+  if (!s) return;
+  openSlipId = id;
+  pendingSlipScanCode = null;
+  const typeLabel = s.type === "in" ? "入荷伝票" : "出荷伝票";
+  document.getElementById("slipDetailTitle").textContent = typeLabel;
+  document.getElementById("slipDetailNumber").textContent = s.slipNumber || "";
+  document.getElementById("slipDetailPartner").textContent = s.partner || "取引先未設定";
+  document.getElementById("slipDetailPartnerAddress").textContent = s.partnerAddress || "";
+  document.getElementById("slipDetailPartnerTel").textContent = s.partnerTel || "";
+  document.getElementById("slipDetailShipToLabel").textContent = s.type === "in" ? "入荷元" : "出荷先";
+  document.getElementById("slipDetailShipTo").textContent = s.shipTo || s.partner || "";
+  document.getElementById("slipDetailIssueDate").textContent = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  document.getElementById("slipDetailPostingDate").textContent = formatPostingDate(s.postingDate);
+  document.getElementById("slipDetailTransactionType").textContent = s.transactionType || "";
+  document.getElementById("slipDetailWarehouse").textContent = s.warehouse || "";
+  document.getElementById("slipDetailOrderNo").textContent = s.orderNo || "";
+  document.getElementById("slipDetailStaff").textContent = s.staff ? `作成：${s.staff}` : "";
+  document.getElementById("slipDetailMemo").textContent = s.memo || "";
+
+  const qrBox = document.getElementById("slipQrBox");
+  qrBox.innerHTML = "";
+  new QRCode(qrBox, { text: buildSlipUrl(id), width: 64, height: 64, correctLevel: QRCode.CorrectLevel.M });
+  const qrLabel = document.createElement("div");
+  qrLabel.style.cssText = "font-size:clamp(9px,2.4vw,10.5px);color:#8a8272;margin-top:2px;";
+  qrLabel.textContent = s.slipNumber || "";
+  qrBox.appendChild(qrLabel);
+
+  const tbody = document.getElementById("slipDetailBody");
+  tbody.innerHTML = "";
+  const isDone = s.status === "done";
+  let totalAmount = 0;
+  (s.items || []).forEach((item, idx) => {
+    const unitPrice = Number(item.unitPrice || 0);
+    const amount = unitPrice * item.plannedQty;
+    totalAmount += amount;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.code || "")}</td>
+      <td>${escapeHtml(item.productName)}</td>
+      <td>¥${unitPrice.toLocaleString()}</td>
+      <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
+      <td>¥${amount.toLocaleString()}</td>
+      <td>${escapeHtml(item.remark || "")}</td>
+      <td class="no-print">
+        <input type="number" class="slip-check-qty" data-idx="${idx}" min="0" value="${item.checkedQty ?? item.plannedQty}" ${isDone ? "disabled" : ""}>
+      </td>
+      <td class="no-print">
+        <input type="checkbox" class="slip-check-box" data-idx="${idx}" ${item.checked ? "checked" : ""} ${isDone ? "disabled" : ""}>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+  document.getElementById("slipDetailTotal").textContent = `¥${totalAmount.toLocaleString()}`;
+
+  document.getElementById("slipDetailCompleteBtn").style.display = isDone ? "none" : "block";
+  document.getElementById("slipDetailDoneNote").style.display = isDone ? "block" : "none";
+
+  const labelWrap = document.getElementById("slipReceivingLabelWrap");
+  labelWrap.style.display = (isDone && s.type === "in") ? "block" : "none";
+
+  document.getElementById("slipDetailOverlay").classList.add("show");
+  if (!isDone) {
+    setTimeout(() => document.getElementById("slipItemScannerInput").focus(), 50);
+  }
+}
+
+function closeSlipDetailModal() {
+  openSlipId = null;
+  pendingSlipScanCode = null;
+  document.getElementById("slipDetailOverlay").classList.remove("show");
+}
+
+// ---- 伝票の印刷（ピック表／検品表／納品書） ----
+function companyLetterheadHtml() {
+  return `
+    <div class="slip-formal-companybox">
+      <div>住所　東京都府中市八幡町1-4-3</div>
+      <div>電話　042(334)1660番(代)</div>
+      <div>FAX　042(334)1665番</div>
+      <div class="slip-formal-companyname">株式会社　弘文社</div>
+    </div>
+  `;
+}
+
+function printSlipSheet(mode) {
+  const s = allSlips.find(x => x.id === openSlipId);
+  if (!s) return;
+  const sheet = document.getElementById("slipPrintSheet");
+  if (mode === "check") sheet.innerHTML = buildCheckSheetHtml(s);
+  else sheet.innerHTML = buildDeliverySheetHtml(s);
+
+  const qrHost = document.getElementById("printSheetQr");
+  if (qrHost) {
+    new QRCode(qrHost, { text: buildSlipUrl(s.id), width: 64, height: 64, correctLevel: QRCode.CorrectLevel.M });
+  }
+  setTimeout(() => window.print(), 30);
+}
+
+function buildCheckSheetHtml(s) {
+  const typeLabel = s.type === "in" ? "入荷" : "出荷";
+  const shipToLabel = s.type === "in" ? "入荷元" : "出荷先";
+  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  const rows = (s.items || []).map(item => `
+    <tr>
+      <td>${escapeHtml(item.code || "")}</td>
+      <td>${escapeHtml(item.productName)}</td>
+      <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
+      <td><span class="fill-blank"></span></td>
+      <td class="checkbox-glyph">☐</td>
+    </tr>
+  `).join("");
+  return `
+    <div class="slip-formal-header">
+      <h2 style="margin:0;">検品表（${typeLabel}）</h2>
+      <div class="slip-formal-header-qr">
+        <div id="printSheetQr"></div>
+        <span class="slip-formal-header-qr-label">${escapeHtml(s.slipNumber || "")}</span>
       </div>
+      ${companyLetterheadHtml()}
     </div>
-    <div style="display:flex;gap:10px;">
-      <div style="flex:1;">
-        <label>倉庫（任意）</label>
-        <input type="text" id="slipWarehouse" placeholder="例：本社倉庫">
-      </div>
-      <div style="flex:1;">
-        <label>発注№（任意）</label>
-        <input type="text" id="slipOrderNo" placeholder="先方発注番号など">
-      </div>
-    </div>
-
-    <label>備考（任意）</label>
-    <input type="text" id="slipMemo" placeholder="納品場所や便名など">
-
-    <hr class="section-divider">
-    <label>品目を追加</label>
-    <div style="display:flex;gap:8px;margin-bottom:8px;">
-      <input type="text" id="slipItemCodeInput" placeholder="商品コードを入力してEnter" style="flex:1;">
-    </div>
-    <p id="slipItemCodeError" class="error-msg" style="margin:-4px 0 8px;"></p>
-
-    <div id="slipItemSelectedCard" class="slip-selected-card" style="display:none;">
-      <div class="slip-selected-name" id="slipSelectedName"></div>
-      <div class="slip-selected-meta" id="slipSelectedMeta"></div>
-    </div>
-
-    <details style="margin:4px 0 10px;">
-      <summary style="font-size:12.5px;color:#8a8272;cursor:pointer;">商品コードが分からない場合は商品名から選ぶ</summary>
-      <select id="slipItemProduct" style="margin-top:8px;"></select>
-    </details>
-
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-      <label style="margin:0;white-space:nowrap;">数量</label>
-      <input type="number" id="slipItemQty" min="1" value="1" style="flex:1;margin-bottom:0;">
-      <label style="margin:0;white-space:nowrap;">単価</label>
-      <input type="number" id="slipItemPrice" min="0" step="1" placeholder="円" style="flex:1;margin-bottom:0;">
-    </div>
-    <p id="slipItemAmountPreview" style="font-size:12px;color:#6b6357;margin:-4px 0 8px;text-align:right;"></p>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <input type="text" id="slipItemRemark" placeholder="摘要（任意）" style="flex:1;margin-bottom:0;">
-      <button type="button" class="btn-secondary" id="slipItemAddBtn" style="flex:1;">追加</button>
-    </div>
-
-    <div class="slip-items-editor" id="slipItemsEditor" style="margin-top:14px;"></div>
-
-    <div class="modal-actions">
-      <button class="btn-secondary" id="slipCreateCancelBtn">キャンセル</button>
-      <button class="btn-primary" id="slipCreateSaveBtn">伝票を作成する</button>
-    </div>
-  </div>
-</div>
-
-<!-- ===================== 伝票詳細・検品モーダル (Phase2) ===================== -->
-<div class="modal-overlay" id="slipDetailOverlay">
-  <div class="modal" id="slipDetailPrintArea" style="max-width:680px;">
-    <div class="no-print">
-      <div class="slip-formal-header">
-        <h2 id="slipDetailTitle" style="margin:0;">伝票</h2>
-        <div class="slip-formal-header-qr">
-          <div id="slipQrBox"></div>
-          <span class="slip-formal-header-qr-label">↑ スキャンでこの画面を開けます</span>
-        </div>
-        <div class="slip-formal-companybox">
-          <div>住所　東京都府中市八幡町1-4-3</div>
-          <div>電話　042(334)1660番(代)</div>
-          <div>FAX　042(334)1665番</div>
-          <div class="slip-formal-companyname">株式会社　弘文社</div>
-        </div>
-      </div>
-
-      <table class="slip-formal-table">
-        <tr>
-          <th>発行日</th><td id="slipDetailIssueDate"></td>
-          <th>計上日</th><td id="slipDetailPostingDate"></td>
-        </tr>
-        <tr>
-          <th>伝票番号</th><td id="slipDetailNumber"></td>
-          <th id="slipDetailShipToLabel">出荷先</th><td id="slipDetailShipTo"></td>
-        </tr>
-        <tr>
-          <th>取引先</th>
-          <td colspan="3">
-            名称：<span id="slipDetailPartner"></span>　
-            住所：<span id="slipDetailPartnerAddress"></span>　
-            TEL：<span id="slipDetailPartnerTel"></span>
-          </td>
-        </tr>
-        <tr>
-          <th>取引区分</th><td id="slipDetailTransactionType"></td>
-          <th>倉庫</th><td id="slipDetailWarehouse"></td>
-        </tr>
-        <tr>
-          <th>発注№</th><td colspan="3" id="slipDetailOrderNo"></td>
-        </tr>
-      </table>
-
-      <p id="slipDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 8px;"></p>
-
-      <div style="margin-bottom:10px;">
-        <input type="text" id="slipItemScannerInput" class="scanner-input" placeholder="🔫 現品→検品シールの順にスキャン（検品用）" style="margin-bottom:8px;">
-        <button type="button" class="btn-secondary-inline" id="slipDetailScanBtn">📷 商品をスキャンして検品</button>
-      </div>
-
-      <table class="slip-detail-table">
-        <thead>
-          <tr>
-            <th>商品コード</th><th>商品名</th><th>単価</th><th>数量</th><th>金額</th><th>摘要</th>
-            <th>確認数</th><th>検品済</th>
-          </tr>
-        </thead>
-        <tbody id="slipDetailBody"></tbody>
-        <tfoot>
-          <tr>
-            <td colspan="4" style="text-align:right;font-weight:700;">合計金額</td>
-            <td colspan="2" id="slipDetailTotal" style="font-weight:700;"></td>
-            <td></td><td></td>
-          </tr>
-        </tfoot>
-      </table>
-
-      <p style="font-size:13px;margin-top:12px;">備考：<span id="slipDetailMemo"></span></p>
-
-      <p id="slipDetailDoneNote" style="display:none;font-size:13px;color:var(--ok-text);font-weight:600;margin-top:12px;">この伝票は検品完了済みです（在庫反映済み）</p>
-
-      <div id="slipReceivingLabelWrap" style="display:none;margin-top:10px;">
-        <button type="button" class="btn-secondary-inline" id="slipReceivingLabelBtn">🏷️ 受入QRラベルを印刷</button>
-      </div>
-      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
-        <button type="button" class="btn-secondary-inline" id="slipPickLabelBtn">🏷️ 検品シールを印刷（A4）</button>
-        <button type="button" class="btn-secondary-inline" id="slipPickLabelPhomemoImageBtn">📤 検品シール画像（Phomemoアプリ共有用）</button>
-        <button type="button" class="btn-secondary-inline" id="slipPickLabelBtLabelBtn">📤 検品シール画像（SM-L200アプリ共有用）</button>
-        <button type="button" class="btn-secondary-inline" id="slipPickLabelPhomemoBtn">🏷️ 検品シールを印刷（Phomemo・PCドライバ用/試験的）</button>
-      </div>
-    </div>
-
-    <div id="slipPrintSheet" class="print-sheet"></div>
-
-    <div class="modal-actions no-print" style="flex-wrap:wrap;">
-      <button class="btn-secondary" id="slipDetailCloseBtn">閉じる</button>
-      <button class="btn-secondary" id="slipDetailPrintCheckBtn">🔍 検品表</button>
-      <button class="btn-secondary" id="slipDetailPrintDeliveryBtn">📦 納品書</button>
-      <button class="btn-primary" id="slipDetailCompleteBtn">検品完了として記録する</button>
-    </div>
-  </div>
-</div>
-
-<!-- ===================== 発注作成モーダル (Phase4) ===================== -->
-<div class="modal-overlay" id="orderCreateOverlay">
-  <div class="modal" style="max-width:480px;">
-    <h2>発注を作成</h2>
-
-    <label>仕入先（任意）</label>
-    <input type="text" id="orderPartner" placeholder="例：〇〇商店">
-    <label>メモ（任意）</label>
-    <input type="text" id="orderMemo" placeholder="納期の目安など">
-
-    <hr class="section-divider">
-    <label>品目を追加</label>
-    <div style="display:flex;gap:8px;margin-bottom:8px;">
-      <input type="text" id="orderItemCodeInput" placeholder="商品コードを入力してEnter" style="flex:1;">
-    </div>
-    <p id="orderItemCodeError" class="error-msg" style="margin:-4px 0 8px;"></p>
-
-    <div id="orderItemSelectedCard" class="slip-selected-card" style="display:none;">
-      <div class="slip-selected-name" id="orderSelectedName"></div>
-      <div class="slip-selected-meta" id="orderSelectedMeta"></div>
-    </div>
-
-    <details style="margin:4px 0 10px;">
-      <summary style="font-size:12.5px;color:#8a8272;cursor:pointer;">商品コードが分からない場合は商品名から選ぶ</summary>
-      <select id="orderItemProduct" style="margin-top:8px;"></select>
-    </details>
-
-    <div style="display:flex;gap:8px;align-items:center;">
-      <label style="margin:0;white-space:nowrap;">発注数量</label>
-      <input type="number" id="orderItemQty" min="1" value="1" style="flex:1;">
-      <button type="button" class="btn-secondary" id="orderItemAddBtn" style="flex:1;">追加</button>
-    </div>
-
-    <div class="slip-items-editor" id="orderItemsEditor" style="margin-top:14px;"></div>
-
-    <div class="modal-actions">
-      <button class="btn-secondary" id="orderCreateCancelBtn">キャンセル</button>
-      <button class="btn-primary" id="orderCreateSaveBtn">発注案を作成する</button>
-    </div>
-  </div>
-</div>
-
-<!-- ===================== 発注詳細モーダル (Phase4) ===================== -->
-<div class="modal-overlay" id="orderDetailOverlay">
-  <div class="modal" style="max-width:600px;">
-    <h2>発注</h2>
-    <div class="slip-detail-head">
-      <div><strong id="orderDetailNumber"></strong>　<span class="slip-status" id="orderDetailStatus"></span></div>
-      <div id="orderDetailDate" style="font-size:12px;color:#8a8272;"></div>
-    </div>
-    <p style="font-size:14px;margin:10px 0 2px;">仕入先：<span id="orderDetailPartner"></span></p>
-    <p id="orderDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 2px;"></p>
-    <p id="orderDetailMemo" style="font-size:12px;color:#8a8272;margin:0 0 10px;"></p>
-
-    <p id="orderReceivedQtyHint" style="display:none;font-size:12px;color:#8a8272;margin:0 0 8px;">実際に入荷した数量を確認・修正してください</p>
-
-    <table class="slip-detail-table">
-      <thead>
-        <tr><th>商品名</th><th>コード</th><th>発注数量</th><th>入荷数量</th></tr>
-      </thead>
-      <tbody id="orderDetailBody"></tbody>
+    <table class="slip-formal-table">
+      <tr><th>伝票番号</th><td>${escapeHtml(s.slipNumber || "")}</td><th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td></tr>
+      <tr><th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td><th>作成日</th><td>${issueDate}</td></tr>
     </table>
+    <table class="slip-detail-table">
+      <thead><tr><th>商品コード</th><th>商品名</th><th>数量（予定）</th><th>確認数</th><th>検品済</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
 
-    <p id="orderDetailDoneNote" style="display:none;font-size:13px;color:var(--ok-text);font-weight:600;margin-top:12px;">この発注は入荷済みです（在庫反映済み）</p>
-    <p id="orderDetailCancelledNote" style="display:none;font-size:13px;color:var(--warn-text);font-weight:600;margin-top:12px;">この発注はキャンセルされました</p>
-
-    <div class="modal-actions">
-      <button class="btn-secondary" id="orderDetailCloseBtn">閉じる</button>
-      <button class="btn-secondary" id="orderCancelBtn" style="display:none;">発注をキャンセル</button>
-      <button class="btn-primary" id="orderMarkOrderedBtn" style="display:none;">発注済みにする</button>
-      <button class="btn-primary" id="orderMarkReceivedBtn" style="display:none;">入荷完了として記録する（在庫に反映）</button>
+function buildDeliverySheetHtml(s) {
+  const typeLabel = s.type === "in" ? "入荷伝票" : "出荷伝票";
+  const shipToLabel = s.type === "in" ? "入荷元" : "出荷先";
+  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  let total = 0;
+  const rows = (s.items || []).map(item => {
+    const unitPrice = Number(item.unitPrice || 0);
+    const amount = unitPrice * item.plannedQty;
+    total += amount;
+    return `
+      <tr>
+        <td>${escapeHtml(item.code || "")}</td>
+        <td>${escapeHtml(item.productName)}</td>
+        <td>¥${unitPrice.toLocaleString()}</td>
+        <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
+        <td>¥${amount.toLocaleString()}</td>
+        <td>${escapeHtml(item.remark || "")}</td>
+      </tr>
+    `;
+  }).join("");
+  return `
+    <div class="slip-formal-header">
+      <h2 style="margin:0;">${typeLabel}</h2>
+      <div class="slip-formal-header-qr">
+        <div id="printSheetQr"></div>
+        <span class="slip-formal-header-qr-label">${escapeHtml(s.slipNumber || "")}</span>
+      </div>
+      ${companyLetterheadHtml()}
     </div>
-  </div>
-</div>
+    <table class="slip-formal-table">
+      <tr>
+        <th>発行日</th><td>${issueDate}</td>
+        <th>計上日</th><td>${formatPostingDate(s.postingDate)}</td>
+      </tr>
+      <tr>
+        <th>伝票番号</th><td>${escapeHtml(s.slipNumber || "")}</td>
+        <th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td>
+      </tr>
+      <tr>
+        <th>取引先</th>
+        <td colspan="3">
+          名称：${escapeHtml(s.partner || "")}　
+          住所：${escapeHtml(s.partnerAddress || "")}　
+          TEL：${escapeHtml(s.partnerTel || "")}
+        </td>
+      </tr>
+      <tr>
+        <th>取引区分</th><td>${escapeHtml(s.transactionType || "")}</td>
+        <th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td>
+      </tr>
+      <tr>
+        <th>発注№</th><td colspan="3">${escapeHtml(s.orderNo || "")}</td>
+      </tr>
+    </table>
+    <table class="slip-detail-table">
+      <thead><tr><th>商品コード</th><th>商品名</th><th>単価</th><th>数量</th><th>金額</th><th>摘要</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4" style="text-align:right;font-weight:700;">合計金額</td>
+          <td colspan="2" style="font-weight:700;">¥${total.toLocaleString()}</td>
+        </tr>
+      </tfoot>
+    </table>
+    <p style="font-size:13px;margin-top:12px;">備考：${escapeHtml(s.memo || "")}</p>
+  `;
+}
 
-<!-- ===================== カメラスキャンモーダル (Phase3) ===================== -->
-<div class="modal-overlay" id="scanOverlay">
-  <div class="modal" style="max-width:420px;">
-    <h2 id="scanModalTitle">QRコードをスキャン</h2>
-    <div class="scan-video-wrap">
-      <video id="scanVideo" playsinline muted></video>
-      <canvas id="scanCanvas" style="display:none;"></canvas>
-      <div class="scan-frame"></div>
-    </div>
-    <p id="scanHint" style="font-size:12px;color:#8a8272;margin-top:10px;">商品または伝票のQRコードにカメラを向けてください</p>
-    <p id="scanStepStatus" style="display:none;font-size:13.5px;font-weight:700;margin-top:6px;"></p>
-    <p class="error-msg" id="scanError"></p>
-    <div class="modal-actions">
-      <button class="btn-secondary" id="scanCloseBtn">閉じる</button>
-    </div>
-  </div>
-</div>
+// ===================== Phase4: 在庫僅少の自動通知 =====================
+// 「発注が必要な商品」＝在庫僅少ライン以下 かつ 未発注/発注済みの発注にまだ含まれていない商品
+function getOpenOrderProductIds() {
+  const ids = new Set();
+  allOrders.forEach(o => {
+    if (o.status === "draft" || o.status === "ordered") {
+      (o.items || []).forEach(item => ids.add(item.productId));
+    }
+  });
+  return ids;
+}
 
-<!-- Firebase SDK (compat) -->
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+function getLowStockNeedingOrder() {
+  const openIds = getOpenOrderProductIds();
+  return allProducts.filter(p => Number(p.currentStock) <= Number(p.minStock) && !openIds.has(p.id));
+}
 
-<!-- Phase2追加: エクセル取込用 / QRコード生成用ライブラリ -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<!-- Phase3追加: スマホカメラでのQRコード読み取り用ライブラリ -->
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+function checkLowStockAutoNotify() {
+  const current = getLowStockNeedingOrder();
+  const currentIds = new Set(current.map(p => p.id));
+  updateOrdersTabBadge(currentIds.size);
 
-<script src="firebase-config.js"></script>
-<script src="app.js"></script>
-</body>
-</html>
+  if (previousLowStockIds === null) {
+    // 初回のみ：既にある分もまとめて1回お知らせする
+    if (currentIds.size > 0) {
+      showToast(`⚠️ 在庫僅少で発注が必要な商品が${currentIds.size}件あります`);
+    }
+  } else {
+    const newlyLow = current.filter(p => !previousLowStockIds.has(p.id));
+    if (newlyLow.length > 0) {
+      const names = newlyLow.slice(0, 3).map(p => p.name).join("、");
+      showToast(`⚠️ 在庫僅少：${names}${newlyLow.length > 3 ? ` 他${newlyLow.length - 3}件` : ""}`);
+      if (browserNotifyEnabled && typeof Notification !== "undefined") {
+        try {
+          new Notification("在庫僅少のお知らせ", {
+            body: `${names}${newlyLow.length > 3 ? ` 他${newlyLow.length - 3}件` : ""} が在庫僅少です。発注管理タブをご確認ください。`
+          });
+        } catch (e) { console.error(e); }
+      }
+    }
+  }
+  previousLowStockIds = currentIds;
+}
+
+function updateOrdersTabBadge(count) {
+  const badge = document.getElementById("orderLowBadge");
+  if (!badge) return;
+  if (count > 0) {
+    badge.textContent = count;
+    badge.style.display = "inline-block";
+  } else {
+    badge.style.display = "none";
+  }
+}
+
+function handleEnableBrowserNotify() {
+  if (typeof Notification === "undefined") {
+    showToast("この端末・ブラウザは通知に対応していません");
+    return;
+  }
+  Notification.requestPermission().then(perm => {
+    browserNotifyEnabled = (perm === "granted");
+    updateNotifyBtnLabel();
+    showToast(browserNotifyEnabled ? "ブラウザ通知を有効にしました" : "通知が許可されませんでした");
+  });
+}
+
+function updateNotifyBtnLabel() {
+  const btn = document.getElementById("orderNotifyBtn");
+  if (!btn) return;
+  btn.textContent = browserNotifyEnabled ? "🔔 ブラウザ通知：有効" : "🔕 ブラウザ通知を有効にする";
+}
+
+// ===================== Phase4: 発注が必要な商品（アラート表示） =====================
+function renderLowStockAlert() {
+  const box = document.getElementById("lowStockAlertBox");
+  const listEl = document.getElementById("lowStockAlertList");
+  const needing = getLowStockNeedingOrder();
+  if (needing.length === 0) {
+    box.style.display = "none";
+    return;
+  }
+  box.style.display = "block";
+  document.getElementById("lowStockAlertCount").textContent = needing.length;
+  listEl.innerHTML = "";
+  needing.forEach(p => {
+    const row = document.createElement("div");
+    row.className = "low-stock-alert-row";
+    row.innerHTML = `
+      <span>${escapeHtml(p.name)}（現在庫：${p.currentStock ?? 0}${escapeHtml(p.unit || "")}／僅少ライン：${p.minStock ?? 0}）</span>
+    `;
+    listEl.appendChild(row);
+  });
+}
+
+function handleCreateOrderFromLowStock() {
+  const needing = getLowStockNeedingOrder();
+  if (needing.length === 0) {
+    showToast("発注が必要な商品はありません");
+    return;
+  }
+  const prefill = needing.map(p => ({
+    productId: p.id,
+    productName: p.name,
+    code: p.code || "",
+    unit: p.unit || "",
+    qty: Math.max(1, (Number(p.minStock) || 0) * 2 - Number(p.currentStock || 0))
+  }));
+  openOrderCreateModal(prefill);
+}
+
+// ===================== Phase4: 発注（購入発注）管理 =====================
+function subscribeOrders() {
+  db.collection(ORDERS_COLLECTION).orderBy("createdAt", "desc").limit(200).onSnapshot(snapshot => {
+    allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    if (document.getElementById("tabOrders").style.display !== "none") {
+      renderLowStockAlert();
+      renderOrderList(getActiveOrderFilter());
+    }
+    updateOrdersTabBadge(getLowStockNeedingOrder().length);
+    handlePendingHash();
+  }, err => console.error(err));
+}
+
+function getActiveOrderFilter() {
+  const active = document.querySelector(".order-filter-btn.active");
+  return active ? active.dataset.filter : "all";
+}
+
+const ORDER_STATUS_LABEL = { draft: "未発注", ordered: "発注済み", received: "入荷済み", cancelled: "キャンセル" };
+
+function renderOrderList(filter) {
+  const listEl = document.getElementById("orderList");
+  const emptyEl = document.getElementById("orderEmptyState");
+  let items = allOrders;
+  if (filter && filter !== "all") items = items.filter(o => o.status === filter);
+
+  listEl.innerHTML = "";
+  emptyEl.style.display = items.length === 0 ? "block" : "none";
+
+  items.forEach(o => {
+    const row = document.createElement("div");
+    row.className = "slip-row";
+    const dt = o.createdAt && o.createdAt.toDate ? formatDateTime(o.createdAt.toDate()) : "―";
+    const statusClass = o.status === "received" ? "done" : (o.status === "cancelled" ? "cancelled" : "");
+    row.innerHTML = `
+      <div class="slip-main">
+        <div class="slip-top">
+          <span class="slip-number">${escapeHtml(o.orderNumber || "")}</span>
+          <span class="slip-status ${statusClass}">${ORDER_STATUS_LABEL[o.status] || o.status}</span>
+        </div>
+        <div class="history-meta">${escapeHtml(o.partner || "仕入先未設定")}　/　${dt}　/　品目数：${(o.items || []).length}</div>
+      </div>
+    `;
+    row.addEventListener("click", () => openOrderDetailModal(o.id));
+    listEl.appendChild(row);
+  });
+}
+
+// ---- 発注の新規作成 ----
+function openOrderCreateModal(prefillItems) {
+  currentOrderItems = Array.isArray(prefillItems) ? prefillItems.map(i => ({ ...i })) : [];
+  document.getElementById("orderPartner").value = "";
+  document.getElementById("orderMemo").value = "";
+  document.getElementById("orderItemCodeInput").value = "";
+  document.getElementById("orderItemCodeError").textContent = "";
+  const productSelect = document.getElementById("orderItemProduct");
+  productSelect.innerHTML = `<option value="">商品を選択...</option>` +
+    allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}${p.code ? "（" + escapeHtml(p.code) + "）" : ""}</option>`).join("");
+  document.getElementById("orderItemQty").value = 1;
+  clearOrderSelectedProductCard();
+  renderOrderItemsEditor();
+  document.getElementById("orderCreateOverlay").classList.add("show");
+  setTimeout(() => document.getElementById("orderItemCodeInput").focus(), 50);
+}
+
+function closeOrderCreateModal() {
+  document.getElementById("orderCreateOverlay").classList.remove("show");
+}
+
+function showOrderSelectedProductCard(p) {
+  const card = document.getElementById("orderItemSelectedCard");
+  if (!p) { clearOrderSelectedProductCard(); return; }
+  document.getElementById("orderSelectedName").textContent = p.name || "";
+  document.getElementById("orderSelectedMeta").textContent =
+    `${p.code ? "コード：" + p.code + "　/　" : ""}現在庫：${p.currentStock ?? 0}${p.unit || ""}　/　僅少ライン：${p.minStock ?? 0}`;
+  card.style.display = "block";
+}
+
+function clearOrderSelectedProductCard() {
+  document.getElementById("orderItemSelectedCard").style.display = "none";
+}
+
+function handleOrderItemProductChange() {
+  const id = document.getElementById("orderItemProduct").value;
+  const p = allProducts.find(x => x.id === id);
+  document.getElementById("orderItemCodeError").textContent = "";
+  showOrderSelectedProductCard(p);
+}
+
+function handleOrderItemCodeLookup() {
+  const input = document.getElementById("orderItemCodeInput");
+  const code = input.value.trim();
+  const errorEl = document.getElementById("orderItemCodeError");
+  errorEl.textContent = "";
+  if (!code) return;
+
+  const p = allProducts.find(x => (x.code || "").trim().toLowerCase() === code.toLowerCase());
+  if (!p) {
+    errorEl.textContent = `商品コード「${code}」に該当する商品が見つかりません`;
+    clearOrderSelectedProductCard();
+    document.getElementById("orderItemProduct").value = "";
+    return;
+  }
+  document.getElementById("orderItemProduct").value = p.id;
+  showOrderSelectedProductCard(p);
+  document.getElementById("orderItemQty").focus();
+  document.getElementById("orderItemQty").select();
+}
+
+function handleOrderItemAdd() {
+  const productId = document.getElementById("orderItemProduct").value;
+  const qty = Number(document.getElementById("orderItemQty").value);
+  const p = allProducts.find(x => x.id === productId);
+  if (!p) { showToast("商品コードを入力するか、商品名から選択してください"); return; }
+  if (!qty || qty <= 0) { showToast("数量は1以上を入力してください"); return; }
+
+  const existing = currentOrderItems.find(i => i.productId === productId);
+  if (existing) {
+    existing.qty += qty;
+  } else {
+    currentOrderItems.push({ productId, productName: p.name, code: p.code || "", unit: p.unit || "", qty });
+  }
+  showToast(`${p.name} を追加しました`);
+  document.getElementById("orderItemQty").value = 1;
+  document.getElementById("orderItemCodeInput").value = "";
+  document.getElementById("orderItemProduct").value = "";
+  clearOrderSelectedProductCard();
+  renderOrderItemsEditor();
+  document.getElementById("orderItemCodeInput").focus();
+}
+
+function renderOrderItemsEditor() {
+  const wrap = document.getElementById("orderItemsEditor");
+  wrap.innerHTML = "";
+  if (currentOrderItems.length === 0) {
+    wrap.innerHTML = `<p style="font-size:12px;color:#8a8272;">まだ品目がありません</p>`;
+    return;
+  }
+  currentOrderItems.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "slip-item-row";
+    row.innerHTML = `
+      <div class="slip-item-name">${escapeHtml(item.productName)}${item.code ? "（" + escapeHtml(item.code) + "）" : ""}</div>
+      <div class="slip-item-qty">${item.qty}${escapeHtml(item.unit || "")}</div>
+      <button type="button" class="slip-item-remove" data-idx="${idx}">×</button>
+    `;
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll(".slip-item-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      currentOrderItems.splice(Number(btn.dataset.idx), 1);
+      renderOrderItemsEditor();
+    });
+  });
+}
+
+function generateOrderNumber() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const rand = String(Math.floor(Math.random() * 900) + 100);
+  return `HCH-${dateStr}-${rand}`;
+}
+
+function handleOrderCreateSave() {
+  if (currentOrderItems.length === 0) {
+    showToast("品目を1件以上追加してください");
+    return;
+  }
+  const partner = document.getElementById("orderPartner").value.trim();
+  const memo = document.getElementById("orderMemo").value.trim();
+
+  db.collection(ORDERS_COLLECTION).add({
+    orderNumber: generateOrderNumber(),
+    partner,
+    memo,
+    status: "draft",
+    items: currentOrderItems,
+    staff: currentStaffName,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(() => {
+    showToast("発注案を作成しました");
+    closeOrderCreateModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("発注案の作成に失敗しました");
+  });
+}
+
+// ---- 発注の詳細・ステータス管理 ----
+function openOrderDetailModal(id) {
+  const o = allOrders.find(x => x.id === id);
+  if (!o) return;
+  openOrderId = id;
+  document.getElementById("orderDetailNumber").textContent = o.orderNumber || "";
+  document.getElementById("orderDetailStatus").textContent = ORDER_STATUS_LABEL[o.status] || o.status;
+  document.getElementById("orderDetailStatus").className =
+    "slip-status" + (o.status === "received" ? " done" : (o.status === "cancelled" ? " cancelled" : ""));
+  document.getElementById("orderDetailPartner").textContent = o.partner || "仕入先未設定";
+  document.getElementById("orderDetailDate").textContent = o.createdAt && o.createdAt.toDate ? formatDateTime(o.createdAt.toDate()) : "";
+  document.getElementById("orderDetailStaff").textContent = o.staff ? `作成：${o.staff}さん` : "";
+  document.getElementById("orderDetailMemo").textContent = o.memo || "";
+
+  const isOrdered = o.status === "ordered";
+  const isReceived = o.status === "received";
+  const isCancelled = o.status === "cancelled";
+
+  const tbody = document.getElementById("orderDetailBody");
+  tbody.innerHTML = "";
+  (o.items || []).forEach((item, idx) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.productName)}</td>
+      <td>${escapeHtml(item.code || "")}</td>
+      <td>${item.qty}${escapeHtml(item.unit || "")}</td>
+      <td>
+        ${isOrdered
+          ? `<input type="number" class="order-received-qty" data-idx="${idx}" min="0" value="${item.receivedQty ?? item.qty}">`
+          : `${item.receivedQty ?? (isReceived ? item.qty : "―")}${item.receivedQty != null || isReceived ? escapeHtml(item.unit || "") : ""}`}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById("orderMarkOrderedBtn").style.display = (o.status === "draft") ? "block" : "none";
+  document.getElementById("orderMarkReceivedBtn").style.display = isOrdered ? "block" : "none";
+  document.getElementById("orderCancelBtn").style.display = (o.status === "draft" || o.status === "ordered") ? "block" : "none";
+  document.getElementById("orderDetailDoneNote").style.display = isReceived ? "block" : "none";
+  document.getElementById("orderDetailCancelledNote").style.display = isCancelled ? "block" : "none";
+  document.getElementById("orderReceivedQtyHint").style.display = isOrdered ? "block" : "none";
+
+  document.getElementById("orderDetailOverlay").classList.add("show");
+}
+
+function closeOrderDetailModal() {
+  openOrderId = null;
+  document.getElementById("orderDetailOverlay").classList.remove("show");
+}
+
+function handleOrderMarkOrdered() {
+  if (!openOrderId) return;
+  db.collection(ORDERS_COLLECTION).doc(openOrderId).update({
+    status: "ordered",
+    orderedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    orderedBy: currentStaffName
+  }).then(() => {
+    showToast("発注済みにしました");
+    closeOrderDetailModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("更新に失敗しました");
+  });
+}
+
+function handleOrderCancel() {
+  if (!openOrderId) return;
+  if (!confirm("この発注をキャンセルします。よろしいですか？")) return;
+  db.collection(ORDERS_COLLECTION).doc(openOrderId).update({
+    status: "cancelled",
+    cancelledAt: firebase.firestore.FieldValue.serverTimestamp(),
+    cancelledBy: currentStaffName
+  }).then(() => {
+    showToast("発注をキャンセルしました");
+    closeOrderDetailModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("更新に失敗しました");
+  });
+}
+
+function handleOrderMarkReceived() {
+  const o = allOrders.find(x => x.id === openOrderId);
+  if (!o) return;
+
+  const items = (o.items || []).map((item, idx) => {
+    const qtyInput = document.querySelector(`.order-received-qty[data-idx="${idx}"]`);
+    return { ...item, receivedQty: qtyInput ? Number(qtyInput.value) || 0 : item.qty };
+  });
+
+  const orderRef = db.collection(ORDERS_COLLECTION).doc(openOrderId);
+  const btn = document.getElementById("orderMarkReceivedBtn");
+  btn.disabled = true;
+  btn.textContent = "反映中...";
+
+  db.runTransaction(tx => {
+    return Promise.all(items.map(item => {
+      const productRef = db.collection(COLLECTION).doc(item.productId);
+      return tx.get(productRef).then(doc => ({ doc, item, productRef }));
+    })).then(results => {
+      results.forEach(({ doc, item, productRef }) => {
+        if (!doc.exists) return;
+        const latestStock = Number(doc.data().currentStock || 0);
+        const newStock = latestStock + Number(item.receivedQty || 0);
+        tx.update(productRef, { currentStock: newStock });
+        const movementRef = db.collection(MOVEMENTS_COLLECTION).doc();
+        tx.set(movementRef, {
+          productId: item.productId,
+          productName: item.productName,
+          unit: item.unit || "",
+          type: "in",
+          qty: item.receivedQty,
+          note: `発注 ${o.orderNumber} の入荷反映`,
+          staff: currentStaffName,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      tx.update(orderRef, {
+        items,
+        status: "received",
+        receivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        receivedBy: currentStaffName
+      });
+    });
+  }).then(() => {
+    showToast("入荷を記録し、在庫に反映しました");
+    closeOrderDetailModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("反映に失敗しました");
+  }).finally(() => {
+    btn.disabled = false;
+    btn.textContent = "入荷完了として記録する（在庫に反映）";
+  });
+}
+
+// ===================== Phase3: カメラでのQRスキャン =====================
+function openScanModal(mode) {
+  scanMode = mode;
+  if (mode === "slip-item") pendingSlipScanCode = null;
+  document.getElementById("scanModalTitle").textContent =
+    mode === "slip-item" ? "商品QRをスキャン（検品）" : "QRコードをスキャン";
+  document.getElementById("scanHint").textContent =
+    mode === "slip-item" ? "現品のQRと検品シールのQRを順に1回ずつスキャンしてください（2回で1件確認）" : "商品または伝票のQRコードにカメラを向けてください";
+  const stepStatus = document.getElementById("scanStepStatus");
+  if (mode === "slip-item") {
+    stepStatus.style.display = "block";
+    stepStatus.style.color = "#8a8272";
+    stepStatus.textContent = "① 現品または検品シールのどちらか一方をスキャンしてください";
+  } else {
+    stepStatus.style.display = "none";
+  }
+  document.getElementById("scanError").textContent = "";
+  document.getElementById("scanOverlay").classList.add("show");
+  startScanCamera();
+}
+
+function closeScanModal() {
+  stopScanCamera();
+  document.getElementById("scanOverlay").classList.remove("show");
+}
+
+function startScanCamera() {
+  const video = document.getElementById("scanVideo");
+  if (typeof jsQR === "undefined") {
+    document.getElementById("scanError").textContent = "QR読み取りライブラリの読み込みに失敗しました。通信環境をご確認の上、再読み込みしてください。";
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    document.getElementById("scanError").textContent = "このブラウザはカメラ読み取りに対応していません";
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+    .then(stream => {
+      scanStream = stream;
+      video.srcObject = stream;
+      video.play();
+      scanRAF = requestAnimationFrame(scanTick);
+    })
+    .catch(err => {
+      console.error(err);
+      document.getElementById("scanError").textContent = "カメラを起動できませんでした（ブラウザのカメラ権限をご確認ください）";
+    });
+}
+
+function stopScanCamera() {
+  if (scanRAF) cancelAnimationFrame(scanRAF);
+  scanRAF = null;
+  if (scanStream) {
+    scanStream.getTracks().forEach(t => t.stop());
+    scanStream = null;
+  }
+  const video = document.getElementById("scanVideo");
+  if (video) video.srcObject = null;
+}
+
+function scanTick() {
+  const video = document.getElementById("scanVideo");
+  const canvas = document.getElementById("scanCanvas");
+  if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+    if (code && code.data) {
+      handleScanResult(code.data);
+      return;
+    }
+  }
+  scanRAF = requestAnimationFrame(scanTick);
+}
+
+function extractScannedId(text) {
+  const pm = text.match(/#product=([^&]+)/);
+  if (pm) return { type: "product", id: decodeURIComponent(pm[1]) };
+  const sm = text.match(/#slip=([^&]+)/);
+  if (sm) return { type: "slip", id: decodeURIComponent(sm[1]) };
+  return { type: "unknown", id: text.trim() };
+}
+
+function handleScanResult(text) {
+  const parsed = extractScannedId(text);
+
+  if (scanMode === "slip-item") {
+    handleSlipItemVerifyScan(parsed.id);
+    // 検品モードは閉じずに継続スキャン。連続検知を防ぐため少し間を空けて再開
+    setTimeout(() => {
+      if (document.getElementById("scanOverlay").classList.contains("show")) {
+        scanRAF = requestAnimationFrame(scanTick);
+      }
+    }, 1200);
+    return;
+  }
+
+  let { type, id } = parsed;
+  if (type === "unknown") {
+    if (allProducts.find(p => p.id === id)) type = "product";
+    else if (allSlips.find(s => s.id === id)) type = "slip";
+  }
+
+  if (type === "product") {
+    const p = allProducts.find(x => x.id === id);
+    stopScanCamera();
+    closeScanModal();
+    if (p) openMoveModal(p.id); else showToast("該当する商品が見つかりません");
+  } else if (type === "slip") {
+    const s = allSlips.find(x => x.id === id);
+    stopScanCamera();
+    closeScanModal();
+    if (s) { switchTab("slips"); openSlipDetailModal(s.id); } else showToast("該当する伝票が見つかりません");
+  } else {
+    document.getElementById("scanError").textContent = "認識できませんでした。もう一度お試しください。";
+    scanRAF = requestAnimationFrame(scanTick);
+  }
+}
+
+// ===================== Phase3.5: 警告音・バイブレーション =====================
+let sharedAudioCtx = null;
+function getAudioCtx() {
+  if (!sharedAudioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) sharedAudioCtx = new Ctx();
+  }
+  return sharedAudioCtx;
+}
+
+// ページ内の最初のタップ／クリックでAudioContextの再生許可を得ておく
+// （こうしておかないと、スキャン時にresume()が間に合わず音が出ないことがある）
+function unlockAudioCtx() {
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+  document.removeEventListener("click", unlockAudioCtx);
+  document.removeEventListener("touchend", unlockAudioCtx);
+  document.removeEventListener("keydown", unlockAudioCtx);
+}
+document.addEventListener("click", unlockAudioCtx);
+document.addEventListener("touchend", unlockAudioCtx);
+document.addEventListener("keydown", unlockAudioCtx);
+
+function playTone(freq, durationMs, type) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const fire = () => {
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type || "sine";
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.18, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + durationMs / 1000);
+    } catch (e) { console.error(e); }
+  };
+  // resume()の完了を待ってから鳴らす（サスペンド中に鳴らそうとすると無音になるため）
+  if (ctx.state === "suspended") {
+    ctx.resume().then(fire).catch(() => {});
+  } else {
+    fire();
+  }
+}
+
+function playSuccessBeep() {
+  playTone(880, 100, "sine");
+  if (navigator.vibrate) navigator.vibrate(40);
+}
+
+function playWarningAlert() {
+  playTone(220, 180, "square");
+  setTimeout(() => playTone(220, 180, "square"), 220);
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+}
+
+// ===================== Phase2: 入出庫（検品スキャン処理） =====================
+// 検品シール方式：現品のQRと検品シールのQRを順にスキャンし、2回とも同じ商品であれば1件確認とする
+function handleSlipItemVerifyScan(productId) {
+  const stepStatus = document.getElementById("scanStepStatus");
+  const p = allProducts.find(x => x.id === productId);
+  const pname = p ? p.name : "商品";
+
+  if (pendingSlipScanCode === null) {
+    pendingSlipScanCode = productId;
+    playTone(660, 60, "sine");
+    showToast("1回目OK。もう一方のQR（現品／検品シール）をスキャンしてください");
+    if (stepStatus) {
+      stepStatus.style.color = "var(--indigo-deep)";
+      stepStatus.textContent = `① ${pname} を確認しました → ② もう一方のQRをスキャンしてください`;
+    }
+    return;
+  }
+  const firstCode = pendingSlipScanCode;
+  pendingSlipScanCode = null;
+  if (firstCode !== productId) {
+    playWarningAlert();
+    showToast("⚠️ 現品と検品シールの商品が一致しません");
+    if (stepStatus) {
+      stepStatus.style.color = "var(--warn-text, #a3392b)";
+      stepStatus.textContent = "⚠️ 一致しませんでした。もう一度、現品→検品シールの順にスキャンしてください";
+    }
+    return;
+  }
+  handleSlipItemScan(productId);
+  if (stepStatus) {
+    stepStatus.style.color = "var(--ok-text, #0f6e56)";
+    stepStatus.textContent = `✅ ${pname} を確認しました。次の商品をスキャンしてください`;
+  }
+}
+
+function handleSlipItemScan(productId) {
+  const s = allSlips.find(x => x.id === openSlipId);
+  if (!s) { showToast("伝票が開かれていません"); return; }
+  const idx = (s.items || []).findIndex(it => it.productId === productId);
+
+  if (idx === -1) {
+    playWarningAlert();
+    showToast("⚠️ この伝票に含まれない商品です");
+    return;
+  }
+
+  const qtyInput = document.querySelector(`.slip-check-qty[data-idx="${idx}"]`);
+  const checkBox = document.querySelector(`.slip-check-box[data-idx="${idx}"]`);
+  const planned = s.items[idx].plannedQty;
+  const name = s.items[idx].productName;
+  const unit = s.items[idx].unit || "";
+  if (!qtyInput) return;
+
+  const current = Number(qtyInput.value) || 0;
+
+  if (current >= planned) {
+    // 数量超過（規定数に達しているのにさらにスキャンされた）
+    playWarningAlert();
+    showToast(`⚠️ 数量超過：${name} は既に${planned}${unit}に達しています`);
+    return;
+  }
+
+  const next = current + 1;
+  qtyInput.value = next;
+  if (checkBox) checkBox.checked = next >= planned;
+  playSuccessBeep();
+  showToast(`${name}：${next}/${planned}${unit} 確認`);
+}
+
+// ===================== Phase3.5: ハンディスキャナー（キーボード入力）対応 =====================
+function handleScannerWedgeInput(inputEl, mode) {
+  const text = inputEl.value.trim();
+  inputEl.value = "";
+  if (!text) return;
+
+  const parsed = extractScannedId(text);
+
+  if (mode === "slip-item") {
+    handleSlipItemVerifyScan(parsed.id);
+    inputEl.focus();
+    return;
+  }
+
+  let { type, id } = parsed;
+  if (type === "unknown") {
+    if (allProducts.find(p => p.id === id)) type = "product";
+    else if (allSlips.find(s => s.id === id)) type = "slip";
+  }
+
+  if (type === "product") {
+    const p = allProducts.find(x => x.id === id);
+    if (p) openMoveModal(p.id); else showToast("該当する商品が見つかりません");
+  } else if (type === "slip") {
+    const s = allSlips.find(x => x.id === id);
+    if (s) { switchTab("slips"); openSlipDetailModal(s.id); } else showToast("該当する伝票が見つかりません");
+  } else {
+    showToast("認識できませんでした");
+  }
+  inputEl.focus();
+}
+
+function handleSlipComplete() {
+  const s = allSlips.find(x => x.id === openSlipId);
+  if (!s) return;
+  if (!confirm("検品を完了し、在庫に反映します。よろしいですか？")) return;
+
+  // 画面上の確認数・チェック状態を取得
+  const items = (s.items || []).map((item, idx) => {
+    const qtyInput = document.querySelector(`.slip-check-qty[data-idx="${idx}"]`);
+    const checkBox = document.querySelector(`.slip-check-box[data-idx="${idx}"]`);
+    return {
+      ...item,
+      checkedQty: qtyInput ? Number(qtyInput.value) || 0 : item.plannedQty,
+      checked: checkBox ? checkBox.checked : false
+    };
+  });
+
+  const slipRef = db.collection(SLIPS_COLLECTION).doc(openSlipId);
+  const btn = document.getElementById("slipDetailCompleteBtn");
+  btn.disabled = true;
+  btn.textContent = "反映中...";
+
+  db.runTransaction(tx => {
+    return Promise.all(items.map(item => {
+      const productRef = db.collection(COLLECTION).doc(item.productId);
+      return tx.get(productRef).then(doc => ({ doc, item, productRef }));
+    })).then(results => {
+      results.forEach(({ doc, item, productRef }) => {
+        if (!doc.exists) return;
+        const latestStock = Number(doc.data().currentStock || 0);
+        const delta = s.type === "in" ? item.checkedQty : -item.checkedQty;
+        const newStock = Math.max(0, latestStock + delta);
+        tx.update(productRef, { currentStock: newStock });
+        const movementRef = db.collection(MOVEMENTS_COLLECTION).doc();
+        tx.set(movementRef, {
+          productId: item.productId,
+          productName: item.productName,
+          unit: item.unit || "",
+          type: s.type,
+          qty: item.checkedQty,
+          note: `伝票 ${s.slipNumber} による検品反映`,
+          staff: currentStaffName,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      tx.update(slipRef, {
+        items,
+        status: "done",
+        completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        completedBy: currentStaffName
+      });
+    });
+  }).then(() => {
+    showToast("検品を完了し、在庫に反映しました");
+    closeSlipDetailModal();
+  }).catch(err => {
+    console.error(err);
+    showToast("反映に失敗しました");
+  }).finally(() => {
+    btn.disabled = false;
+    btn.textContent = "検品完了として記録する";
+  });
+}
+
+// ===================== 商品登録 =====================
+function handleRegisterSubmit() {
+  const name = document.getElementById("regName").value.trim();
+  const code = document.getElementById("regCode").value.trim();
+  const category = document.getElementById("regCategory").value;
+  const unit = document.getElementById("regUnit").value.trim() || "個";
+  const price = Number(document.getElementById("regPrice").value) || 0;
+  const stock = Number(document.getElementById("regStock").value) || 0;
+  const minStock = Number(document.getElementById("regMinStock").value) || 0;
+  const note = document.getElementById("regNote").value.trim();
+
+  if (!name) {
+    showToast("商品名を入力してください");
+    return;
+  }
+
+  db.collection(COLLECTION).add({
+    name, code, category, unit,
+    price,
+    currentStock: stock,
+    minStock: minStock,
+    note,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(() => {
+    showToast("商品を登録しました");
+    document.getElementById("regName").value = "";
+    document.getElementById("regCode").value = "";
+    document.getElementById("regUnit").value = "個";
+    document.getElementById("regPrice").value = "";
+    document.getElementById("regStock").value = 0;
+    document.getElementById("regMinStock").value = 3;
+    document.getElementById("regNote").value = "";
+    switchTab("list");
+  }).catch(err => {
+    console.error(err);
+    showToast("登録に失敗しました");
+  });
+}
+
+// ===================== 商品編集 =====================
+function openEditModal(id) {
+  const p = allProducts.find(x => x.id === id);
+  if (!p) return;
+  editingId = id;
+  document.getElementById("editName").value = p.name || "";
+  document.getElementById("editCode").value = p.code || "";
+  document.getElementById("editCategory").value = p.category || CATEGORIES[0];
+  document.getElementById("editUnit").value = p.unit || "";
+  document.getElementById("editPrice").value = p.price ?? "";
+  document.getElementById("editStock").value = p.currentStock ?? 0;
+  document.getElementById("editMinStock").value = p.minStock ?? 0;
+  document.getElementById("editNote").value = p.note || "";
+  document.getElementById("editOverlay").classList.add("show");
+}
+
+function closeEditModal() {
+  editingId = null;
+  document.getElementById("editOverlay").classList.remove("show");
+}
+
+function handleEditSave() {
+  if (!editingId) return;
+  const data = {
+    name: document.getElementById("editName").value.trim(),
+    code: document.getElementById("editCode").value.trim(),
+    category: document.getElementById("editCategory").value,
+    unit: document.getElementById("editUnit").value.trim(),
+    price: Number(document.getElementById("editPrice").value) || 0,
+    currentStock: Number(document.getElementById("editStock").value) || 0,
+    minStock: Number(document.getElementById("editMinStock").value) || 0,
+    note: document.getElementById("editNote").value.trim()
+  };
+  db.collection(COLLECTION).doc(editingId).update(data)
+    .then(() => { showToast("保存しました"); closeEditModal(); })
+    .catch(err => { console.error(err); showToast("保存に失敗しました"); });
+}
+
+function handleEditDelete() {
+  if (!editingId) return;
+  if (!confirm("この商品を削除しますか？")) return;
+  db.collection(COLLECTION).doc(editingId).delete()
+    .then(() => { showToast("削除しました"); closeEditModal(); })
+    .catch(err => { console.error(err); showToast("削除に失敗しました"); });
+}
+
+// ===================== トースト =====================
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+// ===================== 試作運用：棚卸し・月始祭・防災備品 =====================
+const $w = id => document.getElementById(id);
+const integer = value => Number.isInteger(Number(value)) && Number(value) >= 0;
+const safe = value => escapeHtml(String(value ?? ""));
+const stamp = () => firebase.firestore.FieldValue.serverTimestamp();
+const dateLabel = value => value && value.toDate ? formatDateTime(value.toDate()) : "―";
+const currentMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,"0")}`; };
+function initWorkModules() {
+  $w("stocktakeDate").value = todayDateInputValue();
+  $w("festivalMonth").value = currentMonth();
+  $w("bulkModeBtn").onclick = () => { bulkMode = !bulkMode; bulkSelected.clear(); updateBulkButton(); renderProductList(); };
+  $w("bulkDeleteBtn").onclick = bulkDeleteProducts;
+  $w("stocktakeLoadBtn").onclick = loadStocktake;
+  $w("stocktakeDate").onchange = () => { stocktakeRecord=null; renderStocktake(); loadStocktake(); };
+  $w("stocktakeSaveBtn").onclick = saveStocktake;
+  $w("stocktakeApplyBtn").onclick = applyStocktake;
+  $w("stocktakePrintBtn").onclick = () => printWork("stocktake");
+  $w("festivalLoadBtn").onclick = loadFestival;
+  $w("festivalMonth").onchange = () => { festivalRecord=null; renderFestival(); loadFestival(); };
+  $w("festivalSaveBtn").onclick = saveFestival;
+  $w("festivalCommitBtn").onclick = () => changeFestival(true);
+  $w("festivalReturnBtn").onclick = () => changeFestival(false);
+  $w("festivalPrintBtn").onclick = () => printWork("festival");
+  $w("disasterAddBtn").onclick = addDisasterProduct;
+  $w("disasterMoveBtn").onclick = recordDisasterMovement;
+}
+function updateBulkButton() {
+  $w("bulkModeBtn").textContent = bulkMode ? "選択を終了" : "商品を選んで一括削除";
+  $w("bulkDeleteBtn").style.display = bulkMode ? "inline-block" : "none";
+  $w("bulkDeleteBtn").textContent = `選択した商品を削除（${bulkSelected.size}件）`;
+}
+async function bulkDeleteProducts() {
+  const ids = [...bulkSelected].filter(id => allProducts.some(p => p.id === id));
+  if (!ids.length) return showToast("商品を選択してください");
+  const typed = prompt(`${ids.length}件の商品詳細を削除します。伝票・入出庫の履歴は残ります。確認のため件数「${ids.length}」を入力してください。`);
+  if (typed !== String(ids.length)) return;
+  const btn = $w("bulkDeleteBtn"); btn.disabled = true;
+  try {
+    // Firestore のバッチ上限を考慮。途中失敗時は残りを選択状態で保持する。
+    for (let i=0; i<ids.length; i+=400) {
+      const batch = db.batch();
+      ids.slice(i,i+400).forEach(id => batch.delete(db.collection(COLLECTION).doc(id)));
+      await batch.commit();
+      ids.slice(i,i+400).forEach(id => bulkSelected.delete(id));
+    }
+    showToast(`${ids.length}件を削除しました`);
+  } catch (err) { console.error(err); showToast("削除が途中で止まりました。残りの選択を確認してください"); }
+  finally { btn.disabled = false; updateBulkButton(); renderProductList(); }
+}
+function printWork(tab) { switchTab(tab); document.body.classList.add("work-print"); setTimeout(() => window.print(), 150); }
+window.addEventListener("afterprint", () => document.body.classList.remove("work-print"));
+const stocktakeKey = () => $w("stocktakeDate").value;
+function renderStocktake() {
+  const body = $w("stocktakeRows"); if (!body) return;
+  const saved = new Map((stocktakeRecord?.items || []).map(item => [item.productId,item]));
+  const products = stocktakeRecord?.status === "applied" ? (stocktakeRecord.items || []) : allProducts.map(p => ({
+    productId:p.id, name:p.name, code:p.code, category:p.category, unit:p.unit,
+    bookQty:saved.has(p.id) ? saved.get(p.id).bookQty : Number(p.currentStock || 0),
+    actualQty:saved.get(p.id)?.actualQty ?? null, note:saved.get(p.id)?.note || ""
+  }));
+  body.innerHTML = products.map(item => `<tr data-id="${safe(item.productId)}"><td>${safe(item.code)}</td><td>${safe(item.name)}</td><td>${safe(item.category)}</td><td>${safe(item.bookQty)} ${safe(item.unit)}</td><td><input class="actual" type="number" min="0" step="1" value="${item.actualQty ?? ""}" ${stocktakeRecord?.status === "applied" ? "disabled" : ""}></td><td class="difference">${item.actualQty === null ? "―" : Number(item.actualQty)-Number(item.bookQty)}</td><td><input class="note" type="text" value="${safe(item.note)}" ${stocktakeRecord?.status === "applied" ? "disabled" : ""}></td></tr>`).join("");
+  body.querySelectorAll(".actual").forEach(input => input.oninput = () => { const book=Number(input.closest("tr").children[3].textContent.split(" ")[0]); input.closest("tr").querySelector(".difference").textContent=input.value==="" ? "―" : Number(input.value)-book; });
+  $w("stocktakeStatus").textContent = stocktakeRecord?.status === "applied" ? "確定済み（在庫反映済み）" : stocktakeRecord ? "入力保存済み・未確定" : "新規の棚卸し表";
+  $w("stocktakeSaveBtn").disabled = $w("stocktakeApplyBtn").disabled = stocktakeRecord?.status === "applied";
+}
+async function loadStocktake() {
+  const key=stocktakeKey(); if (!key) return showToast("棚卸日を選択してください");
+  try { const doc=await db.collection(STOCKTAKES).doc(key).get(); stocktakeRecord=doc.exists?doc.data():null; renderStocktake(); }
+  catch(err) { console.error(err); showToast("棚卸し表を開けませんでした"); }
+}
+function collectStocktake() {
+  const previous=new Map((stocktakeRecord?.items || []).map(i=>[i.productId,i]));
+  return [...$w("stocktakeRows").querySelectorAll("tr")].map(row => {
+    const id=row.dataset.id, p=allProducts.find(x=>x.id===id), old=previous.get(id);
+    const actual=row.querySelector(".actual").value;
+    if (actual!=="" && !integer(actual)) throw Error("実数は0以上の整数で入力してください");
+    return {productId:id, name:p?.name||old?.name||"", code:p?.code||old?.code||"", category:p?.category||old?.category||"", unit:p?.unit||old?.unit||"", bookQty:old ? Number(old.bookQty) : Number(p.currentStock||0), actualQty:actual===""?null:Number(actual), note:row.querySelector(".note").value.trim()};
+  });
+}
+async function saveStocktake() {
+  if (!stocktakeKey() || stocktakeRecord?.status === "applied") return;
+  try {
+    const items=collectStocktake();
+    await db.collection(STOCKTAKES).doc(stocktakeKey()).set({date:stocktakeKey(), items, status:"draft", updatedBy:currentStaffName, updatedAt:stamp()});
+    stocktakeRecord={items,status:"draft"}; renderStocktake(); showToast("棚卸し表を保存しました");
+  } catch(err) { console.error(err); showToast(err.message||"保存に失敗しました"); }
+}
+async function applyStocktake() {
+  if (!stocktakeKey() || stocktakeRecord?.status === "applied") return;
+  let items; try { items=collectStocktake(); } catch(err) { return showToast(err.message); }
+  if (!items.length || items.some(i=>i.actualQty===null)) return showToast("すべての商品の実数を入力してください");
+  if (items.length>180) return showToast("一度に確定できる商品は180件までです。分類を分けて運用してください");
+  if (!confirm(`${items.length}件の棚卸し差異を在庫に反映します。確定後は編集できません。よろしいですか？`)) return;
+  const ref=db.collection(STOCKTAKES).doc(stocktakeKey()), btn=$w("stocktakeApplyBtn"); btn.disabled=true;
+  try {
+    await db.runTransaction(async tx => {
+      const prior=await tx.get(ref); if (prior.exists && prior.data().status==="applied") throw Error("既に確定済みです");
+      const docs=await Promise.all(items.map(i=>tx.get(db.collection(COLLECTION).doc(i.productId))));
+      docs.forEach((doc,index) => { if (!doc.exists || Number(doc.data().currentStock||0)!==items[index].bookQty) throw Error("在庫が変更されています。棚卸し表を確認してください"); });
+      items.forEach((item,index) => { const diff=item.actualQty-item.bookQty; if (!diff) return;
+        tx.update(docs[index].ref,{currentStock:item.actualQty});
+        tx.set(db.collection(MOVEMENTS_COLLECTION).doc(),{productId:item.productId,productName:item.name,unit:item.unit,type:diff>0?"in":"out",qty:Math.abs(diff),note:`棚卸し ${stocktakeKey()}：${item.note||"差異調整"}`,staff:currentStaffName,createdAt:stamp()});
+      });
+      tx.set(ref,{date:stocktakeKey(),items,status:"applied",appliedBy:currentStaffName,appliedAt:stamp()});
+    });
+    stocktakeRecord={items,status:"applied"}; renderStocktake(); showToast("棚卸しを在庫に反映しました");
+  } catch(err) { console.error(err); showToast(err.message||"棚卸しの反映に失敗しました"); } finally { btn.disabled=stocktakeRecord?.status==="applied"; }
+}
+const festivalKey=()=>$w("festivalMonth").value;
+function renderFestival() {
+  const body=$w("festivalRows"); if (!body) return;
+  const saved=new Map((festivalRecord?.items||[]).map(i=>[i.productId,i]));
+  const rows=festivalRecord?.status==="prepared" ? festivalRecord.items : allProducts.map(p=>({productId:p.id,name:p.name,code:p.code,unit:p.unit,qty:saved.get(p.id)?.qty||0}));
+  body.innerHTML=rows.map(i=>{ const p=allProducts.find(x=>x.id===i.productId), stock=Number(p?.currentStock||0); return `<tr data-id="${safe(i.productId)}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${stock} ${safe(i.unit)}</td><td><input type="number" class="qty" min="0" step="1" value="${i.qty}" ${festivalRecord?.status==="prepared"?"disabled":""}></td><td class="remaining">${festivalRecord?.status==="prepared"?"準備済":stock-Number(i.qty)}</td></tr>`; }).join("");
+  body.querySelectorAll(".qty").forEach(input=>input.oninput=()=>{ const row=input.closest("tr"), stock=Number(allProducts.find(p=>p.id===row.dataset.id)?.currentStock||0); row.querySelector(".remaining").textContent=integer(input.value)?stock-Number(input.value):"―"; });
+  $w("festivalStatus").textContent=festivalRecord?.status==="prepared"?"準備確定済み（在庫から出庫済み）":festivalRecord?"準備リスト保存済み・未確定":"新規の準備リスト";
+  $w("festivalSaveBtn").disabled=$w("festivalCommitBtn").disabled=festivalRecord?.status==="prepared";
+  $w("festivalReturnBtn").disabled=festivalRecord?.status!=="prepared";
+}
+async function loadFestival() {
+  const key=festivalKey(); if (!/^\d{4}-\d{2}$/.test(key)) return showToast("対象月を選択してください");
+  try { const doc=await db.collection(FESTIVALS).doc(key).get(); festivalRecord=doc.exists?doc.data():null; renderFestival(); }
+  catch(err) { console.error(err); showToast("準備リストを開けませんでした"); }
+}
+function collectFestival() {
+  return [...$w("festivalRows").querySelectorAll("tr")].map(row=>{ const qty=row.querySelector(".qty").value; if (!integer(qty)) throw Error("準備数量は0以上の整数で入力してください"); const p=allProducts.find(x=>x.id===row.dataset.id); return {productId:row.dataset.id,name:p?.name||"",code:p?.code||"",unit:p?.unit||"",qty:Number(qty)}; }).filter(i=>i.qty>0);
+}
+async function saveFestival() {
+  if (!festivalKey() || festivalRecord?.status==="prepared") return;
+  try { const items=collectFestival(); await db.collection(FESTIVALS).doc(festivalKey()).set({month:festivalKey(),items,status:"draft",updatedBy:currentStaffName,updatedAt:stamp()}); festivalRecord={items,status:"draft"}; renderFestival(); showToast("準備リストを保存しました"); }
+  catch(err) { console.error(err); showToast(err.message||"保存に失敗しました"); }
+}
+async function changeFestival(prepare) {
+  const month=festivalKey(); if (!month) return;
+  let items; try { items=prepare?collectFestival():festivalRecord?.items; } catch(err) { return showToast(err.message); }
+  if (!items?.length) return showToast("準備する商品を入力してください");
+  if (items.length>180) return showToast("一度に確定できる商品は180件までです");
+  if (!confirm(prepare?`${month}の準備数量を通常在庫から出庫します。よろしいですか？`:`${month}の準備分を通常在庫に戻します。よろしいですか？`)) return;
+  const ref=db.collection(FESTIVALS).doc(month), btn=prepare?$w("festivalCommitBtn"):$w("festivalReturnBtn"); btn.disabled=true;
+  try {
+    await db.runTransaction(async tx=>{
+      const plan=await tx.get(ref), status=plan.exists?plan.data().status:"draft";
+      if (prepare && status==="prepared" || !prepare && status!=="prepared") throw Error("準備状態が変更されています。開き直してください");
+      const actualItems=prepare?items:plan.data().items;
+      const docs=await Promise.all(actualItems.map(i=>tx.get(db.collection(COLLECTION).doc(i.productId))));
+      docs.forEach((doc,index)=>{ if (!doc.exists || prepare && Number(doc.data().currentStock||0)<actualItems[index].qty) throw Error(`在庫不足または商品削除：${actualItems[index].name}`); });
+      actualItems.forEach((item,index)=>{
+        tx.update(docs[index].ref,{currentStock:Number(docs[index].data().currentStock||0)+(prepare?-item.qty:item.qty)});
+        tx.set(db.collection(MOVEMENTS_COLLECTION).doc(),{productId:item.productId,productName:item.name,unit:item.unit,type:prepare?"out":"in",qty:item.qty,note:`月始祭 ${month} ${prepare?"準備":"準備取消"}`,staff:currentStaffName,createdAt:stamp()});
+      });
+      tx.set(ref,{month,items:actualItems,status:prepare?"prepared":"draft",updatedBy:currentStaffName,updatedAt:stamp()});
+      items=actualItems;
+    });
+    festivalRecord={items,status:prepare?"prepared":"draft"}; renderFestival(); showToast(prepare?"準備分を出庫しました":"準備分を在庫に戻しました");
+  } catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); } finally { btn.disabled=false; renderFestival(); }
+}
+function subscribeDisaster() {
+  db.collection(DISASTER_PRODUCTS).orderBy("name").onSnapshot(s=>{disasterProducts=s.docs.map(d=>({id:d.id,...d.data()}));renderDisaster();},err=>{console.error(err);showToast("防災備品を取得できませんでした");});
+  db.collection(DISASTER_MOVEMENTS).orderBy("createdAt","desc").limit(200).onSnapshot(s=>{disasterMovements=s.docs.map(d=>({id:d.id,...d.data()}));renderDisaster();},err=>{console.error(err);showToast("防災履歴を取得できませんでした");});
+}
+function renderDisaster() {
+  if (!$w("disasterProduct")) return;
+  const selected=$w("disasterProduct").value;
+  $w("disasterProduct").innerHTML='<option value="">備品を選択</option>'+disasterProducts.map(p=>`<option value="${safe(p.id)}">${safe(p.name)}</option>`).join("");
+  $w("disasterProduct").value=selected;
+  $w("disasterProducts").innerHTML=disasterProducts.map(p=>`<tr><td>${safe(p.code)}</td><td>${safe(p.name)}</td><td>${safe(p.currentStock)} ${safe(p.unit)}</td></tr>`).join("");
+  $w("disasterHistory").innerHTML=disasterMovements.map(m=>`<tr><td>${safe(dateLabel(m.createdAt))}</td><td>${safe(m.productName)}</td><td>${m.type==="in"?"入庫":"出荷"}</td><td>${safe(m.qty)}</td><td>${safe(m.destination)}</td><td>${m.type==="out" ? m.shippedAt ? `発送済 ${safe(dateLabel(m.shippedAt))}` : `<button class="btn-secondary-inline shipped-btn" data-id="${safe(m.id)}">発送済みにする</button>` : "―"}</td></tr>`).join("");
+  $w("disasterHistory").querySelectorAll(".shipped-btn").forEach(b=>b.onclick=()=>markDisasterShipped(b.dataset.id));
+}
+async function addDisasterProduct() {
+  const name=$w("disasterName").value.trim(), code=$w("disasterCode").value.trim(), unit=$w("disasterUnit").value.trim()||"個", initial=$w("disasterInitial").value;
+  if (!name || !integer(initial)) return showToast("備品名と0以上の初期在庫を入力してください");
+  try { await db.collection(DISASTER_PRODUCTS).add({name,code,unit,currentStock:Number(initial),createdAt:stamp()}); $w("disasterName").value=$w("disasterCode").value=""; $w("disasterInitial").value="0"; showToast("防災備品を登録しました"); }
+  catch(err) { console.error(err); showToast("登録に失敗しました"); }
+}
+async function recordDisasterMovement() {
+  const id=$w("disasterProduct").value, type=$w("disasterType").value, qty=Number($w("disasterQty").value), destination=$w("disasterDestination").value.trim();
+  if (!id || !Number.isInteger(qty) || qty<1) return showToast("備品と1以上の数量を指定してください");
+  if (type==="out" && !destination) return showToast("出荷先を入力してください");
+  const ref=db.collection(DISASTER_PRODUCTS).doc(id), move=db.collection(DISASTER_MOVEMENTS).doc();
+  try { await db.runTransaction(async tx=>{ const doc=await tx.get(ref); if (!doc.exists) throw Error("備品が見つかりません"); const n=Number(doc.data().currentStock||0)+(type==="in"?qty:-qty); if(n<0) throw Error("在庫が不足しています"); tx.update(ref,{currentStock:n}); tx.set(move,{productId:id,productName:doc.data().name,type,qty,destination,staff:currentStaffName,createdAt:stamp(),shipmentStatus:type==="out"?"pending":null}); });
+    $w("disasterQty").value="1"; $w("disasterDestination").value=""; showToast("入出荷を記録しました");
+  } catch(err) { console.error(err); showToast(err.message||"記録に失敗しました"); }
+}
+async function markDisasterShipped(id) {
+  if (!confirm("この出荷を発送済みにしますか？")) return;
+  const ref=db.collection(DISASTER_MOVEMENTS).doc(id);
+  try { await db.runTransaction(async tx=>{ const doc=await tx.get(ref); if(!doc.exists||doc.data().type!=="out"||doc.data().shippedAt) throw Error("既に処理されています"); tx.update(ref,{shipmentStatus:"shipped",shippedAt:stamp(),shippedBy:currentStaffName}); }); showToast("発送済みを記録しました"); }
+  catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
+}
+
+init();
