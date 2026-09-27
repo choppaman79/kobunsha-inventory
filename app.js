@@ -279,10 +279,10 @@ function switchTab(tab) {
   document.getElementById("tabHistory").style.display = tab === "history" ? "block" : "none";
   document.getElementById("tabSlips").style.display = tab === "slips" ? "block" : "none";
   document.getElementById("tabOrders").style.display = tab === "orders" ? "block" : "none";
-  ["stocktake","festival","disaster"].forEach(t => { const panel = document.getElementById("tab" + t[0].toUpperCase() + t.slice(1)); if (panel) panel.style.display = tab === t ? "block" : "none"; });
+  ["stocktake","festival","disaster"].forEach(t => document.getElementById("tab" + t[0].toUpperCase() + t.slice(1)).style.display = tab === t ? "block" : "none");
   document.querySelectorAll("main > section").forEach(el => el.classList.toggle("print-target", el.style.display !== "none"));
-  if (tab === "stocktake" && $w("stocktakeDate")) loadStocktake();
-  if (tab === "festival" && $w("festivalMonth")) loadFestival();
+  if (tab === "stocktake") loadStocktake();
+  if (tab === "festival") loadFestival();
   if (tab === "history") renderHistoryList();
   if (tab === "slips") renderSlipList("all");
   if (tab === "orders") { renderLowStockAlert(); renderOrderList(getActiveOrderFilter()); }
@@ -2403,8 +2403,6 @@ const stamp = () => firebase.firestore.FieldValue.serverTimestamp();
 const dateLabel = value => value && value.toDate ? formatDateTime(value.toDate()) : "―";
 const currentMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,"0")}`; };
 function initWorkModules() {
-  // HTML がまだ旧版でも、ログインボタンの登録を止めない。
-  if (!$w("stocktakeDate")) return;
   $w("stocktakeDate").value = todayDateInputValue();
   $w("festivalMonth").value = currentMonth();
   $w("bulkModeBtn").onclick = () => { bulkMode = !bulkMode; bulkSelected.clear(); updateBulkButton(); renderProductList(); };
