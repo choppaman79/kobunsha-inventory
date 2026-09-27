@@ -110,7 +110,11 @@ function init() {
   document.getElementById("qrBulkCloseBtn").addEventListener("click", () => {
     document.getElementById("qrBulkOverlay").classList.remove("show");
   });
-  document.getElementById("qrBulkPrintOkBtn").addEventListener("click", () => window.print());
+  document.getElementById("qrBulkPrintOkBtn").addEventListener("click", () => {
+    document.body.classList.add("label-print");
+    document.body.classList.remove("slip-print", "work-print");
+    setTimeout(() => window.print(), 30);
+  });
   document.getElementById("qrBulkOverlay").addEventListener("click", (e) => {
     if (e.target.id === "qrBulkOverlay") document.getElementById("qrBulkOverlay").classList.remove("show");
   });
@@ -1432,6 +1436,8 @@ function printSlipSheet(mode) {
   if (qrHost) {
     new QRCode(qrHost, { text: buildSlipUrl(s.id), width: 64, height: 64, correctLevel: QRCode.CorrectLevel.M });
   }
+  document.body.classList.add("slip-print");
+  document.body.classList.remove("label-print", "work-print");
   setTimeout(() => window.print(), 30);
 }
 
@@ -2505,7 +2511,7 @@ async function bulkDeleteProducts() {
   finally { btn.disabled = false; updateBulkButton(); renderProductList(); }
 }
 function printWork(tab) { switchTab(tab); document.body.classList.add("work-print"); setTimeout(() => window.print(), 150); }
-window.addEventListener("afterprint", () => document.body.classList.remove("work-print"));
+window.addEventListener("afterprint", () => document.body.classList.remove("work-print", "label-print", "slip-print"));
 // ===================== 棚卸し：倉庫＋翌月の月始祭準備分 =====================
 const stocktakeKey = () => $w("stocktakeDate").value;
 const festivalKey = () => $w("festivalMonth").value;
@@ -2766,5 +2772,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-09-27-select-v2";
+window.KOBUNSHA_APP_VERSION = "2026-09-27-label-v3";
 init();
