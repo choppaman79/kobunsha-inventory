@@ -2468,6 +2468,38 @@ function initWorkModules() {
   $w("festivalSettleBtn").onclick = settleFestival;
   $w("disasterAddBtn").onclick = addDisasterProduct;
   $w("disasterMoveBtn").onclick = recordDisasterMovement;
+  ["stocktake", "festival"].forEach(type => {
+    const category = $w(`${type}Category`), search = $w(`${type}Search`), sort = $w(`${type}Sort`);
+    if (category && search && sort) {
+      category.onchange = search.oninput = sort.onchange = () => applyWorkTableView(type);
+    }
+  });
+}
+function applyWorkTableView(type) {
+  const body=$w(`${type}Rows`), category=$w(`${type}Category`), search=$w(`${type}Search`), sort=$w(`${type}Sort`);
+  if(!body||!category||!search||!sort)return;
+  const rows=[...body.querySelectorAll("tr")];
+  const selected=category.value;
+  const genres=[...new Set(rows.map(row=>row.dataset.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ja"));
+  category.replaceChildren(category.options[0],...genres.map(genre=>new Option(genre,genre)));
+  category.value=genres.includes(selected)?selected:"";
+  const term=search.value.trim().normalize("NFKC").toLowerCase();
+  const compare=(a,b)=>a.localeCompare(b,"ja",{numeric:true,sensitivity:"base"});
+  rows.sort((a,b)=>{
+    if(sort.value==="stock-desc")return Number(b.dataset.stock)-Number(a.dataset.stock)||compare(a.dataset.name,b.dataset.name);
+    if(sort.value==="category")return compare(a.dataset.category,b.dataset.category)||compare(a.dataset.name,b.dataset.name);
+    if(sort.value==="code")return compare(a.dataset.code||"\uffff",b.dataset.code||"\uffff")||compare(a.dataset.name,b.dataset.name);
+    return compare(a.dataset.name,b.dataset.name);
+  });
+  let visible=0;
+  rows.forEach(row=>{
+    body.appendChild(row);
+    const matchesCategory=!category.value||row.dataset.category===category.value;
+    const matchesText=!term||`${row.dataset.name} ${row.dataset.code}`.normalize("NFKC").toLowerCase().includes(term);
+    row.style.display=matchesCategory&&matchesText?"":"none";
+    if(matchesCategory&&matchesText)visible++;
+  });
+  $w(`${type}FilterCount`).textContent=`${visible} / ${rows.length}件を表示`;
 }
 function updateBulkButton() {
   $w("bulkModeBtn").textContent = bulkMode ? "選択を終了" : "商品を選んで一括削除";
@@ -2554,7 +2586,7 @@ function renderStocktake() {
   body.innerHTML=rows.map(i=>{
     const prepared=Number(i.stagedQty||0), book=Number(i.bookQty||0);
     const actual=i.stagedActual!=null && i.warehouseActual!=null ? Number(i.stagedActual)+Number(i.warehouseActual) : null;
-    return `<tr data-id="${safe(i.productId)}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${safe(i.category)}</td><td>${prepared}</td><td>${book-prepared}</td><td>${book}</td><td><input class="staged-actual" type="number" min="0" step="1" value="${i.stagedActual??""}" ${applied||applying?"disabled":""}></td><td><input class="warehouse-actual" type="number" min="0" step="1" value="${i.warehouseActual??""}" ${applied||applying?"disabled":""}></td><td class="actual-total">${actual??"―"}</td><td class="difference">${actual===null?"―":actual-book}</td><td><input class="note" type="text" value="${safe(i.note)}" ${applied||applying?"disabled":""}></td></tr>`;
+    return `<tr data-id="${safe(i.productId)}" data-category="${safe(i.category||"未分類")}" data-name="${safe(i.name)}" data-code="${safe(i.code)}" data-stock="${book}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${safe(i.category)}</td><td>${prepared}</td><td>${book-prepared}</td><td>${book}</td><td><input class="staged-actual" type="number" min="0" step="1" value="${i.stagedActual??""}" ${applied||applying?"disabled":""}></td><td><input class="warehouse-actual" type="number" min="0" step="1" value="${i.warehouseActual??""}" ${applied||applying?"disabled":""}></td><td class="actual-total">${actual??"―"}</td><td class="difference">${actual===null?"―":actual-book}</td><td><input class="note" type="text" value="${safe(i.note)}" ${applied||applying?"disabled":""}></td></tr>`;
   }).join("");
   body.querySelectorAll(".staged-actual,.warehouse-actual").forEach(input=>input.oninput=()=>{
     const row=input.closest("tr"), stage=row.querySelector(".staged-actual").value, warehouse=row.querySelector(".warehouse-actual").value;
@@ -2566,6 +2598,7 @@ function renderStocktake() {
   $w("stocktakeSaveBtn").disabled=applied||applying;
   $w("stocktakeApplyBtn").disabled=applied;
   $w("stocktakeApplyBtn").textContent=applying?"反映を再開":"差異を在庫に反映";
+  applyWorkTableView("stocktake");
 }
 async function loadStocktake() {
   const key=stocktakeKey(); if(!key) return showToast("棚卸日を選択してください");
@@ -2659,7 +2692,7 @@ function renderFestival() {
     const p=allProducts.find(x=>x.id===i.productId),n=festivalNumbers(i),price=Number(i.price??p?.price??0),disabled=status==="settled"?"disabled":"";
     const field=(cls,v,lock=false)=>`<input type="number" class="${cls}" min="0" step="1" value="${v}" ${disabled||lock&&locked?"disabled":""}>`;
     const total=Number(p?.currentStock||0)+(status==="prepared"&&festivalRecord?.stockMode!=="included"?n.qty:0);
-    return `<tr data-id="${safe(i.productId)}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${p?total:"―"}</td><td>${field("qty",n.qty,true)}</td><td>${field("extraQty",n.extra)}</td><td>${field("directQty",n.direct)}</td><td>${field("returnedQty",n.returned)}</td><td>${field("damagedQty",n.damaged)}</td><td>${field("sampleQty",n.sample)}</td><td class="soldQty">${n.sold}</td><td><input class="price" type="number" min="0" value="${price}" ${disabled}></td><td class="salesAmount">${(n.sold*price).toLocaleString()}</td></tr>`;
+    return `<tr data-id="${safe(i.productId)}" data-category="${safe(p?.category||i.category||"未分類")}" data-name="${safe(i.name)}" data-code="${safe(i.code)}" data-stock="${total}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${p?total:"―"}</td><td>${field("qty",n.qty,true)}</td><td>${field("extraQty",n.extra)}</td><td>${field("directQty",n.direct)}</td><td>${field("returnedQty",n.returned)}</td><td>${field("damagedQty",n.damaged)}</td><td>${field("sampleQty",n.sample)}</td><td class="soldQty">${n.sold}</td><td><input class="price" type="number" min="0" value="${price}" ${disabled}></td><td class="salesAmount">${(n.sold*price).toLocaleString()}</td></tr>`;
   }).join("");
   body.querySelectorAll("input").forEach(input=>input.oninput=()=>{const r=input.closest("tr"),i={qty:r.querySelector(".qty").value};festivalFields.forEach(f=>i[f]=r.querySelector(`.${f}`).value);const n=festivalNumbers(i);r.querySelector(".soldQty").textContent=n.sold;r.querySelector(".salesAmount").textContent=(n.sold*Number(r.querySelector(".price").value||0)).toLocaleString();});
   $w("festivalStatus").textContent=festivalRecord?.status==="settled"?"頒布精算済み（在庫反映済み）":status==="prepared"?"準備済み：総在庫に準備分を含む":"準備リスト入力中";
@@ -2667,6 +2700,7 @@ function renderFestival() {
   $w("festivalReturnBtn").disabled=status!=="prepared";
   $w("festivalSettleBtn").disabled=status!=="prepared";
   $w("festivalSaveBtn").disabled=status==="settled";
+  applyWorkTableView("festival");
 }
 async function loadFestival() {
   const key=festivalKey();if(!/^\d{4}-\d{2}$/.test(key))return showToast("対象月を選択してください");
@@ -2678,7 +2712,7 @@ function collectFestival() {
   return [...$w("festivalRows").querySelectorAll("tr")].map(row=>{
     const id=row.dataset.id,p=allProducts.find(x=>x.id===id),old=prior.get(id),read=cls=>row.querySelector(`.${cls}`).value;
     const qty=festivalRecord?.status==="prepared"?Number(old?.qty||0):Number(read("qty"));
-    const item={productId:id,name:p?.name||old?.name||"",code:p?.code||old?.code||"",unit:p?.unit||old?.unit||"",qty,price:Number(read("price"))};
+    const item={productId:id,name:p?.name||old?.name||"",code:p?.code||old?.code||"",category:p?.category||old?.category||"",unit:p?.unit||old?.unit||"",qty,price:Number(read("price"))};
     festivalFields.forEach(f=>item[f]=Number(read(f)));
     for(const cls of ["qty",...festivalFields,"price"]){if(!integer(read(cls)))throw Error("数量と単価は0以上の整数で入力してください");}
     const n=festivalNumbers(item);
@@ -2784,5 +2818,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-09-27-receiving-v4";
+window.KOBUNSHA_APP_VERSION = "2026-09-28-workfilter-v5";
 init();
