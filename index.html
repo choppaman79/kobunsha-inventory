@@ -715,6 +715,9 @@
   .work-actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
   .work-actions .btn-primary { width:auto; }
   .work-status { margin:10px 0; font-weight:600; }
+  .work-filter { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0; }
+  .work-filter select, .work-filter input { width:auto; min-width:150px; max-width:100%; margin:0; }
+  .work-filter .filter-count { font-size:12px; color:#6b6357; }
   .work-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
   .work-grid .btn-primary { max-width:250px; }
   @media print {
@@ -725,6 +728,7 @@
     body.work-print .tabs,
     body.work-print .topbar,
     body.work-print .work-actions,
+    body.work-print .work-filter,
     body.work-print .work-panel .toolbar button,
     body.work-print .work-grid,
     body.work-print #disasterProducts,
@@ -883,6 +887,12 @@
         <button class="btn-secondary-inline" id="stocktakeLoadBtn">この日の表を開く</button>
         <button class="btn-secondary-inline" id="stocktakePrintBtn">印刷</button></div>
       <div id="stocktakeStatus" class="work-status"></div>
+      <div class="work-filter">
+        <label for="stocktakeCategory">ジャンル</label><select id="stocktakeCategory"><option value="">すべて</option></select>
+        <input type="text" id="stocktakeSearch" placeholder="商品名・コードで検索" aria-label="棚卸しの商品検索">
+        <label for="stocktakeSort">並び順</label><select id="stocktakeSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">帳簿数の多い順</option></select>
+        <span id="stocktakeFilterCount" class="filter-count"></span>
+      </div>
       <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>翌月準備（帳簿）</th><th>倉庫（帳簿）</th><th>帳簿合計</th><th>準備分実数</th><th>倉庫実数</th><th>実数合計</th><th>差異</th><th>備考</th></tr></thead><tbody id="stocktakeRows"></tbody></table></div>
       <div class="work-actions"><button class="btn-secondary-inline" id="stocktakeSaveBtn">入力内容を保存</button><button class="btn-primary" id="stocktakeApplyBtn">差異を在庫に反映</button></div>
     </section>
@@ -892,6 +902,12 @@
       <div class="toolbar"><label>対象月 <input type="month" id="festivalMonth"></label><div class="spacer"></div>
         <button class="btn-secondary-inline" id="festivalLoadBtn">この月を開く</button><button class="btn-secondary-inline" id="festivalPrintBtn">印刷</button></div>
       <div id="festivalStatus" class="work-status"></div>
+      <div class="work-filter">
+        <label for="festivalCategory">ジャンル</label><select id="festivalCategory"><option value="">すべて</option></select>
+        <input type="text" id="festivalSearch" placeholder="商品名・コードで検索" aria-label="月始祭の商品検索">
+        <label for="festivalSort">並び順</label><select id="festivalSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">総在庫の多い順</option></select>
+        <span id="festivalFilterCount" class="filter-count"></span>
+      </div>
       <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>総在庫</th><th>準備（S1出）</th><th>追加</th><th>直送</th><th>戻り</th><th>乱丁</th><th>見本</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
       <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">入力を保存</button><button class="btn-primary" id="festivalCommitBtn">準備を確定</button><button class="btn-secondary-inline" id="festivalReturnBtn">準備を取り消す</button><button class="btn-primary" id="festivalSettleBtn">頒布を精算・在庫反映</button></div>
     </section>
@@ -1303,9 +1319,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=20260927-receiving-v4"></script>
+<script src="app.js?v=20260928-workfilter-v5"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-09-27-receiving-v4") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-09-28-workfilter-v5") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
