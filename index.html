@@ -127,9 +127,9 @@
   }
 
   main {
-    max-width: 920px;
+    max-width: 1520px;
     margin: 0 auto;
-    padding: 20px 16px 80px;
+    padding: 24px clamp(16px, 2.5vw, 36px) 80px;
   }
 
   .tabs {
@@ -142,7 +142,7 @@
   .tab-btn {
     background: transparent;
     padding: 10px 16px;
-    font-size: 14px;
+    font-size: 16px;
     color: #756b5c;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
@@ -196,7 +196,7 @@
     margin-bottom: 16px;
     align-items: center;
   }
-  .toolbar input[type=text] { margin: 0; max-width: 220px; }
+  .toolbar input[type=text] { margin: 0; max-width: 340px; }
   .toolbar select { margin: 0; max-width: 160px; }
   .chip-group { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip {
@@ -243,6 +243,28 @@
   .summary-card.warn .num { color: var(--warn-text); }
 
   .product-list { display: flex; flex-direction: column; gap: 8px; }
+  .product-columns, .product-fields {
+    display: grid;
+    grid-template-columns: minmax(180px,2fr) minmax(95px,1fr) minmax(110px,1.2fr) minmax(90px,.9fr) minmax(75px,.7fr) minmax(95px,.9fr) minmax(130px,1.4fr);
+    align-items: center; gap: 12px;
+  }
+  .product-columns { padding: 0 258px 0 14px; font-size: 13px; font-weight: 700; color: #625a4f; }
+  .product-columns > span, .product-field { min-width: 0; overflow-wrap: anywhere; }
+  .product-fields { flex: 1; min-width: 0; font-size: 15px; }
+  .product-field:first-child { font-weight: 700; color: var(--indigo-deep); }
+  .field-label { display: none; }
+  .product-actions { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
+  @media (max-width: 1100px) {
+    .product-columns { display: none; }
+    .product-row { flex-wrap: wrap; }
+    .product-fields { grid-template-columns: repeat(2,minmax(0,1fr)); flex-basis: 100%; }
+    .field-label { display: block; font-size: 12px; font-weight: 400; color: #786f64; margin-bottom: 2px; }
+    .product-actions { margin-left: auto; }
+  }
+  @media (max-width: 560px) {
+    .product-fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .product-actions { width: 100%; flex-wrap: wrap; }
+  }
   .product-row {
     background: var(--panel);
     border: 1px solid var(--line);
@@ -254,7 +276,7 @@
   }
   .product-row.low { border-color: #e3b2ab; background: var(--warn-bg); }
   .product-main { flex: 1; min-width: 0; }
-  .product-name { font-size: 14.5px; font-weight: 600; color: var(--indigo-deep); }
+  .product-name { font-size: 16px; font-weight: 600; color: var(--indigo-deep); }
   .product-meta { font-size: 12px; color: #8a8272; margin-top: 2px; }
   .cat-tag {
     display: inline-block;
@@ -787,7 +809,7 @@
       <div class="summary-row" id="summaryRow"></div>
 
       <div class="toolbar">
-        <input type="text" id="searchBox" placeholder="商品名で検索">
+        <input type="text" id="searchBox" placeholder="商品名・商品コード・仕入れ先で検索">
         <input type="text" id="scannerInput" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄（ここをクリックしてスキャン）">
         <div class="spacer"></div>
         <button class="btn-secondary-inline" id="scanGlobalBtn">📷 スキャン</button>
@@ -800,6 +822,7 @@
       <div class="chip-group" id="categoryChips"></div>
       <br>
 
+      <div class="product-columns" aria-hidden="true"><span>商品名</span><span>商品コード</span><span>仕入れ先</span><span>単価</span><span>ロット</span><span>分類</span><span>備考</span></div>
       <div class="product-list" id="productList"></div>
       <div class="empty-state" id="emptyState" style="display:none;">該当する商品がありません</div>
     </section>
@@ -813,25 +836,29 @@
       <input type="text" id="regName" placeholder="例：御神鏡 5寸">
       <label>商品コード（任意）</label>
       <input type="text" id="regCode" placeholder="例：K-1023">
+      <label>仕入れ先（任意）</label>
+      <input type="text" id="regSupplier" placeholder="例：○○商事">
+      <label>単価（売価・円）</label>
+      <input type="number" id="regPrice" placeholder="例：3000" min="0">
+      <label>ロット（任意）</label>
+      <input type="text" id="regLot" placeholder="例：2026-10">
       <label>分類</label>
       <select id="regCategory"></select>
       <label>単位</label>
       <input type="text" id="regUnit" placeholder="例：個、箱、セット" value="個">
-      <label>売価（任意・円）</label>
-      <input type="number" id="regPrice" placeholder="例：3000" min="0">
       <label>現在庫数</label>
       <input type="number" id="regStock" value="0" min="0">
       <label>在庫僅少の目安（この数以下で警告表示）</label>
       <input type="number" id="regMinStock" value="3" min="0">
       <label>備考（任意）</label>
-      <input type="text" id="regNote" placeholder="仕入先や型番など">
+      <input type="text" id="regNote" placeholder="補足情報">
       <button class="btn-primary" id="regSubmitBtn" style="max-width:280px;">この内容で登録する</button>
 
       <hr class="section-divider">
 
       <h3 class="section-title">エクセル／CSVで一括登録</h3>
       <p style="font-size:13px;color:#6b6357;margin-bottom:12px;">
-        列名は「商品コード／商品名／分類／単位／売価／現在庫数／在庫僅少ライン／備考」を想定しています（表記ゆれはある程度自動で吸収します）。
+        ExcelまたはCSVの1行目を見出しにしてください。「商品名・商品コード・仕入れ先・単価・ロット・分類・備考」に対応します。単位・現在庫数・在庫僅少ラインも取り込めます。登録前に内容を確認してください。
       </p>
       <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv">
       <div id="excelPreviewWrap" style="display:none;margin-top:14px;">
@@ -839,7 +866,7 @@
         <div class="excel-preview-scroll">
           <table class="excel-preview-table">
             <thead>
-              <tr><th>コード</th><th>商品名</th><th>分類</th><th>単位</th><th>売価</th><th>在庫数</th></tr>
+              <tr><th>商品名</th><th>商品コード</th><th>仕入れ先</th><th>単価</th><th>ロット</th><th>分類</th><th>備考</th><th>在庫数</th></tr>
             </thead>
             <tbody id="excelPreviewBody"></tbody>
           </table>
@@ -982,12 +1009,16 @@
     <input type="text" id="editName">
     <label>商品コード（任意）</label>
     <input type="text" id="editCode">
+    <label>仕入れ先（任意）</label>
+    <input type="text" id="editSupplier">
+    <label>単価（売価・円）</label>
+    <input type="number" id="editPrice" min="0">
+    <label>ロット（任意）</label>
+    <input type="text" id="editLot">
     <label>分類</label>
     <select id="editCategory"></select>
     <label>単位</label>
     <input type="text" id="editUnit">
-    <label>売価（任意・円）</label>
-    <input type="number" id="editPrice" min="0">
     <label>現在庫数</label>
     <input type="number" id="editStock" min="0">
     <label>在庫僅少の目安</label>
@@ -1319,9 +1350,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=20260928-workfilter-v5"></script>
+<script src="app.js?v=20261001-products-v6"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-09-28-workfilter-v5") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-10-01-products-v6") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
