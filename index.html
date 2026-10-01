@@ -481,8 +481,8 @@
   .section-title { font-size: 15px; color: var(--indigo-deep); margin: 0 0 6px; }
 
   /* ---------- エクセルプレビュー ---------- */
-  .excel-preview-scroll { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
-  .excel-preview-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 14px; }
+  .excel-preview-scroll { max-height: 460px; overflow-y: auto; overflow-x:hidden; border: 1px solid var(--line); border-radius: 8px; }
+  .excel-preview-table { width: 100%; border-collapse: collapse; font-size: 14px; }
   .excel-preview-table th, .excel-preview-table td {
     padding: 7px 10px;
     border-bottom: 1px solid var(--line);
@@ -490,6 +490,11 @@
     white-space: nowrap;
   }
   .excel-preview-table th { background: var(--paper); position: sticky; top: 0; }
+  .excel-preview-table, .excel-preview-table tbody { display:block; }
+  .excel-preview-table thead { display:none; }
+  .excel-preview-table tr { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-bottom:1px solid var(--line); padding:8px; }
+  .excel-preview-table td { white-space:normal; overflow-wrap:anywhere; border:0; }
+  .excel-preview-table td::before { content:attr(data-label); display:block; color:#685f52; font-size:12px; font-weight:700; margin-bottom:3px; }
 
   /* ---------- 伝票一覧 ---------- */
   .slip-list { display: flex; flex-direction: column; gap: 8px; }
@@ -603,6 +608,23 @@
     text-align: left;
   }
   .slip-detail-table th { white-space:nowrap; }
+  #orderDetailOverlay .slip-detail-table { table-layout:fixed; }
+  #orderDetailOverlay .slip-detail-table td { overflow-wrap:anywhere; }
+  #orderDetailOverlay .order-received-qty { width:100%; min-width:0; }
+  @media screen {
+    #slipDetailOverlay .slip-detail-table, #orderDetailOverlay .slip-detail-table,
+    #slipDetailOverlay .slip-detail-table tbody, #orderDetailOverlay .slip-detail-table tbody { display:block; width:100%; }
+    #slipDetailOverlay .slip-detail-table thead, #orderDetailOverlay .slip-detail-table thead { display:none; }
+    #slipDetailOverlay .slip-detail-table tbody tr, #orderDetailOverlay .slip-detail-table tbody tr {
+      display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border:1px solid var(--line); border-radius:8px; padding:6px; margin:8px 0;
+    }
+    #slipDetailOverlay .slip-detail-table tbody td, #orderDetailOverlay .slip-detail-table tbody td { min-width:0; overflow-wrap:anywhere; }
+    #slipDetailOverlay .slip-detail-table tbody td::before, #orderDetailOverlay .slip-detail-table tbody td::before {
+      content:attr(data-label); display:block; color:#6b6357; font-size:12px; font-weight:700; margin-bottom:3px;
+    }
+    #slipDetailOverlay .slip-detail-table tfoot, #slipDetailOverlay .slip-detail-table tfoot tr { display:block; }
+    #slipDetailOverlay .slip-detail-table tfoot td { display:inline-block; }
+  }
   .slip-detail-table tfoot td { border-bottom: none; border-top: 2px solid var(--ink); padding-top: 10px; }
   .slip-check-qty { width: 64px; margin: 0; padding: 6px; }
   .print-only { display: none; }
@@ -671,6 +693,10 @@
     .modal-overlay { display: none !important; }
     body.label-print .modal-overlay.show:not(#qrBulkOverlay) { display: none !important; }
     body.slip-print .modal-overlay.show:not(#slipDetailOverlay) { display: none !important; }
+    body.order-print .modal-overlay.show:not(#orderDetailOverlay) { display:none !important; }
+    body.order-print #orderDetailOverlay .modal-actions { display:none !important; }
+    body.order-print #orderReceivedQtyHint, body.order-print #orderDetailDoneNote,
+    body.order-print #orderDetailCancelledNote { display:none !important; }
     body.label-print #slipPrintSheet { display: none !important; }
     .modal-overlay.show {
       display: block !important; position: static !important;
@@ -732,21 +758,24 @@
   .work-panel p { color:#6b6357; font-size:14px; line-height:1.7; }
   .work-panel label { font-size:14px; }
   .work-panel input[type=month], .work-panel input[type=date] { padding:8px; border:1px solid var(--line); border-radius:6px; }
-  .work-scroll { max-width:100%; overflow-x:auto; border:1px solid var(--line); border-radius:8px; }
-  #tabStocktake .work-scroll, #tabFestival .work-scroll { max-height:72vh; overflow:auto; }
-  .table-scroll-hint { font-size:13px; color:#625a4f; margin:4px 0 8px; }
-  .work-table { border-collapse:collapse; width:100%; min-width:750px; font-size:14px; line-height:1.45; }
-  .work-table th,.work-table td { border:1px solid var(--line); padding:9px 10px; text-align:left; vertical-align:middle; }
-  .work-table th { background:#eee9df; white-space:nowrap; font-weight:700; }
-  #tabStocktake .work-table th, #tabFestival .work-table th { position:sticky; top:0; z-index:1; }
-  .work-table td { overflow-wrap:normal; word-break:normal; }
-  .work-table td:nth-child(2) { min-width:210px; }
-  .work-table input { margin:0; min-width:80px; padding:7px; }
-  .work-table input[type=number] { width:100px; }
-  #tabStocktake .work-table { min-width:1550px; }
-  #tabFestival .work-table { min-width:1650px; }
-  #tabStocktake .work-table th:first-child, #tabFestival .work-table th:first-child { min-width:90px; }
-  #tabStocktake .work-table th:last-child { min-width:160px; }
+  .work-scroll { max-width:100%; overflow-x:hidden; overflow-y:auto; border:1px solid var(--line); border-radius:8px; }
+  #tabStocktake .work-scroll, #tabFestival .work-scroll { max-height:72vh; }
+  .work-table, .work-table tbody { display:block; width:100%; font-size:14px; line-height:1.45; }
+  .work-table thead { display:none; }
+  .work-table tbody tr { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; border-bottom:1px solid var(--line); background:#fff; padding:8px; }
+  .work-table tbody tr:nth-child(even) { background:#f9f7f2; }
+  .work-table tbody td { display:block; min-width:0; padding:8px 10px; overflow-wrap:anywhere; }
+  .work-table tbody td:nth-child(2) { grid-column:span 2; font-weight:700; color:var(--indigo-deep); }
+  .work-table tbody td::before { content:attr(data-label); display:block; color:#6b6357; font-size:12px; font-weight:600; margin-bottom:4px; }
+  .work-table input, .work-table input[type=number] { margin:0; width:100%; min-width:0; padding:7px; }
+  @media (max-width:900px) {
+    .work-table tbody tr, .excel-preview-table tr { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .work-table tbody td:nth-child(2) { grid-column:span 1; }
+  }
+  @media (max-width:520px) {
+    .work-table tbody tr, .excel-preview-table tr { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .work-table tbody td:nth-child(2), .excel-preview-table td:first-child { grid-column:span 2; }
+  }
   .work-actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
   .work-actions .btn-primary { width:auto; }
   .work-status { margin:10px 0; font-size:15px; font-weight:600; }
@@ -755,6 +784,17 @@
   .work-filter .filter-count { font-size:13px; color:#6b6357; }
   .work-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
   .work-grid .btn-primary { max-width:250px; }
+  .supplier-order-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:14px; margin-bottom:16px; background:#fff; border:1px solid var(--line); border-radius:8px; }
+  .supplier-order-bar label { font-size:14px; font-weight:700; }
+  .supplier-order-bar select { width:min(360px,100%); margin:0; }
+  .supplier-picker { max-height:360px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; margin-bottom:10px; }
+  .supplier-picker-row { display:grid; grid-template-columns:minmax(0,1fr) 100px 90px; align-items:center; gap:8px; padding:9px; border-bottom:1px solid var(--line); font-size:14px; }
+  .supplier-picker-row:nth-child(even) { background:#f9f7f2; }
+  .supplier-picker-row small { display:block; color:#6b6357; }
+  .supplier-picker-row input { margin:0; min-width:0; }
+  .order-edit-qty { display:flex !important; align-items:center; gap:5px; margin:0 !important; white-space:nowrap; }
+  .order-edit-qty input { width:78px; margin:0; }
+  @media (max-width:520px) { .supplier-picker-row { grid-template-columns:minmax(0,1fr) 78px; } .supplier-picker-row .supplier-stock { grid-column:1; } }
   @page work-landscape { size:A4 landscape; margin:8mm; }
   @media print {
     body.work-print .modal-overlay.show { display:none !important; }
@@ -772,18 +812,20 @@
     body.work-print main > section:not(.print-target) { display:none !important; }
     body.work-print .work-panel { page:work-landscape; }
     body.work-print .work-scroll { overflow:visible !important; max-height:none !important; border:0; }
-    body.work-print .table-scroll-hint { display:none; }
-    body.work-print .work-table, body.work-print #tabStocktake .work-table,
-    body.work-print #tabFestival .work-table { width:100%; min-width:0; table-layout:fixed; font-size:9px; }
-    body.work-print .work-table th, body.work-print .work-table td {
-      min-width:0 !important; padding:3px; white-space:normal; word-break:keep-all;
+    body.work-print .work-table { display:table; width:100%; table-layout:fixed; border-collapse:collapse; font-size:9px; }
+    body.work-print .work-table thead { display:table-header-group; }
+    body.work-print .work-table tbody { display:table-row-group; }
+    body.work-print .work-table tbody tr { display:table-row; background:#fff; }
+    body.work-print .work-table th, body.work-print .work-table tbody td {
+      display:table-cell; min-width:0 !important; padding:3px; border:1px solid var(--line);
+      white-space:normal; word-break:keep-all; font-weight:normal;
     }
-    body.work-print .work-table th { position:static !important; background:#eee9df !important; }
+    body.work-print .work-table th { font-weight:700; background:#eee9df !important; }
+    body.work-print .work-table td::before { display:none; }
     body.work-print .work-table input,
     body.work-print .work-table input[type=number] {
       width:100%; min-width:0; padding:0; border:0; background:transparent; font-size:9px;
     }
-    body.work-print .work-table thead { display:table-header-group; }
     body.work-print .work-table tr { break-inside:avoid; }
   }
   @media (max-width: 480px) { .work-grid { grid-template-columns:1fr; }
@@ -947,7 +989,6 @@
         <label for="stocktakeSort">並び順</label><select id="stocktakeSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">帳簿数の多い順</option></select>
         <span id="stocktakeFilterCount" class="filter-count"></span>
       </div>
-      <p class="table-scroll-hint">表の中を横にスクロールすると、右側の入力欄も見られます。</p>
       <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>翌月準備<br>帳簿数</th><th>倉庫<br>帳簿数</th><th>帳簿合計</th><th>準備分<br>実数</th><th>倉庫実数</th><th>実数合計</th><th>差異</th><th>備考</th></tr></thead><tbody id="stocktakeRows"></tbody></table></div>
       <div class="work-actions"><button class="btn-secondary-inline" id="stocktakeSaveBtn">入力内容を保存</button><button class="btn-primary" id="stocktakeApplyBtn">差異を在庫に反映</button></div>
     </section>
@@ -963,7 +1004,6 @@
         <label for="festivalSort">並び順</label><select id="festivalSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">総在庫の多い順</option></select>
         <span id="festivalFilterCount" class="filter-count"></span>
       </div>
-      <p class="table-scroll-hint">表の中を横にスクロールすると、右側の入力欄も見られます。</p>
       <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>総在庫</th><th>準備（S1出）</th><th>追加</th><th>直送</th><th>戻り</th><th>乱丁</th><th>見本</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
       <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">入力を保存</button><button class="btn-primary" id="festivalCommitBtn">準備を確定</button><button class="btn-secondary-inline" id="festivalReturnBtn">準備を取り消す</button><button class="btn-primary" id="festivalSettleBtn">頒布を精算・在庫反映</button></div>
     </section>
@@ -981,9 +1021,14 @@
       <div class="low-stock-alert" id="lowStockAlertBox" style="display:none;">
         <div class="low-stock-alert-head">
           <strong>⚠️ 発注が必要な商品が<span id="lowStockAlertCount">0</span>件あります</strong>
-          <button type="button" class="btn-secondary-inline" id="lowStockCreateOrderBtn">まとめて発注案を作成</button>
+          <button type="button" class="btn-secondary-inline" id="lowStockCreateOrderBtn">選択した仕入れ先の不足品を追加</button>
         </div>
         <div id="lowStockAlertList"></div>
+      </div>
+      <div class="supplier-order-bar">
+        <label for="orderSupplierSelect">仕入れ先を選択</label>
+        <select id="orderSupplierSelect"><option value="">仕入れ先を選択...</option></select>
+        <button type="button" class="btn-add" id="createSupplierOrderBtn">この仕入れ先の発注表を作成</button>
       </div>
 
       <div class="toolbar">
@@ -1279,11 +1324,14 @@
   <div class="modal" style="max-width:480px;">
     <h2>発注を作成</h2>
 
-    <label>仕入先（任意）</label>
-    <input type="text" id="orderPartner" placeholder="例：〇〇商店">
+    <label for="orderPartner">仕入れ先</label>
+    <input type="text" id="orderPartner" placeholder="仕入れ先を選択してください" readonly>
     <label>メモ（任意）</label>
     <input type="text" id="orderMemo" placeholder="納期の目安など">
 
+    <hr class="section-divider">
+    <div id="orderSupplierPicker" class="supplier-picker"></div>
+    <button type="button" class="btn-secondary-inline" id="orderAddSupplierItemsBtn">数量を入力した商品を追加</button>
     <hr class="section-divider">
     <label>品目を追加</label>
     <div style="display:flex;gap:8px;margin-bottom:8px;">
@@ -1319,7 +1367,7 @@
 <!-- ===================== 発注詳細モーダル (Phase4) ===================== -->
 <div class="modal-overlay" id="orderDetailOverlay">
   <div class="modal" style="max-width:600px;">
-    <h2>発注</h2>
+    <h2>発注表</h2>
     <div class="slip-detail-head">
       <div><strong id="orderDetailNumber"></strong>　<span class="slip-status" id="orderDetailStatus"></span></div>
       <div id="orderDetailDate" style="font-size:12px;color:#8a8272;"></div>
@@ -1342,6 +1390,7 @@
 
     <div class="modal-actions">
       <button class="btn-secondary" id="orderDetailCloseBtn">閉じる</button>
+      <button class="btn-secondary" id="orderDetailPrintBtn">発注表を印刷</button>
       <button class="btn-secondary" id="orderCancelBtn" style="display:none;">発注をキャンセル</button>
       <button class="btn-primary" id="orderMarkOrderedBtn" style="display:none;">発注済みにする</button>
       <button class="btn-primary" id="orderMarkReceivedBtn" style="display:none;">入荷完了として記録する（在庫に反映）</button>
@@ -1379,9 +1428,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=20261001-products-v6"></script>
+<script src="app.js?v=20261001-supplier-v7"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-10-01-products-v6") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-10-01-supplier-v7") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
