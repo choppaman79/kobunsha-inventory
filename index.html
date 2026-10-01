@@ -250,11 +250,14 @@
   }
   .product-columns { padding: 0 258px 0 14px; font-size: 13px; font-weight: 700; color: #625a4f; }
   .product-columns > span, .product-field { min-width: 0; overflow-wrap: anywhere; }
+  .product-columns > span:not(:first-child), .product-field:not(:first-child) {
+    border-left:1px solid var(--line); padding-left:10px;
+  }
   .product-fields { flex: 1; min-width: 0; font-size: 15px; }
   .product-field:first-child { font-weight: 700; color: var(--indigo-deep); }
   .field-label { display: none; }
   .product-actions { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
-  @media (max-width: 1100px) {
+  @media (max-width: 1200px) {
     .product-columns { display: none; }
     .product-row { flex-wrap: wrap; }
     .product-fields { grid-template-columns: repeat(2,minmax(0,1fr)); flex-basis: 100%; }
@@ -479,7 +482,7 @@
 
   /* ---------- エクセルプレビュー ---------- */
   .excel-preview-scroll { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
-  .excel-preview-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .excel-preview-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 14px; }
   .excel-preview-table th, .excel-preview-table td {
     padding: 7px 10px;
     border-bottom: 1px solid var(--line);
@@ -599,6 +602,7 @@
     border-bottom: 1px solid var(--line);
     text-align: left;
   }
+  .slip-detail-table th { white-space:nowrap; }
   .slip-detail-table tfoot td { border-bottom: none; border-top: 2px solid var(--ink); padding-top: 10px; }
   .slip-check-qty { width: 64px; margin: 0; padding: 6px; }
   .print-only { display: none; }
@@ -725,23 +729,33 @@
 
   .work-panel { background:#fff; padding:20px; border:1px solid var(--line); border-radius:10px; }
   .work-panel h2 { margin:0 0 8px; font-size:20px; }
-  .work-panel p { color:#6b6357; font-size:13px; }
-  .work-panel label { font-size:13px; }
+  .work-panel p { color:#6b6357; font-size:14px; line-height:1.7; }
+  .work-panel label { font-size:14px; }
   .work-panel input[type=month], .work-panel input[type=date] { padding:8px; border:1px solid var(--line); border-radius:6px; }
-  .work-scroll { overflow-x:auto; }
-  .work-table { border-collapse:collapse; width:100%; min-width:650px; font-size:13px; }
-  .work-table th,.work-table td { border:1px solid var(--line); padding:7px; text-align:left; }
-  .work-table th { background:#eee9df; }
-  .work-table input { margin:0; min-width:72px; padding:6px; }
-  .work-table input[type=number] { width:95px; }
+  .work-scroll { max-width:100%; overflow-x:auto; border:1px solid var(--line); border-radius:8px; }
+  #tabStocktake .work-scroll, #tabFestival .work-scroll { max-height:72vh; overflow:auto; }
+  .table-scroll-hint { font-size:13px; color:#625a4f; margin:4px 0 8px; }
+  .work-table { border-collapse:collapse; width:100%; min-width:750px; font-size:14px; line-height:1.45; }
+  .work-table th,.work-table td { border:1px solid var(--line); padding:9px 10px; text-align:left; vertical-align:middle; }
+  .work-table th { background:#eee9df; white-space:nowrap; font-weight:700; }
+  #tabStocktake .work-table th, #tabFestival .work-table th { position:sticky; top:0; z-index:1; }
+  .work-table td { overflow-wrap:normal; word-break:normal; }
+  .work-table td:nth-child(2) { min-width:210px; }
+  .work-table input { margin:0; min-width:80px; padding:7px; }
+  .work-table input[type=number] { width:100px; }
+  #tabStocktake .work-table { min-width:1550px; }
+  #tabFestival .work-table { min-width:1650px; }
+  #tabStocktake .work-table th:first-child, #tabFestival .work-table th:first-child { min-width:90px; }
+  #tabStocktake .work-table th:last-child { min-width:160px; }
   .work-actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
   .work-actions .btn-primary { width:auto; }
-  .work-status { margin:10px 0; font-weight:600; }
+  .work-status { margin:10px 0; font-size:15px; font-weight:600; }
   .work-filter { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0; }
   .work-filter select, .work-filter input { width:auto; min-width:150px; max-width:100%; margin:0; }
-  .work-filter .filter-count { font-size:12px; color:#6b6357; }
+  .work-filter .filter-count { font-size:13px; color:#6b6357; }
   .work-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
   .work-grid .btn-primary { max-width:250px; }
+  @page work-landscape { size:A4 landscape; margin:8mm; }
   @media print {
     body.work-print .modal-overlay.show { display:none !important; }
     body.work-print #appScreen,
@@ -756,8 +770,21 @@
     body.work-print #disasterProducts,
     body.work-print #disasterHistory,
     body.work-print main > section:not(.print-target) { display:none !important; }
-    body.work-print .work-table input { border:0; background:transparent; }
-    body.work-print .work-table { min-width:0; }
+    body.work-print .work-panel { page:work-landscape; }
+    body.work-print .work-scroll { overflow:visible !important; max-height:none !important; border:0; }
+    body.work-print .table-scroll-hint { display:none; }
+    body.work-print .work-table, body.work-print #tabStocktake .work-table,
+    body.work-print #tabFestival .work-table { width:100%; min-width:0; table-layout:fixed; font-size:9px; }
+    body.work-print .work-table th, body.work-print .work-table td {
+      min-width:0 !important; padding:3px; white-space:normal; word-break:keep-all;
+    }
+    body.work-print .work-table th { position:static !important; background:#eee9df !important; }
+    body.work-print .work-table input,
+    body.work-print .work-table input[type=number] {
+      width:100%; min-width:0; padding:0; border:0; background:transparent; font-size:9px;
+    }
+    body.work-print .work-table thead { display:table-header-group; }
+    body.work-print .work-table tr { break-inside:avoid; }
   }
   @media (max-width: 480px) { .work-grid { grid-template-columns:1fr; }
     .product-row { flex-wrap: wrap; }
@@ -920,7 +947,8 @@
         <label for="stocktakeSort">並び順</label><select id="stocktakeSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">帳簿数の多い順</option></select>
         <span id="stocktakeFilterCount" class="filter-count"></span>
       </div>
-      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>翌月準備（帳簿）</th><th>倉庫（帳簿）</th><th>帳簿合計</th><th>準備分実数</th><th>倉庫実数</th><th>実数合計</th><th>差異</th><th>備考</th></tr></thead><tbody id="stocktakeRows"></tbody></table></div>
+      <p class="table-scroll-hint">表の中を横にスクロールすると、右側の入力欄も見られます。</p>
+      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>翌月準備<br>帳簿数</th><th>倉庫<br>帳簿数</th><th>帳簿合計</th><th>準備分<br>実数</th><th>倉庫実数</th><th>実数合計</th><th>差異</th><th>備考</th></tr></thead><tbody id="stocktakeRows"></tbody></table></div>
       <div class="work-actions"><button class="btn-secondary-inline" id="stocktakeSaveBtn">入力内容を保存</button><button class="btn-primary" id="stocktakeApplyBtn">差異を在庫に反映</button></div>
     </section>
 
@@ -935,6 +963,7 @@
         <label for="festivalSort">並び順</label><select id="festivalSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">総在庫の多い順</option></select>
         <span id="festivalFilterCount" class="filter-count"></span>
       </div>
+      <p class="table-scroll-hint">表の中を横にスクロールすると、右側の入力欄も見られます。</p>
       <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>総在庫</th><th>準備（S1出）</th><th>追加</th><th>直送</th><th>戻り</th><th>乱丁</th><th>見本</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
       <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">入力を保存</button><button class="btn-primary" id="festivalCommitBtn">準備を確定</button><button class="btn-secondary-inline" id="festivalReturnBtn">準備を取り消す</button><button class="btn-primary" id="festivalSettleBtn">頒布を精算・在庫反映</button></div>
     </section>
