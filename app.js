@@ -301,6 +301,7 @@ function switchTab(tab) {
 function subscribeProducts() {
   db.collection(COLLECTION).orderBy("name").onSnapshot(snapshot => {
     allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    renderCategoryChips();
     renderSummary();
     renderProductList();
     renderStocktake(); renderFestival();
@@ -317,7 +318,8 @@ function subscribeProducts() {
 function renderCategoryChips() {
   const wrap = document.getElementById("categoryChips");
   wrap.innerHTML = "";
-  ["すべて", ...CATEGORIES].forEach(cat => {
+  const categories = [...new Set([...CATEGORIES, ...allProducts.map(p => p.category).filter(Boolean)])];
+  ["すべて", ...categories].forEach(cat => {
     const chip = document.createElement("button");
     chip.className = "chip" + (cat === activeCategory ? " active" : "");
     chip.textContent = cat;
@@ -355,7 +357,7 @@ function renderProductList() {
 
   let items = allProducts.filter(p => {
     const matchCat = activeCategory === "すべて" || p.category === activeCategory;
-    const matchKeyword = !keyword || (p.name || "").toLowerCase().includes(keyword);
+    const matchKeyword = !keyword || [p.name, p.code, p.supplier].some(value => String(value || "").toLowerCase().includes(keyword));
     return matchCat && matchKeyword;
   });
 
@@ -368,19 +370,23 @@ function renderProductList() {
     row.className = "product-row" + (isLow ? " low" : "");
     row.innerHTML = `
       ${bulkMode ? `<input type="checkbox" class="bulk-check" data-id="${p.id}" ${bulkSelected.has(p.id) ? "checked" : ""} aria-label="${escapeHtml(p.name)}を選択" style="width:20px;flex-shrink:0;">` : ""}
-      <div class="product-main">
-        <div class="product-name">
-          <span class="cat-tag">${p.category || "未分類"}</span>${escapeHtml(p.name || "")}
-        </div>
-        <div class="product-meta">${p.code ? "商品コード：" + escapeHtml(p.code) + "　/　" : ""}単位：${escapeHtml(p.unit || "-")}　/　僅少ライン：${p.minStock ?? 0}${p.price ? "　/　売価：¥" + Number(p.price).toLocaleString() : ""}${p.note ? "　/　" + escapeHtml(p.note) : ""}</div>
+      <div class="product-fields">
+        <div class="product-field"><span class="field-label">商品名</span>${escapeHtml(p.name || "")}</div>
+        <div class="product-field"><span class="field-label">商品コード</span>${escapeHtml(p.code || "―")}</div>
+        <div class="product-field"><span class="field-label">仕入れ先</span>${escapeHtml(p.supplier || "―")}</div>
+        <div class="product-field"><span class="field-label">単価</span>¥${Number(p.price || 0).toLocaleString()}</div>
+        <div class="product-field"><span class="field-label">ロット</span>${escapeHtml(p.lot || "―")}</div>
+        <div class="product-field"><span class="field-label">分類</span>${escapeHtml(p.category || "未分類")}</div>
+        <div class="product-field"><span class="field-label">備考</span>${escapeHtml(p.note || "―")}</div>
       </div>
-      <div class="stock-control">
+      <div class="product-actions"><div class="stock-control" title="現在庫数（僅少ライン：${Number(p.minStock || 0)}）">
         <div class="stock-num ${isLow ? "low" : ""}">${p.currentStock ?? 0}</div>
         <span style="font-size:11px;color:#8a8272;">${escapeHtml(p.unit || "")}</span>
       </div>
       <button class="btn-move" data-action="move" data-id="${p.id}">入出庫</button>
       <button class="btn-qr" data-id="${p.id}">QR</button>
       <a class="edit-link" data-id="${p.id}">編集</a>
+      </div>
     `;
     listEl.appendChild(row);
   });
@@ -945,13 +951,16 @@ let excelParsedRows = [];
 function handleExcelFile(e) {
   const file = e.target.files[0];
   if (!file) return;
+  excelParsedRows = [];
+  renderExcelPreview();
+  if (typeof XLSX === "undefined") { showToast("Excel読み込み機能を読み込めませんでした。再読み込みしてください"); return; }
   const reader = new FileReader();
   reader.onload = (ev) => {
     try {
       const data = new Uint8Array(ev.target.result);
       const workbook = XLSX.read(data, { type: "array" });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+      const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "", raw: false });
       excelParsedRows = rows.map(mapExcelRow).filter(isValidExcelRow);
       renderExcelPreview();
     } catch (err) {
@@ -970,18 +979,24 @@ const CATEGORY_ALIASES = {
 };
 
 function normalizeHeader(k) {
-  return String(k).normalize("NFKC").replace(/[\s　]/g, "");
+  return String(k).normalize("NFKC").replace(/[\s　]/g, "").toLowerCase();
 }
 
 function mapExcelRow(row) {
   // 列名の表記ゆれを吸収（商品ｺｰﾄﾞ/商品コード/コード/品番、商品名/名称、種別/分類、売上単価/売価/単価 など）
   const get = (keys) => {
-    for (const k of Object.keys(row)) {
-      const norm = normalizeHeader(k);
-      if (keys.some(kw => norm.includes(kw))) return row[k];
+    const columns = Object.keys(row);
+    for (const key of keys) {
+      const found = columns.find(k => normalizeHeader(k) === normalizeHeader(key));
+      if (found) return row[found];
+    }
+    for (const key of keys) {
+      const found = columns.find(k => normalizeHeader(k).includes(normalizeHeader(key)));
+      if (found) return row[found];
     }
     return "";
   };
+  const number = value => Number(String(value ?? "").normalize("NFKC").replace(/[¥￥,\s]/g, "")) || 0;
 
   let code = String(get(["商品コード", "コード", "品番", "code"]) || "").trim();
   if (code === "-" || code === "―" || code === "ー") code = "";
@@ -1002,11 +1017,13 @@ function mapExcelRow(row) {
   return {
     code,
     name: String(get(["商品名", "名称", "品名", "name"]) || "").trim(),
+    supplier: String(get(["仕入れ先", "仕入先", "仕入れ元", "仕入元", "supplier"]) || "").trim(),
+    lot: String(get(["ロット", "ロット番号", "lot"]) || "").trim(),
     category,
     unit: String(get(["単位", "unit"]) || "個").trim(),
-    price: Number(get(["売上単価", "売価", "価格", "単価", "price"])) || 0,
-    minStock: Number(get(["在庫僅少ライン", "僅少ライン", "minStock"])) || 3,
-    stock: Number(get(["現在庫数", "在庫数", "stock"])) || 0,
+    price: number(get(["売上単価", "売価", "単価", "価格", "price"])),
+    minStock: get(["在庫僅少ライン", "僅少ライン", "minStock"]) === "" ? 3 : number(get(["在庫僅少ライン", "僅少ライン", "minStock"])),
+    stock: number(get(["現在庫数", "在庫数", "stock"])),
     note
   };
 }
@@ -1030,11 +1047,13 @@ function renderExcelPreview() {
   excelParsedRows.slice(0, 500).forEach(r => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${escapeHtml(r.code)}</td>
       <td>${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.code)}</td>
+      <td>${escapeHtml(r.supplier)}</td>
+      <td>¥${r.price.toLocaleString()}</td>
+      <td>${escapeHtml(r.lot)}</td>
       <td>${escapeHtml(r.category)}</td>
-      <td>${escapeHtml(r.unit)}</td>
-      <td>${r.price}</td>
+      <td>${escapeHtml(r.note)}</td>
       <td>${r.stock}</td>
     `;
     tbody.appendChild(tr);
@@ -1075,11 +1094,13 @@ function handleExcelImport() {
       batch.set(ref, {
         name: r.name,
         code: r.code,
+        supplier: r.supplier || "",
+        lot: r.lot || "",
         category: r.category || CATEGORIES[0],
         unit: r.unit || "個",
         price: r.price || 0,
         currentStock: r.stock || 0,
-        minStock: r.minStock || 3,
+        minStock: r.minStock ?? 3,
         note: r.note || "",
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
@@ -2339,6 +2360,8 @@ function handleSlipComplete() {
 function handleRegisterSubmit() {
   const name = document.getElementById("regName").value.trim();
   const code = document.getElementById("regCode").value.trim();
+  const supplier = document.getElementById("regSupplier").value.trim();
+  const lot = document.getElementById("regLot").value.trim();
   const category = document.getElementById("regCategory").value;
   const unit = document.getElementById("regUnit").value.trim() || "個";
   const price = Number(document.getElementById("regPrice").value) || 0;
@@ -2352,7 +2375,7 @@ function handleRegisterSubmit() {
   }
 
   db.collection(COLLECTION).add({
-    name, code, category, unit,
+    name, code, supplier, lot, category, unit,
     price,
     currentStock: stock,
     minStock: minStock,
@@ -2362,6 +2385,8 @@ function handleRegisterSubmit() {
     showToast("商品を登録しました");
     document.getElementById("regName").value = "";
     document.getElementById("regCode").value = "";
+    document.getElementById("regSupplier").value = "";
+    document.getElementById("regLot").value = "";
     document.getElementById("regUnit").value = "個";
     document.getElementById("regPrice").value = "";
     document.getElementById("regStock").value = 0;
@@ -2381,6 +2406,8 @@ function openEditModal(id) {
   editingId = id;
   document.getElementById("editName").value = p.name || "";
   document.getElementById("editCode").value = p.code || "";
+  document.getElementById("editSupplier").value = p.supplier || "";
+  document.getElementById("editLot").value = p.lot || "";
   document.getElementById("editCategory").value = p.category || CATEGORIES[0];
   document.getElementById("editUnit").value = p.unit || "";
   document.getElementById("editPrice").value = p.price ?? "";
@@ -2400,6 +2427,8 @@ function handleEditSave() {
   const data = {
     name: document.getElementById("editName").value.trim(),
     code: document.getElementById("editCode").value.trim(),
+    supplier: document.getElementById("editSupplier").value.trim(),
+    lot: document.getElementById("editLot").value.trim(),
     category: document.getElementById("editCategory").value,
     unit: document.getElementById("editUnit").value.trim(),
     price: Number(document.getElementById("editPrice").value) || 0,
@@ -2818,5 +2847,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-09-28-workfilter-v5";
+window.KOBUNSHA_APP_VERSION = "2026-10-01-products-v6";
 init();
