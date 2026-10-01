@@ -182,7 +182,10 @@ function init() {
       renderOrderList(btn.dataset.filter);
     });
   });
-  document.getElementById("orderCreateBtn").addEventListener("click", () => openOrderCreateModal());
+  document.getElementById("orderCreateBtn").addEventListener("click", openSupplierOrder);
+  document.getElementById("orderSupplierSelect").addEventListener("change", () => renderOrderList(getActiveOrderFilter()));
+  document.getElementById("createSupplierOrderBtn").addEventListener("click", openSupplierOrder);
+  document.getElementById("orderAddSupplierItemsBtn").addEventListener("click", addSupplierOrderItems);
   document.getElementById("orderCreateCancelBtn").addEventListener("click", closeOrderCreateModal);
   document.getElementById("orderCreateSaveBtn").addEventListener("click", handleOrderCreateSave);
   document.getElementById("orderCreateOverlay").addEventListener("click", (e) => {
@@ -197,6 +200,7 @@ function init() {
     if (e.key === "Enter") { e.preventDefault(); handleOrderItemAdd(); }
   });
   document.getElementById("orderDetailCloseBtn").addEventListener("click", closeOrderDetailModal);
+  document.getElementById("orderDetailPrintBtn").addEventListener("click", () => { document.body.classList.add("order-print"); window.print(); });
   document.getElementById("orderMarkOrderedBtn").addEventListener("click", handleOrderMarkOrdered);
   document.getElementById("orderMarkReceivedBtn").addEventListener("click", handleOrderMarkReceived);
   document.getElementById("orderCancelBtn").addEventListener("click", handleOrderCancel);
@@ -302,6 +306,7 @@ function subscribeProducts() {
   db.collection(COLLECTION).orderBy("name").onSnapshot(snapshot => {
     allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderCategoryChips();
+    refreshOrderSupplierOptions();
     renderSummary();
     renderProductList();
     renderStocktake(); renderFestival();
@@ -407,6 +412,14 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+function labelTableCells(tbody) {
+  if (!tbody) return;
+  const headings = [...tbody.closest("table").querySelectorAll("thead th")].map(th => th.textContent.trim());
+  tbody.querySelectorAll("tr").forEach(row => {
+    [...row.children].forEach((cell, index) => { cell.dataset.label = headings[index] || ""; });
+  });
 }
 
 // ===================== Phase2: 入出庫記録 =====================
@@ -1058,6 +1071,7 @@ function renderExcelPreview() {
     `;
     tbody.appendChild(tr);
   });
+  labelTableCells(tbody);
   document.getElementById("excelPreviewCount").textContent = `${excelParsedRows.length}件を読み込みました`;
   wrap.style.display = "block";
 }
@@ -1426,6 +1440,7 @@ function openSlipDetailModal(id) {
     `;
     tbody.appendChild(tr);
   });
+  labelTableCells(tbody);
   document.getElementById("slipDetailTotal").textContent = `¥${totalAmount.toLocaleString()}`;
 
   document.getElementById("slipDetailCompleteBtn").style.display = isDone ? "none" : "block";
@@ -1671,9 +1686,11 @@ function renderLowStockAlert() {
 }
 
 function handleCreateOrderFromLowStock() {
-  const needing = getLowStockNeedingOrder();
+  const supplier = document.getElementById("orderSupplierSelect").value;
+  if (!supplier) { showToast("先に仕入れ先を選択してください"); return; }
+  const needing = getLowStockNeedingOrder().filter(p => (p.supplier || "").trim() === supplier);
   if (needing.length === 0) {
-    showToast("発注が必要な商品はありません");
+    showToast("この仕入れ先に発注が必要な商品はありません");
     return;
   }
   const prefill = needing.map(p => ({
@@ -1683,7 +1700,22 @@ function handleCreateOrderFromLowStock() {
     unit: p.unit || "",
     qty: Math.max(1, (Number(p.minStock) || 0) * 2 - Number(p.currentStock || 0))
   }));
-  openOrderCreateModal(prefill);
+  openOrderCreateModal(prefill, supplier);
+}
+
+function refreshOrderSupplierOptions() {
+  const select = document.getElementById("orderSupplierSelect");
+  if (!select) return;
+  const previous = select.value;
+  const suppliers = [...new Set(allProducts.map(p => String(p.supplier || "").trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b,"ja"));
+  select.replaceChildren(new Option("仕入れ先を選択...", ""), ...suppliers.map(name => new Option(name,name)));
+  select.value = suppliers.includes(previous) ? previous : "";
+}
+
+function openSupplierOrder() {
+  const supplier = document.getElementById("orderSupplierSelect").value;
+  if (!supplier) { showToast("仕入れ先を選択してください。未登録の場合は商品編集で入力できます"); return; }
+  openOrderCreateModal([], supplier);
 }
 
 // ===================== Phase4: 発注（購入発注）管理 =====================
@@ -1711,6 +1743,8 @@ function renderOrderList(filter) {
   const emptyEl = document.getElementById("orderEmptyState");
   let items = allOrders;
   if (filter && filter !== "all") items = items.filter(o => o.status === filter);
+  const supplier = document.getElementById("orderSupplierSelect").value;
+  if (supplier) items = items.filter(o => o.partner === supplier);
 
   listEl.innerHTML = "";
   emptyEl.style.display = items.length === 0 ? "block" : "none";
@@ -1735,20 +1769,53 @@ function renderOrderList(filter) {
 }
 
 // ---- 発注の新規作成 ----
-function openOrderCreateModal(prefillItems) {
+function openOrderCreateModal(prefillItems, supplier) {
   currentOrderItems = Array.isArray(prefillItems) ? prefillItems.map(i => ({ ...i })) : [];
-  document.getElementById("orderPartner").value = "";
+  document.getElementById("orderPartner").value = supplier || "";
   document.getElementById("orderMemo").value = "";
   document.getElementById("orderItemCodeInput").value = "";
   document.getElementById("orderItemCodeError").textContent = "";
   const productSelect = document.getElementById("orderItemProduct");
   productSelect.innerHTML = `<option value="">商品を選択...</option>` +
-    allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}${p.code ? "（" + escapeHtml(p.code) + "）" : ""}</option>`).join("");
+    allProducts.filter(p => (p.supplier || "").trim() === supplier).map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}${p.code ? "（" + escapeHtml(p.code) + "）" : ""}</option>`).join("");
+  renderSupplierOrderPicker(supplier);
   document.getElementById("orderItemQty").value = 1;
   clearOrderSelectedProductCard();
   renderOrderItemsEditor();
   document.getElementById("orderCreateOverlay").classList.add("show");
   setTimeout(() => document.getElementById("orderItemCodeInput").focus(), 50);
+}
+
+function renderSupplierOrderPicker(supplier) {
+  const wrap = document.getElementById("orderSupplierPicker");
+  const products = allProducts.filter(p => (p.supplier || "").trim() === supplier);
+  wrap.innerHTML = products.length ? products.map(p => `
+    <div class="supplier-picker-row">
+      <div><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.code || "コードなし")} ／ ${escapeHtml(p.lot || "ロットなし")}</small></div>
+      <div class="supplier-stock">在庫 ${Number(p.currentStock || 0)}${escapeHtml(p.unit || "")}</div>
+      <label>発注数<input type="number" class="supplier-order-qty" data-id="${escapeHtml(p.id)}" min="0" step="1" value="0"></label>
+    </div>`).join("") : "<p>この仕入れ先の商品がありません</p>";
+}
+
+function addSupplierOrderItems() {
+  const inputs = [...document.querySelectorAll("#orderSupplierPicker .supplier-order-qty")];
+  const chosen = inputs.filter(input => input.value !== "" && Number(input.value) !== 0);
+  if (!chosen.length) { showToast("発注する商品の数量を入力してください"); return false; }
+  if (chosen.some(input => !Number.isSafeInteger(Number(input.value)) || Number(input.value) < 0)) {
+    showToast("発注数は0以上の整数で入力してください"); return false;
+  }
+  const supplier = document.getElementById("orderPartner").value;
+  chosen.forEach(input => {
+    const p = allProducts.find(product => product.id === input.dataset.id && (product.supplier || "").trim() === supplier);
+    if (!p) return;
+    const qty = Number(input.value), existing = currentOrderItems.find(item => item.productId === p.id);
+    if (existing) existing.qty += qty;
+    else currentOrderItems.push({ productId:p.id, productName:p.name, code:p.code || "", unit:p.unit || "", qty });
+    input.value = "0";
+  });
+  renderOrderItemsEditor();
+  showToast("発注表に追加しました");
+  return true;
 }
 
 function closeOrderCreateModal() {
@@ -1782,7 +1849,8 @@ function handleOrderItemCodeLookup() {
   errorEl.textContent = "";
   if (!code) return;
 
-  const p = allProducts.find(x => (x.code || "").trim().toLowerCase() === code.toLowerCase());
+  const supplier = document.getElementById("orderPartner").value;
+  const p = allProducts.find(x => (x.supplier || "").trim() === supplier && (x.code || "").trim().toLowerCase() === code.toLowerCase());
   if (!p) {
     errorEl.textContent = `商品コード「${code}」に該当する商品が見つかりません`;
     clearOrderSelectedProductCard();
@@ -1800,7 +1868,8 @@ function handleOrderItemAdd() {
   const qty = Number(document.getElementById("orderItemQty").value);
   const p = allProducts.find(x => x.id === productId);
   if (!p) { showToast("商品コードを入力するか、商品名から選択してください"); return; }
-  if (!qty || qty <= 0) { showToast("数量は1以上を入力してください"); return; }
+  if ((p.supplier || "").trim() !== document.getElementById("orderPartner").value) { showToast("この仕入れ先の商品を選択してください"); return; }
+  if (!Number.isSafeInteger(qty) || qty <= 0) { showToast("数量は1以上の整数で入力してください"); return; }
 
   const existing = currentOrderItems.find(i => i.productId === productId);
   if (existing) {
@@ -1829,7 +1898,8 @@ function renderOrderItemsEditor() {
     row.className = "slip-item-row";
     row.innerHTML = `
       <div class="slip-item-name">${escapeHtml(item.productName)}${item.code ? "（" + escapeHtml(item.code) + "）" : ""}</div>
-      <div class="slip-item-qty">${item.qty}${escapeHtml(item.unit || "")}</div>
+      <label class="order-edit-qty">発注数<input type="number" class="order-editor-qty" data-idx="${idx}" min="1" step="1" value="${Number(item.qty)}"></label>
+      <span>${escapeHtml(item.unit || "")}</span>
       <button type="button" class="slip-item-remove" data-idx="${idx}">×</button>
     `;
     wrap.appendChild(row);
@@ -1838,6 +1908,13 @@ function renderOrderItemsEditor() {
     btn.addEventListener("click", () => {
       currentOrderItems.splice(Number(btn.dataset.idx), 1);
       renderOrderItemsEditor();
+    });
+  });
+  wrap.querySelectorAll(".order-editor-qty").forEach(input => {
+    input.addEventListener("change", () => {
+      const qty = Number(input.value);
+      if (!Number.isSafeInteger(qty) || qty < 1) { showToast("発注数は1以上の整数で入力してください"); input.value = currentOrderItems[Number(input.dataset.idx)].qty; return; }
+      currentOrderItems[Number(input.dataset.idx)].qty = qty;
     });
   });
 }
@@ -1851,19 +1928,30 @@ function generateOrderNumber() {
 }
 
 function handleOrderCreateSave() {
+  const pending = [...document.querySelectorAll("#orderSupplierPicker .supplier-order-qty")].some(input => input.value !== "" && Number(input.value) !== 0);
+  if (pending && !addSupplierOrderItems()) return;
   if (currentOrderItems.length === 0) {
     showToast("品目を1件以上追加してください");
     return;
   }
   const partner = document.getElementById("orderPartner").value.trim();
+  const editorInputs = [...document.querySelectorAll("#orderItemsEditor .order-editor-qty")];
+  if (editorInputs.some(input => !Number.isSafeInteger(Number(input.value)) || Number(input.value) < 1)) {
+    showToast("発注数は1以上の整数で入力してください"); return;
+  }
+  editorInputs.forEach(input => { currentOrderItems[Number(input.dataset.idx)].qty = Number(input.value); });
+  if (!partner || currentOrderItems.some(item => !allProducts.some(p => p.id === item.productId && (p.supplier || "").trim() === partner))) {
+    showToast("発注表の仕入れ先と商品を確認してください"); return;
+  }
   const memo = document.getElementById("orderMemo").value.trim();
-
+  const btn = document.getElementById("orderCreateSaveBtn");
+  btn.disabled = true;
   db.collection(ORDERS_COLLECTION).add({
     orderNumber: generateOrderNumber(),
     partner,
     memo,
     status: "draft",
-    items: currentOrderItems,
+    items: currentOrderItems.map(item => ({ ...item })),
     staff: currentStaffName,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(() => {
@@ -1872,7 +1960,7 @@ function handleOrderCreateSave() {
   }).catch(err => {
     console.error(err);
     showToast("発注案の作成に失敗しました");
-  });
+  }).finally(() => { btn.disabled = false; });
 }
 
 // ---- 発注の詳細・ステータス管理 ----
@@ -1909,6 +1997,7 @@ function openOrderDetailModal(id) {
     `;
     tbody.appendChild(tr);
   });
+  labelTableCells(tbody);
 
   document.getElementById("orderMarkOrderedBtn").style.display = (o.status === "draft") ? "block" : "none";
   document.getElementById("orderMarkReceivedBtn").style.display = isOrdered ? "block" : "none";
@@ -2584,7 +2673,7 @@ async function bulkDeleteProducts() {
   finally { btn.disabled = false; updateBulkButton(); renderProductList(); }
 }
 function printWork(tab) { switchTab(tab); document.body.classList.add("work-print"); setTimeout(() => window.print(), 150); }
-window.addEventListener("afterprint", () => document.body.classList.remove("work-print", "label-print", "slip-print"));
+window.addEventListener("afterprint", () => document.body.classList.remove("work-print", "label-print", "slip-print", "order-print"));
 // ===================== 棚卸し：倉庫＋翌月の月始祭準備分 =====================
 const stocktakeKey = () => $w("stocktakeDate").value;
 const festivalKey = () => $w("festivalMonth").value;
@@ -2617,6 +2706,7 @@ function renderStocktake() {
     const actual=i.stagedActual!=null && i.warehouseActual!=null ? Number(i.stagedActual)+Number(i.warehouseActual) : null;
     return `<tr data-id="${safe(i.productId)}" data-category="${safe(i.category||"未分類")}" data-name="${safe(i.name)}" data-code="${safe(i.code)}" data-stock="${book}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${safe(i.category)}</td><td>${prepared}</td><td>${book-prepared}</td><td>${book}</td><td><input class="staged-actual" type="number" min="0" step="1" value="${i.stagedActual??""}" ${applied||applying?"disabled":""}></td><td><input class="warehouse-actual" type="number" min="0" step="1" value="${i.warehouseActual??""}" ${applied||applying?"disabled":""}></td><td class="actual-total">${actual??"―"}</td><td class="difference">${actual===null?"―":actual-book}</td><td><input class="note" type="text" value="${safe(i.note)}" ${applied||applying?"disabled":""}></td></tr>`;
   }).join("");
+  labelTableCells(body);
   body.querySelectorAll(".staged-actual,.warehouse-actual").forEach(input=>input.oninput=()=>{
     const row=input.closest("tr"), stage=row.querySelector(".staged-actual").value, warehouse=row.querySelector(".warehouse-actual").value;
     const actual=stage!=="" && warehouse!=="" && integer(stage) && integer(warehouse) ? Number(stage)+Number(warehouse):null;
@@ -2723,6 +2813,7 @@ function renderFestival() {
     const total=Number(p?.currentStock||0)+(status==="prepared"&&festivalRecord?.stockMode!=="included"?n.qty:0);
     return `<tr data-id="${safe(i.productId)}" data-category="${safe(p?.category||i.category||"未分類")}" data-name="${safe(i.name)}" data-code="${safe(i.code)}" data-stock="${total}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${p?total:"―"}</td><td>${field("qty",n.qty,true)}</td><td>${field("extraQty",n.extra)}</td><td>${field("directQty",n.direct)}</td><td>${field("returnedQty",n.returned)}</td><td>${field("damagedQty",n.damaged)}</td><td>${field("sampleQty",n.sample)}</td><td class="soldQty">${n.sold}</td><td><input class="price" type="number" min="0" value="${price}" ${disabled}></td><td class="salesAmount">${(n.sold*price).toLocaleString()}</td></tr>`;
   }).join("");
+  labelTableCells(body);
   body.querySelectorAll("input").forEach(input=>input.oninput=()=>{const r=input.closest("tr"),i={qty:r.querySelector(".qty").value};festivalFields.forEach(f=>i[f]=r.querySelector(`.${f}`).value);const n=festivalNumbers(i);r.querySelector(".soldQty").textContent=n.sold;r.querySelector(".salesAmount").textContent=(n.sold*Number(r.querySelector(".price").value||0)).toLocaleString();});
   $w("festivalStatus").textContent=festivalRecord?.status==="settled"?"頒布精算済み（在庫反映済み）":status==="prepared"?"準備済み：総在庫に準備分を含む":"準備リスト入力中";
   $w("festivalCommitBtn").disabled=status!=="draft";
@@ -2823,6 +2914,8 @@ function renderDisaster() {
   $w("disasterProduct").value=selected;
   $w("disasterProducts").innerHTML=disasterProducts.map(p=>`<tr><td>${safe(p.code)}</td><td>${safe(p.name)}</td><td>${safe(p.currentStock)} ${safe(p.unit)}</td></tr>`).join("");
   $w("disasterHistory").innerHTML=disasterMovements.map(m=>`<tr><td>${safe(dateLabel(m.createdAt))}</td><td>${safe(m.productName)}</td><td>${m.type==="in"?"入庫":"出荷"}</td><td>${safe(m.qty)}</td><td>${safe(m.destination)}</td><td>${m.type==="out" ? m.shippedAt ? `発送済 ${safe(dateLabel(m.shippedAt))}` : `<button class="btn-secondary-inline shipped-btn" data-id="${safe(m.id)}">発送済みにする</button>` : "―"}</td></tr>`).join("");
+  labelTableCells($w("disasterProducts"));
+  labelTableCells($w("disasterHistory"));
   $w("disasterHistory").querySelectorAll(".shipped-btn").forEach(b=>b.onclick=()=>markDisasterShipped(b.dataset.id));
 }
 async function addDisasterProduct() {
@@ -2847,5 +2940,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-01-products-v6";
+window.KOBUNSHA_APP_VERSION = "2026-10-01-supplier-v7";
 init();
