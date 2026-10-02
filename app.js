@@ -43,6 +43,8 @@ let scanRAF = null;
 let scanMode = "global"; // "global" または "slip-item"
 let pendingHashHandled = false;
 let pendingSlipScanCode = null; // 検品シール照合：1回目にスキャンしたコードを一時保持
+let slipScannerActive = false;
+let slipScannerIdleTimer = null;
 
 // ===================== 初期化 =====================
 function init() {
@@ -163,6 +165,11 @@ function init() {
     if (e.target.id === "slipDetailOverlay") closeSlipDetailModal();
   });
   document.getElementById("slipDetailScanBtn").addEventListener("click", () => openScanModal("slip-item"));
+  document.getElementById("slipBluetoothModeBtn").addEventListener("click", () => setSlipScannerMode(!slipScannerActive));
+  document.getElementById("slipScanFocusBtn").addEventListener("click", () => {
+    if (!slipScannerActive) setSlipScannerMode(true);
+    document.getElementById("slipItemScannerInput").focus();
+  });
   document.getElementById("slipReceivingLabelBtn").addEventListener("click", () => printSlipReceivingLabels(openSlipId));
   document.getElementById("slipPickLabelBtn").addEventListener("click", () => printSlipPickLabels(openSlipId));
   document.getElementById("slipPickLabelPhomemoBtn").addEventListener("click", () => printSlipPickLabelsPhomemo(openSlipId));
@@ -226,10 +233,17 @@ function init() {
     });
   });
   document.getElementById("slipItemScannerInput").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
+      clearTimeout(slipScannerIdleTimer);
       handleScannerWedgeInput(e.target, "slip-item");
     }
+  });
+  document.getElementById("slipItemScannerInput").addEventListener("input", e => {
+    clearTimeout(slipScannerIdleTimer);
+    slipScannerIdleTimer = setTimeout(() => {
+      if (slipScannerActive && resolveScannedProductId(e.target.value.trim())) handleScannerWedgeInput(e.target,"slip-item");
+    }, 450);
   });
 
   auth.onAuthStateChanged(user => {
@@ -1450,15 +1464,34 @@ function openSlipDetailModal(id) {
   labelWrap.style.display = (isDone && s.type === "in") ? "block" : "none";
 
   document.getElementById("slipDetailOverlay").classList.add("show");
-  if (!isDone) {
-    setTimeout(() => document.getElementById("slipItemScannerInput").focus(), 50);
-  }
+  document.getElementById("slipBluetoothModeBtn").disabled = isDone;
+  document.getElementById("slipScanFocusBtn").disabled = isDone;
+  setSlipScannerMode(!isDone);
 }
 
 function closeSlipDetailModal() {
+  setSlipScannerMode(false);
   openSlipId = null;
   pendingSlipScanCode = null;
   document.getElementById("slipDetailOverlay").classList.remove("show");
+}
+
+function setSlipScannerMode(active) {
+  slipScannerActive = !!active && !!openSlipId && allSlips.find(s => s.id === openSlipId)?.status !== "done";
+  pendingSlipScanCode = null;
+  clearTimeout(slipScannerIdleTimer);
+  const input = document.getElementById("slipItemScannerInput");
+  input.value = "";
+  input.disabled = !slipScannerActive;
+  document.getElementById("slipBluetoothModeBtn").textContent = slipScannerActive ? "Bluetooth検品を一時停止" : "Bluetooth検品を開始";
+  const status = document.getElementById("slipScanStatus");
+  status.className = slipScannerActive ? "scan-ready" : "";
+  status.textContent = slipScannerActive
+    ? "iPadで接続したスキャナーで現品QR、検品シールQRの順に読み取ってください（同じ商品で1件確認）。"
+    : "Bluetooth検品を開始すると読み取りを受け付けます。";
+  if (slipScannerActive) setTimeout(() => {
+    if (slipScannerActive && document.getElementById("slipDetailOverlay").classList.contains("show")) input.focus();
+  }, 50);
 }
 
 // ---- 伝票の印刷（ピック表／検品表／納品書） ----
@@ -2124,6 +2157,9 @@ function openScanModal(mode) {
 function closeScanModal() {
   stopScanCamera();
   document.getElementById("scanOverlay").classList.remove("show");
+  if (slipScannerActive && document.getElementById("slipDetailOverlay").classList.contains("show")) {
+    document.getElementById("slipItemScannerInput").focus();
+  }
 }
 
 function startScanCamera() {
@@ -2190,7 +2226,7 @@ function handleScanResult(text) {
   const parsed = extractScannedId(text);
 
   if (scanMode === "slip-item") {
-    handleSlipItemVerifyScan(parsed.id);
+    handleSlipItemVerifyScan(resolveScannedProductId(text));
     // 検品モードは閉じずに継続スキャン。連続検知を防ぐため少し間を空けて再開
     setTimeout(() => {
       if (document.getElementById("scanOverlay").classList.contains("show")) {
@@ -2282,15 +2318,37 @@ function playWarningAlert() {
 
 // ===================== Phase2: 入出庫（検品スキャン処理） =====================
 // 検品シール方式：現品のQRと検品シールのQRを順にスキャンし、2回とも同じ商品であれば1件確認とする
+function setSlipScanStatus(message, warning) {
+  const status = document.getElementById("slipScanStatus");
+  if (status) {
+    status.textContent = message;
+    status.className = warning ? "scan-warning" : "scan-ready";
+  }
+}
+
 function handleSlipItemVerifyScan(productId) {
   const stepStatus = document.getElementById("scanStepStatus");
-  const p = allProducts.find(x => x.id === productId);
-  const pname = p ? p.name : "商品";
+  const slip = allSlips.find(s => s.id === openSlipId);
+  if (!slip || slip.status === "done") {
+    showToast("この伝票は検品完了済みです");
+    return;
+  }
+  const item = slip?.items?.find(i => i.productId === productId);
+  if (!item) {
+    pendingSlipScanCode = null;
+    playWarningAlert();
+    showToast("⚠️ この伝票に含まれない商品です");
+    setSlipScanStatus("⚠️ 対象外の商品です。現品から読み直してください。", true);
+    if (stepStatus) stepStatus.textContent = "⚠️ 対象外の商品です。現品から読み直してください。";
+    return;
+  }
+  const pname = item.productName || allProducts.find(x => x.id === productId)?.name || "商品";
 
   if (pendingSlipScanCode === null) {
     pendingSlipScanCode = productId;
     playTone(660, 60, "sine");
     showToast("1回目OK。もう一方のQR（現品／検品シール）をスキャンしてください");
+    setSlipScanStatus(`① ${pname} を確認しました → ② 検品シールを読み取ってください`, false);
     if (stepStatus) {
       stepStatus.style.color = "var(--indigo-deep)";
       stepStatus.textContent = `① ${pname} を確認しました → ② もう一方のQRをスキャンしてください`;
@@ -2302,28 +2360,43 @@ function handleSlipItemVerifyScan(productId) {
   if (firstCode !== productId) {
     playWarningAlert();
     showToast("⚠️ 現品と検品シールの商品が一致しません");
+    setSlipScanStatus("⚠️ 商品が一致しません。現品から読み直してください。", true);
     if (stepStatus) {
       stepStatus.style.color = "var(--warn-text, #a3392b)";
       stepStatus.textContent = "⚠️ 一致しませんでした。もう一度、現品→検品シールの順にスキャンしてください";
     }
     return;
   }
-  handleSlipItemScan(productId);
-  if (stepStatus) {
-    stepStatus.style.color = "var(--ok-text, #0f6e56)";
-    stepStatus.textContent = `✅ ${pname} を確認しました。次の商品をスキャンしてください`;
+  if (handleSlipItemScan(productId)) {
+    setSlipScanStatus(`✅ ${pname} を確認しました。次の現品を読み取ってください。`, false);
+    if (stepStatus) {
+      stepStatus.style.color = "var(--ok-text, #0f6e56)";
+      stepStatus.textContent = `✅ ${pname} を確認しました。次の商品をスキャンしてください`;
+    }
+  } else {
+    setSlipScanStatus(`⚠️ ${pname} は予定数に達しています。次の現品を読み取ってください。`, true);
   }
+}
+
+function resolveScannedProductId(text) {
+  const parsed = extractScannedId(text);
+  if (parsed.type === "slip") return null;
+  const byId = allProducts.find(p => p.id === parsed.id);
+  if (byId) return byId.id;
+  const code = parsed.id.normalize("NFKC").toLowerCase();
+  const matches = allProducts.filter(p => String(p.code || "").trim().normalize("NFKC").toLowerCase() === code);
+  return matches.length === 1 ? matches[0].id : null;
 }
 
 function handleSlipItemScan(productId) {
   const s = allSlips.find(x => x.id === openSlipId);
-  if (!s) { showToast("伝票が開かれていません"); return; }
+  if (!s || s.status === "done") { showToast("伝票が開かれていないか、検品完了済みです"); return false; }
   const idx = (s.items || []).findIndex(it => it.productId === productId);
 
   if (idx === -1) {
     playWarningAlert();
     showToast("⚠️ この伝票に含まれない商品です");
-    return;
+    return false;
   }
 
   const qtyInput = document.querySelector(`.slip-check-qty[data-idx="${idx}"]`);
@@ -2331,7 +2404,7 @@ function handleSlipItemScan(productId) {
   const planned = s.items[idx].plannedQty;
   const name = s.items[idx].productName;
   const unit = s.items[idx].unit || "";
-  if (!qtyInput) return;
+  if (!qtyInput) return false;
 
   const current = Number(qtyInput.value) || 0;
 
@@ -2339,7 +2412,7 @@ function handleSlipItemScan(productId) {
     // 数量超過（規定数に達しているのにさらにスキャンされた）
     playWarningAlert();
     showToast(`⚠️ 数量超過：${name} は既に${planned}${unit}に達しています`);
-    return;
+    return false;
   }
 
   const next = current + 1;
@@ -2347,6 +2420,7 @@ function handleSlipItemScan(productId) {
   if (checkBox) checkBox.checked = next >= planned;
   playSuccessBeep();
   showToast(`${name}：${next}/${planned}${unit} 確認`);
+  return true;
 }
 
 // ===================== Phase3.5: ハンディスキャナー（キーボード入力）対応 =====================
@@ -2358,7 +2432,9 @@ function handleScannerWedgeInput(inputEl, mode) {
   const parsed = extractScannedId(text);
 
   if (mode === "slip-item") {
-    handleSlipItemVerifyScan(parsed.id);
+    if (!slipScannerActive) return;
+    const productId = resolveScannedProductId(text);
+    handleSlipItemVerifyScan(productId);
     inputEl.focus();
     return;
   }
@@ -2940,5 +3016,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-01-supplier-v7";
+window.KOBUNSHA_APP_VERSION = "2026-10-02-bluetooth-v8";
 init();
