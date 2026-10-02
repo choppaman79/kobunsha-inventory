@@ -776,6 +776,52 @@
     .work-table tbody tr, .excel-preview-table tr { grid-template-columns:repeat(2,minmax(0,1fr)); }
     .work-table tbody td:nth-child(2), .excel-preview-table td:first-child { grid-column:span 2; }
   }
+  /* 棚卸し・月始祭は、横スクロールせず1商品を1行で表示 */
+  #tabStocktake .work-table, #tabFestival .work-table {
+    display:table; width:100%; min-width:0; table-layout:fixed; border-collapse:collapse;
+    font-size:clamp(9px, .85vw, 12px);
+  }
+  #tabStocktake .work-table thead, #tabFestival .work-table thead { display:table-header-group; }
+  #tabStocktake .work-table tbody, #tabFestival .work-table tbody { display:table-row-group; width:auto; }
+  #tabStocktake .work-table tbody tr, #tabFestival .work-table tbody tr { display:table-row; padding:0; }
+  #tabStocktake .work-table th, #tabFestival .work-table th,
+  #tabStocktake .work-table tbody td, #tabFestival .work-table tbody td {
+    display:table-cell; min-width:0; padding:5px 3px; border:1px solid var(--line);
+    vertical-align:middle; font-weight:normal; overflow-wrap:anywhere; word-break:normal;
+  }
+  #tabStocktake .work-table th, #tabFestival .work-table th {
+    position:sticky; top:0; z-index:1; background:#eee9df; font-weight:700;
+    white-space:normal; overflow-wrap:normal; word-break:keep-all;
+  }
+  #tabStocktake .work-table tbody td:nth-child(2), #tabFestival .work-table tbody td:nth-child(2) {
+    font-weight:700; color:var(--indigo-deep); overflow-wrap:anywhere;
+  }
+  #tabStocktake .work-table tbody td::before, #tabFestival .work-table tbody td::before { display:none; }
+  #tabStocktake .work-table input, #tabFestival .work-table input,
+  #tabStocktake .work-table input[type=number], #tabFestival .work-table input[type=number] {
+    width:100%; min-width:0; margin:0; padding:4px 2px; font-size:inherit;
+  }
+  #tabStocktake .work-table th:nth-child(1), #tabStocktake .work-table td:nth-child(1) { width:7%; }
+  #tabStocktake .work-table th:nth-child(2), #tabStocktake .work-table td:nth-child(2) { width:23%; }
+  #tabStocktake .work-table th:nth-child(3), #tabStocktake .work-table td:nth-child(3) { width:7%; }
+  #tabStocktake .work-table th:nth-child(n+4):nth-child(-n+9),
+  #tabStocktake .work-table td:nth-child(n+4):nth-child(-n+9) { width:8%; }
+  #tabStocktake .work-table th:nth-child(10), #tabStocktake .work-table td:nth-child(10) { width:5%; }
+  #tabStocktake .work-table th:nth-child(11), #tabStocktake .work-table td:nth-child(11) { width:10%; }
+  #tabFestival .work-table th:nth-child(1), #tabFestival .work-table td:nth-child(1) { width:7%; }
+  #tabFestival .work-table th:nth-child(2), #tabFestival .work-table td:nth-child(2) { width:23%; }
+  #tabFestival .work-table th:nth-child(3), #tabFestival .work-table td:nth-child(3) { width:7%; }
+  #tabFestival .work-table th:nth-child(4), #tabFestival .work-table td:nth-child(4) { width:9%; }
+  #tabFestival .work-table th:nth-child(n+5):nth-child(-n+9),
+  #tabFestival .work-table td:nth-child(n+5):nth-child(-n+9) { width:6%; }
+  #tabFestival .work-table th:nth-child(10), #tabFestival .work-table td:nth-child(10) { width:7%; }
+  #tabFestival .work-table th:nth-child(11), #tabFestival .work-table td:nth-child(11) { width:8%; }
+  #tabFestival .work-table th:nth-child(12), #tabFestival .work-table td:nth-child(12) { width:9%; }
+  @media (max-width:800px) {
+    #tabStocktake .work-table, #tabFestival .work-table { font-size:8px; }
+    #tabStocktake .work-table th, #tabFestival .work-table th,
+    #tabStocktake .work-table tbody td, #tabFestival .work-table tbody td { padding:3px 1px; }
+  }
   .work-actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
   .work-actions .btn-primary { width:auto; }
   .work-status { margin:10px 0; font-size:15px; font-weight:600; }
@@ -794,6 +840,11 @@
   .supplier-picker-row input { margin:0; min-width:0; }
   .order-edit-qty { display:flex !important; align-items:center; gap:5px; margin:0 !important; white-space:nowrap; }
   .order-edit-qty input { width:78px; margin:0; }
+  .verify-scanner-box { background:#f3f6f8; border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:12px; }
+  .verify-scanner-box .scanner-input { max-width:none; margin:9px 0 4px !important; }
+  .verify-scanner-box p { margin:6px 0; font-size:13px; line-height:1.5; }
+  .verify-scanner-box .scan-ready { color:var(--ok-text); font-weight:700; }
+  .verify-scanner-box .scan-warning { color:var(--warn-text); font-weight:700; }
   @media (max-width:520px) { .supplier-picker-row { grid-template-columns:minmax(0,1fr) 78px; } .supplier-picker-row .supplier-stock { grid-column:1; } }
   @page work-landscape { size:A4 landscape; margin:8mm; }
   @media print {
@@ -1271,9 +1322,13 @@
 
       <p id="slipDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 8px;"></p>
 
-      <div style="margin-bottom:10px;">
-        <input type="text" id="slipItemScannerInput" class="scanner-input" placeholder="🔫 現品→検品シールの順にスキャン（検品用）" style="margin-bottom:8px;">
-        <button type="button" class="btn-secondary-inline" id="slipDetailScanBtn">📷 商品をスキャンして検品</button>
+      <div class="verify-scanner-box no-print">
+        <button type="button" class="btn-primary" id="slipBluetoothModeBtn">Bluetooth検品を開始</button>
+        <p>iPadの「設定 → Bluetooth」でスキャナーを接続し、キーボード入力モード・読み取り後Enterに設定してください。</p>
+        <input type="text" id="slipItemScannerInput" class="scanner-input" placeholder="現品QR → 検品シールQR の順に読み取り" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
+        <div id="slipScanStatus" role="status" aria-live="polite">Bluetooth検品を開始すると読み取りを受け付けます。</div>
+        <button type="button" class="btn-secondary-inline" id="slipScanFocusBtn" style="margin-top:9px;">スキャナー入力に戻る</button>
+        <button type="button" class="btn-secondary-inline" id="slipDetailScanBtn" style="margin-top:9px;">📷 カメラで検品</button>
       </div>
 
       <table class="slip-detail-table">
@@ -1428,9 +1483,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=20261001-supplier-v7"></script>
+<script src="app.js?v=20261002-bluetooth-v8"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-10-01-supplier-v7") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-10-02-bluetooth-v8") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
