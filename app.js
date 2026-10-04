@@ -1823,9 +1823,20 @@ function closeOrderDetailModal() {
   document.getElementById("orderDetailOverlay").classList.remove("show");
 }
 
+// 発注の状態変更もトランザクションで保護し、入荷済みの状態を戻さない。
+async function changeOrderStatus(ref, allowed, changes) {
+  await db.runTransaction(async tx => {
+    const doc = await tx.get(ref);
+    if (!doc.exists || !allowed.includes(doc.data().status)) {
+      throw Error("発注の状態が変わりました。開き直してください");
+    }
+    tx.update(ref, changes);
+  });
+}
+
 function handleOrderMarkOrdered() {
   if (!openOrderId) return;
-  db.collection(ORDERS_COLLECTION).doc(openOrderId).update({
+  changeOrderStatus(db.collection(ORDERS_COLLECTION).doc(openOrderId), ["draft"], {
     status: "ordered",
     orderedAt: firebase.firestore.FieldValue.serverTimestamp(),
     orderedBy: currentStaffName
@@ -1834,14 +1845,14 @@ function handleOrderMarkOrdered() {
     closeOrderDetailModal();
   }).catch(err => {
     console.error(err);
-    showToast("更新に失敗しました");
+    showToast(err.message || "更新に失敗しました");
   });
 }
 
 function handleOrderCancel() {
   if (!openOrderId) return;
   if (!confirm("この発注をキャンセルします。よろしいですか？")) return;
-  db.collection(ORDERS_COLLECTION).doc(openOrderId).update({
+  changeOrderStatus(db.collection(ORDERS_COLLECTION).doc(openOrderId), ["draft", "ordered"], {
     status: "cancelled",
     cancelledAt: firebase.firestore.FieldValue.serverTimestamp(),
     cancelledBy: currentStaffName
@@ -1850,59 +1861,116 @@ function handleOrderCancel() {
     closeOrderDetailModal();
   }).catch(err => {
     console.error(err);
-    showToast("更新に失敗しました");
+    showToast(err.message || "更新に失敗しました");
+  });
+}
+
+function inventoryQuantity(value, label) {
+  if (value == null || typeof value === "boolean" ||
+      (typeof value === "string" && !value.trim()) ||
+      !Number.isSafeInteger(Number(value)) || Number(value) < 0) {
+    throw Error(label + "は0以上の整数で入力してください");
+  }
+  return Number(value);
+}
+
+// Firestoreのマップのキー順に依存せず、品目と予定数量を比較する。
+function inventoryItemsSignature(items) {
+  return JSON.stringify((items || []).map(item => [
+    item.productId, item.qty ?? null, item.plannedQty ?? null
+  ]));
+}
+
+// 伝票/発注、商品在庫、履歴をまとめて確定する。読み取りは書き込みより先。
+async function completeInventoryRecord(ref, displayed, enteredItems, isOrder, staff) {
+  const quantityField = isOrder ? "receivedQty" : "checkedQty";
+  const quantities = enteredItems.map(item =>
+    inventoryQuantity(item[quantityField], item.productName + "の数量"));
+  await db.runTransaction(async tx => {
+    const recordDoc = await tx.get(ref);
+    if (!recordDoc.exists) throw Error("伝票・発注が削除されています");
+    const record = recordDoc.data();
+    const requiredStatus = isOrder ? "ordered" : "draft";
+    if (record.status !== requiredStatus) {
+      throw Error("既に処理済みか、状態が変わりました。開き直してください");
+    }
+    if ((!isOrder && record.type !== displayed.type) ||
+        inventoryItemsSignature(record.items) !== inventoryItemsSignature(displayed.items)) {
+      throw Error("品目が変更されています。開き直して数量を確認してください");
+    }
+    if (!Array.isArray(record.items) || !record.items.length ||
+        record.items.length !== quantities.length) throw Error("品目を確認してください");
+    const type = isOrder ? "in" : record.type;
+    if (!["in", "out"].includes(type)) throw Error("入出庫区分を確認してください");
+    const items = record.items.map((item, idx) => ({
+      ...item,
+      [quantityField]: quantities[idx],
+      ...(isOrder ? {} : { checked: !!enteredItems[idx].checked })
+    }));
+    const totals = new Map();
+    items.forEach(item => {
+      if (typeof item.productId !== "string" || !item.productId || item.productId.includes("/")) {
+        throw Error("商品を確認してください");
+      }
+      const total = (totals.get(item.productId) || 0) + item[quantityField];
+      inventoryQuantity(total, item.productName + "の合計数量");
+      totals.set(item.productId, total);
+    });
+    if (items.length + totals.size + 1 > 500) throw Error("品目数が多すぎます。分けて登録してください");
+    const products = await Promise.all([...totals].map(async ([id, qty]) => {
+      const productRef = db.collection(COLLECTION).doc(id);
+      const doc = await tx.get(productRef);
+      if (!doc.exists) throw Error("商品が削除されています：" + id);
+      const product = doc.data();
+      const stock = inventoryQuantity(product.currentStock ?? 0, product.name + "の在庫");
+      const reserved = inventoryQuantity(product.reservedStock ?? 0, product.name + "の準備分");
+      const next = stock + (type === "in" ? qty : -qty);
+      if (next < reserved) throw Error("準備分を除く在庫が不足しています：" + product.name);
+      inventoryQuantity(next, product.name + "の反映後在庫");
+      return { productRef, next };
+    }));
+    products.forEach(({ productRef, next }) => tx.update(productRef, { currentStock: next }));
+    items.forEach(item => tx.set(db.collection(MOVEMENTS_COLLECTION).doc(), {
+      productId: item.productId,
+      productName: item.productName,
+      unit: item.unit || "",
+      type,
+      qty: item[quantityField],
+      note: isOrder ? `発注 ${record.orderNumber} の入荷反映` : `伝票 ${record.slipNumber} による検品反映`,
+      staff,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }));
+    tx.update(ref, isOrder ? {
+      items, status: "received",
+      receivedAt: firebase.firestore.FieldValue.serverTimestamp(), receivedBy: staff
+    } : {
+      items, status: "done",
+      completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: staff
+    });
   });
 }
 
 function handleOrderMarkReceived() {
   const o = allOrders.find(x => x.id === openOrderId);
-  if (!o) return;
-
-  const items = (o.items || []).map((item, idx) => {
-    const qtyInput = document.querySelector(`.order-received-qty[data-idx="${idx}"]`);
-    return { ...item, receivedQty: qtyInput ? Number(qtyInput.value) || 0 : item.qty };
-  });
-
-  const orderRef = db.collection(ORDERS_COLLECTION).doc(openOrderId);
   const btn = document.getElementById("orderMarkReceivedBtn");
+  if (!o || btn.disabled) return;
+  let items;
+  try {
+    items = (o.items || []).map((item, idx) => {
+      const input = document.querySelector(`.order-received-qty[data-idx="${idx}"]`);
+      if (!input) throw Error("発注表を開き直して数量を確認してください");
+      return { ...item, receivedQty: inventoryQuantity(input.value, item.productName + "の入荷数") };
+    });
+  } catch (err) { showToast(err.message); return; }
+  const orderRef = db.collection(ORDERS_COLLECTION).doc(o.id);
   btn.disabled = true;
   btn.textContent = "反映中...";
-
-  db.runTransaction(tx => {
-    return Promise.all(items.map(item => {
-      const productRef = db.collection(COLLECTION).doc(item.productId);
-      return tx.get(productRef).then(doc => ({ doc, item, productRef }));
-    })).then(results => {
-      results.forEach(({ doc, item, productRef }) => {
-        if (!doc.exists) return;
-        const latestStock = Number(doc.data().currentStock || 0);
-        const newStock = latestStock + Number(item.receivedQty || 0);
-        tx.update(productRef, { currentStock: newStock });
-        const movementRef = db.collection(MOVEMENTS_COLLECTION).doc();
-        tx.set(movementRef, {
-          productId: item.productId,
-          productName: item.productName,
-          unit: item.unit || "",
-          type: "in",
-          qty: item.receivedQty,
-          note: `発注 ${o.orderNumber} の入荷反映`,
-          staff: currentStaffName,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-      });
-      tx.update(orderRef, {
-        items,
-        status: "received",
-        receivedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        receivedBy: currentStaffName
-      });
-    });
-  }).then(() => {
+  completeInventoryRecord(orderRef, o, items, true, currentStaffName).then(() => {
     showToast("入荷を記録し、在庫に反映しました");
     closeOrderDetailModal();
   }).catch(err => {
     console.error(err);
-    showToast("反映に失敗しました");
+    showToast(err.message || "反映に失敗しました");
   }).finally(() => {
     btn.disabled = false;
     btn.textContent = "入荷完了として記録する（在庫に反映）";
@@ -2235,62 +2303,31 @@ function handleScannerWedgeInput(inputEl, mode) {
 
 function handleSlipComplete() {
   const s = allSlips.find(x => x.id === openSlipId);
-  if (!s) return;
-  if (!confirm("検品を完了し、在庫に反映します。よろしいですか？")) return;
-
-  // 画面上の確認数・チェック状態を取得
-  const items = (s.items || []).map((item, idx) => {
-    const qtyInput = document.querySelector(`.slip-check-qty[data-idx="${idx}"]`);
-    const checkBox = document.querySelector(`.slip-check-box[data-idx="${idx}"]`);
-    return {
-      ...item,
-      checkedQty: qtyInput ? Number(qtyInput.value) || 0 : item.plannedQty,
-      checked: checkBox ? checkBox.checked : false
-    };
-  });
-
-  const slipRef = db.collection(SLIPS_COLLECTION).doc(openSlipId);
   const btn = document.getElementById("slipDetailCompleteBtn");
+  if (!s || btn.disabled) return;
+  let items;
+  try {
+    items = (s.items || []).map((item, idx) => {
+      const input = document.querySelector(`.slip-check-qty[data-idx="${idx}"]`);
+      const checkBox = document.querySelector(`.slip-check-box[data-idx="${idx}"]`);
+      if (!input) throw Error("伝票を開き直して数量を確認してください");
+      return {
+        ...item,
+        checkedQty: inventoryQuantity(input.value, item.productName + "の確認数"),
+        checked: !!checkBox?.checked
+      };
+    });
+  } catch (err) { showToast(err.message); return; }
+  if (!confirm("検品を完了し、在庫に反映します。よろしいですか？")) return;
+  const slipRef = db.collection(SLIPS_COLLECTION).doc(s.id);
   btn.disabled = true;
   btn.textContent = "反映中...";
-
-  db.runTransaction(tx => {
-    return Promise.all(items.map(item => {
-      const productRef = db.collection(COLLECTION).doc(item.productId);
-      return tx.get(productRef).then(doc => ({ doc, item, productRef }));
-    })).then(results => {
-      results.forEach(({ doc, item, productRef }) => {
-        if (!doc.exists) return;
-        const latestStock = Number(doc.data().currentStock || 0);
-        const delta = s.type === "in" ? item.checkedQty : -item.checkedQty;
-        const newStock = latestStock + delta;
-        if (newStock < Number(doc.data().reservedStock||0)) throw new Error(`準備分を除く在庫が不足しています：${item.productName}`);
-        tx.update(productRef, { currentStock: newStock });
-        const movementRef = db.collection(MOVEMENTS_COLLECTION).doc();
-        tx.set(movementRef, {
-          productId: item.productId,
-          productName: item.productName,
-          unit: item.unit || "",
-          type: s.type,
-          qty: item.checkedQty,
-          note: `伝票 ${s.slipNumber} による検品反映`,
-          staff: currentStaffName,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-      });
-      tx.update(slipRef, {
-        items,
-        status: "done",
-        completedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        completedBy: currentStaffName
-      });
-    });
-  }).then(() => {
+  completeInventoryRecord(slipRef, s, items, false, currentStaffName).then(() => {
     showToast("検品を完了し、在庫に反映しました");
     closeSlipDetailModal();
   }).catch(err => {
     console.error(err);
-    showToast("反映に失敗しました");
+    showToast(err.message || "反映に失敗しました");
   }).finally(() => {
     btn.disabled = false;
     btn.textContent = "検品完了として記録する";
@@ -2813,5 +2850,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-04-brother-ql800-v10";
+window.KOBUNSHA_APP_VERSION = "2026-10-04-inventory-integrity-v11";
 init();
