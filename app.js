@@ -691,17 +691,20 @@ function openQrBulkPrint() {
 // 入荷のラベルには商品QRだけを印刷する。品目の区切りはプレビューに表示する。
 function printSlipReceivingLabels(slipId) {
   const s = allSlips.find(x => x.id === slipId);
-  if (!s) return;
+  if (!s || s.type !== "in" || s.status !== "done") return showToast("入荷の検品を完了してからQRシールを印刷してください");
   const groups = new Map();
+  try {
   (s.items || []).forEach(item => {
-    const qty = Number(item.checkedQty ?? item.plannedQty);
-    if (!item.productId || !Number.isInteger(qty) || qty <= 0) return;
+    const qty = inventoryQuantity(item.checkedQty, (item.productName || "商品") + "の入荷数");
+    if (!item.productId) throw Error("印刷対象の商品を確認してください");
+    if (qty === 0) return;
     const p = allProducts.find(x => x.id === item.productId);
     const group = groups.get(item.productId) || { qty: 0, name: item.productName || p?.name || "商品", code: p?.code || "" };
     group.qty += qty;
     groups.set(item.productId, group);
   });
-  if (!groups.size) return showToast("印刷対象の品目がありません");
+  } catch (err) { showToast(err.message); return; }
+  if (!groups.size) return showToast("入荷数量が0のため、印刷するQRシールはありません");
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "brother-label-list";
   grid.replaceChildren();
@@ -714,13 +717,14 @@ function printSlipReceivingLabels(slipId) {
     for (let i = 0; i < group.qty; i++) appendBrotherQr(grid, productId);
     total += group.qty;
   });
-  finishBrotherLabels(grid, "qr", "入荷：商品QRラベル（23×23mm）", total);
+  finishBrotherLabels(grid, "qr", "入荷：QRのみのシール（23×23mm）", total);
 }
 
 // 検品シールのQRは現品QRと同じ商品URL。1商品1点につき1枚印刷する。
 function printSlipPickLabels(slipId) {
   const s = allSlips.find(x => x.id === slipId);
   if (!s) return;
+  if (s.type === "in") return printSlipReceivingLabels(slipId);
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "brother-label-list";
   grid.replaceChildren();
@@ -1238,6 +1242,7 @@ function openSlipDetailModal(id) {
 
   const labelWrap = document.getElementById("slipReceivingLabelWrap");
   labelWrap.style.display = (isDone && s.type === "in") ? "block" : "none";
+  document.getElementById("slipPickLabelWrap").style.display = s.type === "out" ? "flex" : "none";
 
   document.getElementById("slipDetailOverlay").classList.add("show");
   document.getElementById("slipBluetoothModeBtn").disabled = isDone;
@@ -2850,5 +2855,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-04-inventory-integrity-v11";
+window.KOBUNSHA_APP_VERSION = "2026-10-04-receiving-qr-v12";
 init();
