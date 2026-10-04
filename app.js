@@ -104,7 +104,7 @@ function init() {
 
   // ---- Phase2: QRモーダル ----
   document.getElementById("qrCloseBtn").addEventListener("click", closeQrModal);
-  document.getElementById("qrPrintBtn").addEventListener("click", () => window.print());
+  document.getElementById("qrPrintBtn").addEventListener("click", () => printProductQrLabel(qrProductId));
   document.getElementById("qrOverlay").addEventListener("click", (e) => {
     if (e.target.id === "qrOverlay") closeQrModal();
   });
@@ -172,12 +172,6 @@ function init() {
   });
   document.getElementById("slipReceivingLabelBtn").addEventListener("click", () => printSlipReceivingLabels(openSlipId));
   document.getElementById("slipPickLabelBtn").addEventListener("click", () => printSlipPickLabels(openSlipId));
-  document.getElementById("slipPickLabelPhomemoBtn").addEventListener("click", () => printSlipPickLabelsPhomemo(openSlipId));
-  document.getElementById("slipPickLabelPhomemoImageBtn").addEventListener("click", () => openSlipPickLabelsBluetooth(openSlipId, "phomemo"));
-  document.getElementById("slipPickLabelBtLabelBtn").addEventListener("click", () => openSlipPickLabelsBluetooth(openSlipId, "smL200"));
-  document.getElementById("btLabelCloseBtn").addEventListener("click", () => {
-    document.getElementById("btLabelOverlay").classList.remove("show");
-  });
 
   // ---- Phase4: 発注管理 ----
   document.getElementById("lowStockCreateOrderBtn").addEventListener("click", handleCreateOrderFromLowStock);
@@ -643,333 +637,115 @@ function closeQrModal() {
   document.getElementById("qrOverlay").classList.remove("show");
 }
 
-function openQrBulkPrint() {
-  const keyword = document.getElementById("searchBox").value.trim().toLowerCase();
-  const items = allProducts.filter(p => {
-    const matchCat = activeCategory === "すべて" || p.category === activeCategory;
-    const matchKeyword = !keyword || (p.name || "").toLowerCase().includes(keyword);
-    return matchCat && matchKeyword;
-  });
-  if (items.length === 0) {
-    showToast("印刷対象の商品がありません");
-    return;
-  }
-  const grid = document.getElementById("qrBulkGrid");
-  grid.className = "qr-bulk-grid";
-  grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
-  document.getElementById("qrBulkTitle").textContent = "QRラベル一括印刷";
-  items.forEach(p => {
-    const cell = document.createElement("div");
-    cell.className = "qr-label";
-    const qrBox = document.createElement("div");
-    cell.appendChild(qrBox);
-    const label = document.createElement("div");
-    label.className = "qr-label-text";
-    label.innerHTML = `${escapeHtml(p.name || "")}${p.code ? "<br>" + escapeHtml(p.code) : ""}`;
-    cell.appendChild(label);
-    grid.appendChild(cell);
-    new QRCode(qrBox, { text: buildProductUrl(p.id), width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
-  });
+// QL-800: DK-1221 (23×23mm) と DK-1209 (62×29mm) に1枚ずつ印刷する。
+function showBrotherLabelPreview(kind, title, count) {
+  const area = document.getElementById("qrBulkPrintArea");
+  area.classList.remove("brother-qr-mode", "brother-pick-mode");
+  area.classList.add(kind === "pick" ? "brother-pick-mode" : "brother-qr-mode");
+  document.getElementById("qrBulkTitle").textContent = title;
+  document.getElementById("qrBulkHint").textContent = `${count}枚／Brother QL-800・${kind === "pick" ? "DK-1209（62×29mm）" : "DK-1221（23×23mm）"}。PCでQL-800を選び、用紙サイズを合わせて倍率100%・余白なしで印刷してください。`;
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
 
-// ===================== Phase3.5: 入荷分のQRラベル印刷 =====================
+function appendBrotherQr(grid, productId) {
+  const cell = document.createElement("div");
+  cell.className = "brother-qr-label";
+  const qrBox = document.createElement("div");
+  qrBox.className = "brother-qr-image";
+  cell.appendChild(qrBox);
+  grid.appendChild(cell);
+  new QRCode(qrBox, { text: buildProductUrl(productId), width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M });
+}
+
+function finishBrotherLabels(grid, kind, title, count) {
+  const last = grid.querySelector(kind === "pick" ? ".brother-pick-label:last-child" : ".brother-qr-label:last-child");
+  if (!last) return showToast("印刷対象のラベルがありません");
+  last.classList.add("last-label");
+  showBrotherLabelPreview(kind, title, count);
+}
+
+function printProductQrLabel(id) {
+  if (!allProducts.some(p => p.id === id)) return;
+  const grid = document.getElementById("qrBulkGrid");
+  grid.className = "brother-label-list";
+  grid.replaceChildren();
+  appendBrotherQr(grid, id);
+  document.getElementById("qrOverlay").classList.remove("show");
+  finishBrotherLabels(grid, "qr", "商品QRラベル（23×23mm）", 1);
+}
+
+function openQrBulkPrint() {
+  const keyword = document.getElementById("searchBox").value.trim().normalize("NFKC").toLowerCase();
+  const items = allProducts.filter(p =>
+    (activeCategory === "すべて" || p.category === activeCategory) &&
+    (!keyword || `${p.name || ""} ${p.code || ""}`.normalize("NFKC").toLowerCase().includes(keyword))
+  );
+  if (!items.length) return showToast("印刷対象の商品がありません");
+  const grid = document.getElementById("qrBulkGrid");
+  grid.className = "brother-label-list";
+  grid.replaceChildren();
+  items.forEach(p => appendBrotherQr(grid, p.id));
+  finishBrotherLabels(grid, "qr", "商品QRラベル一括印刷（23×23mm）", items.length);
+}
+
+// 入荷のラベルには商品QRだけを印刷する。品目の区切りはプレビューに表示する。
 function printSlipReceivingLabels(slipId) {
   const s = allSlips.find(x => x.id === slipId);
   if (!s) return;
-  // 同じ商品が伝票内で複数行に分かれていても、商品ごとにまとめる。
   const groups = new Map();
   (s.items || []).forEach(item => {
     const qty = Number(item.checkedQty ?? item.plannedQty);
     if (!item.productId || !Number.isInteger(qty) || qty <= 0) return;
-    groups.set(item.productId, (groups.get(item.productId) || 0) + qty);
+    const p = allProducts.find(x => x.id === item.productId);
+    const group = groups.get(item.productId) || { qty: 0, name: item.productName || p?.name || "商品", code: p?.code || "" };
+    group.qty += qty;
+    groups.set(item.productId, group);
   });
-  if (groups.size === 0) {
-    showToast("印刷対象の品目がありません");
-    return;
-  }
+  if (!groups.size) return showToast("印刷対象の品目がありません");
   const grid = document.getElementById("qrBulkGrid");
-  grid.className = "receiving-label-list";
-  grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
-  document.getElementById("qrBulkTitle").textContent = "入荷：商品QRラベル印刷";
-  [...groups].forEach(([productId, qty], index) => {
-    const group = document.createElement("section");
-    group.className = "receiving-group";
-    if (groups.size > 1) {
-      const heading = document.createElement("div");
-      heading.className = "receiving-group-title";
-      heading.textContent = `商品 ${index + 1} / ${groups.size}　${qty}枚`;
-      group.appendChild(heading);
-    }
-    const labels = document.createElement("div");
-    labels.className = "qr-bulk-grid";
-    for (let i = 0; i < qty; i++) {
-      const cell = document.createElement("div");
-      cell.className = "qr-label receiving-qr-only";
-      const qrBox = document.createElement("div");
-      cell.appendChild(qrBox);
-      labels.appendChild(cell);
-      new QRCode(qrBox, { text: buildProductUrl(productId), width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M });
-    }
-    group.appendChild(labels);
-    grid.appendChild(group);
+  grid.className = "brother-label-list";
+  grid.replaceChildren();
+  let total = 0;
+  [...groups].forEach(([productId, group], index) => {
+    const heading = document.createElement("div");
+    heading.className = "brother-group-title";
+    heading.textContent = `${index + 1}/${groups.size}　${group.name}${group.code ? `（${group.code}）` : ""}　${group.qty}枚`;
+    grid.appendChild(heading);
+    for (let i = 0; i < group.qty; i++) appendBrotherQr(grid, productId);
+    total += group.qty;
   });
-  document.getElementById("qrBulkOverlay").classList.add("show");
+  finishBrotherLabels(grid, "qr", "入荷：商品QRラベル（23×23mm）", total);
 }
 
-// ===================== 検品シール印刷（ピック時に貼付し、現品QRと照合する） =====================
+// 検品シールのQRは現品QRと同じ商品URL。1商品1点につき1枚印刷する。
 function printSlipPickLabels(slipId) {
   const s = allSlips.find(x => x.id === slipId);
   if (!s) return;
-  const items = s.items || [];
-  if (items.length === 0) {
-    showToast("印刷対象の品目がありません");
-    return;
-  }
-  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
-  const shipTo = s.shipTo || s.partner || "";
   const grid = document.getElementById("qrBulkGrid");
-  grid.className = "qr-bulk-grid qr-bulk-grid-2col";
-  grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.remove("phomemo-mode");
-  document.getElementById("qrBulkTitle").textContent = "検品シール印刷（A4）";
-  let seq = 0;
-  items.forEach(item => {
-    const unitPrice = Number(item.unitPrice || 0);
-    const qty = Math.max(1, Number(item.plannedQty) || 1);
+  grid.className = "brother-label-list";
+  grid.replaceChildren();
+  const issueDate = s.createdAt?.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  const shipTo = s.shipTo || s.partner || "";
+  let total = 0;
+  (s.items || []).forEach(item => {
+    const qty = Number(item.plannedQty);
+    if (!item.productId || !Number.isInteger(qty) || qty <= 0) return;
+    const price = Number(item.unitPrice || 0);
     for (let i = 1; i <= qty; i++) {
-      seq++;
       const cell = document.createElement("div");
-      cell.className = "qr-label qr-label-detail";
-      const qrBox = document.createElement("div");
-      qrBox.className = "qr-label-qr";
-      qrBox.id = `pickLabelQr${seq}`;
-      cell.appendChild(qrBox);
-      const fields = document.createElement("div");
-      fields.className = "qr-label-fields";
-      fields.innerHTML = `
-        <div class="qr-label-field"><span>宛先</span>${escapeHtml(shipTo)}</div>
-        <div class="qr-label-field"><span>発行日</span>${issueDate}</div>
-        <div class="qr-label-field"><span>品名</span>${escapeHtml(item.productName || "")}${qty > 1 ? `（${i}/${qty}）` : ""}</div>
-        <div class="qr-label-field"><span>伝票№</span>${escapeHtml(s.slipNumber || "")}</div>
-        <div class="qr-label-field"><span>単価</span>¥${unitPrice.toLocaleString()}</div>
-      `;
-      cell.appendChild(fields);
+      cell.className = "brother-pick-label";
+      cell.innerHTML = `<div class="brother-pick-qr"></div><div class="brother-pick-info">
+        <div class="brother-pick-name">${escapeHtml(item.productName || "")}</div>
+        <div>伝票 ${escapeHtml(s.slipNumber || "")}${qty > 1 ? `　${i}/${qty}` : ""}</div>
+        <div class="brother-pick-price">¥${price.toLocaleString()}</div>
+        <div class="brother-pick-meta">${escapeHtml(shipTo)}${issueDate ? ` / ${escapeHtml(issueDate)}` : ""}</div>
+      </div>`;
       grid.appendChild(cell);
+      new QRCode(cell.querySelector(".brother-pick-qr"), { text: buildProductUrl(item.productId), width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M });
+      total++;
     }
   });
-  // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
-  seq = 0;
-  items.forEach(item => {
-    const qty = Math.max(1, Number(item.plannedQty) || 1);
-    for (let i = 1; i <= qty; i++) {
-      seq++;
-      new QRCode(document.getElementById(`pickLabelQr${seq}`), { text: buildProductUrl(item.productId), width: 88, height: 88, correctLevel: QRCode.CorrectLevel.M });
-    }
-  });
-  document.getElementById("qrBulkOverlay").classList.add("show");
-}
-
-// ---- Phomemo（40×30mmラベル機）向け：暫定の検品シール印刷 ----
-function printSlipPickLabelsPhomemo(slipId) {
-  const s = allSlips.find(x => x.id === slipId);
-  if (!s) return;
-  const items = s.items || [];
-  if (items.length === 0) {
-    showToast("印刷対象の品目がありません");
-    return;
-  }
-  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
-  const shipTo = s.shipTo || s.partner || "";
-  const grid = document.getElementById("qrBulkGrid");
-  grid.className = "phomemo-label-list";
-  grid.innerHTML = "";
-  document.getElementById("qrBulkPrintArea").classList.add("phomemo-mode");
-  document.getElementById("qrBulkTitle").textContent = "検品シール印刷（Phomemo 40×30mm）";
-  let seq = 0;
-  items.forEach(item => {
-    const unitPrice = Number(item.unitPrice || 0);
-    const qty = Math.max(1, Number(item.plannedQty) || 1);
-    for (let i = 1; i <= qty; i++) {
-      seq++;
-      const page = document.createElement("div");
-      page.className = "phomemo-label-page";
-      page.innerHTML = `
-        <div class="phomemo-label-row">
-          <div class="phomemo-qr" id="phomemoQr${seq}"></div>
-          <div class="phomemo-main">
-            <div class="phomemo-name">${escapeHtml(item.productName || "")}${qty > 1 ? `（${i}/${qty}）` : ""}</div>
-            <div class="phomemo-line">伝票№ ${escapeHtml(s.slipNumber || "")}</div>
-            <div class="phomemo-amount">¥${unitPrice.toLocaleString()}</div>
-          </div>
-        </div>
-        <div class="phomemo-foot">
-          <span class="phomemo-shipto">${escapeHtml(shipTo)}</span>
-          <span class="phomemo-date">${issueDate}</span>
-        </div>
-      `;
-      grid.appendChild(page);
-    }
-  });
-  // シールのQRには商品自体のQRと同じURLを埋め込む（現品のQRと突き合わせて一致確認するため）
-  seq = 0;
-  items.forEach(item => {
-    const qty = Math.max(1, Number(item.plannedQty) || 1);
-    for (let i = 1; i <= qty; i++) {
-      seq++;
-      new QRCode(document.getElementById(`phomemoQr${seq}`), { text: buildProductUrl(item.productId), width: 56, height: 56, correctLevel: QRCode.CorrectLevel.M });
-    }
-  });
-  document.getElementById("qrBulkOverlay").classList.add("show");
-}
-
-// ---- Bluetooth・専用アプリ経由（Phomemo / SM-L200など）向け：検品シールを画像として生成・共有 ----
-const BT_LABEL_PX_PER_MM = 8; // 約203dpi相当
-const BT_LABEL_PROFILES = {
-  phomemo: { widthMm: 40, heightMm: 30, title: "検品シール画像（Phomemo・アプリ共有用）" },
-  smL200: { widthMm: 58, heightMm: 30, title: "検品シール画像（SM-L200・Bluetooth用）" }
-};
-
-function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
-  const chars = Array.from(text || "");
-  const lines = [];
-  let line = "";
-  for (let i = 0; i < chars.length; i++) {
-    const test = line + chars[i];
-    if (line && ctx.measureText(test).width > maxWidth) {
-      lines.push(line);
-      line = chars[i];
-      if (lines.length === maxLines) break;
-    } else {
-      line = test;
-    }
-  }
-  if (lines.length < maxLines) lines.push(line);
-  const consumed = lines.join("").length;
-  if (consumed < chars.length) {
-    let last = lines[lines.length - 1];
-    while (last.length > 0 && ctx.measureText(last + "…").width > maxWidth) {
-      last = last.slice(0, -1);
-    }
-    lines[lines.length - 1] = last + "…";
-  }
-  lines.forEach((l, idx) => ctx.fillText(l, x, y + idx * lineHeight));
-}
-
-function buildBluetoothLabelCanvas(item, s, shipTo, issueDate, widthMm, heightMm, seqIndex, seqTotal) {
-  const mm = BT_LABEL_PX_PER_MM;
-  const w = widthMm * mm;
-  const h = heightMm * mm;
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = "#000";
-  ctx.textBaseline = "top";
-
-  // QRコードを一時的なDOMに生成し、canvasへ転写する
-  const tempDiv = document.createElement("div");
-  tempDiv.style.position = "fixed";
-  tempDiv.style.left = "-9999px";
-  document.body.appendChild(tempDiv);
-  new QRCode(tempDiv, { text: buildProductUrl(item.productId), width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
-  const qrCanvas = tempDiv.querySelector("canvas");
-  const qrSize = Math.min(20 * mm, h - 4 * mm);
-  const pad = 1.4 * mm;
-  const qrX = pad;
-  const qrY = (h - qrSize) / 2;
-  if (qrCanvas) ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
-  document.body.removeChild(tempDiv);
-
-  const textX = qrX + qrSize + pad;
-  const maxTextWidth = w - textX - pad;
-
-  // 枚数カウンター（品名の折り返しで消えないよう右上に固定表示）
-  if (seqIndex) {
-    ctx.font = "bold 13px sans-serif";
-    const counterText = `${seqIndex}/${seqTotal}`;
-    const counterW = ctx.measureText(counterText).width;
-    ctx.fillText(counterText, w - pad - counterW, pad);
-  }
-
-  ctx.font = "bold 22px sans-serif";
-  wrapCanvasText(ctx, item.productName || "", textX, qrY, maxTextWidth, 26, 2);
-
-  ctx.font = "16px sans-serif";
-  wrapCanvasText(ctx, `伝票№ ${s.slipNumber || ""}`, textX, qrY + 58, maxTextWidth, 18, 1);
-
-  const unitPrice = Number(item.unitPrice || 0);
-  ctx.font = "bold 20px sans-serif";
-  wrapCanvasText(ctx, `¥${unitPrice.toLocaleString()}`, textX, qrY + 84, maxTextWidth, 22, 1);
-
-  const footY = h - pad - 16;
-  ctx.strokeStyle = "#000";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(pad, footY - 6);
-  ctx.lineTo(w - pad, footY - 6);
-  ctx.stroke();
-
-  ctx.font = "14px sans-serif";
-  const dateW = ctx.measureText(issueDate).width;
-  wrapCanvasText(ctx, shipTo, pad, footY, w - pad * 2 - dateW - 8, 16, 1);
-  ctx.fillText(issueDate, w - pad - dateW, footY);
-
-  return canvas;
-}
-
-function openSlipPickLabelsBluetooth(slipId, profileKey) {
-  const profile = BT_LABEL_PROFILES[profileKey] || BT_LABEL_PROFILES.phomemo;
-  const s = allSlips.find(x => x.id === slipId);
-  if (!s) return;
-  const items = s.items || [];
-  if (items.length === 0) {
-    showToast("印刷対象の品目がありません");
-    return;
-  }
-  const issueDate = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
-  const shipTo = s.shipTo || s.partner || "";
-  document.getElementById("btLabelTitle").textContent = profile.title;
-  const list = document.getElementById("btLabelList");
-  list.innerHTML = "";
-  items.forEach((item) => {
-    const qty = Math.max(1, Number(item.plannedQty) || 1);
-    for (let i = 1; i <= qty; i++) {
-      const canvas = buildBluetoothLabelCanvas(item, s, shipTo, issueDate, profile.widthMm, profile.heightMm, qty > 1 ? i : null, qty);
-      const dataUrl = canvas.toDataURL("image/png");
-      const card = document.createElement("div");
-      card.className = "bt-label-card";
-      const img = document.createElement("img");
-      img.src = dataUrl;
-      img.alt = item.productName || "検品シール";
-      card.appendChild(img);
-      const shareBtn = document.createElement("button");
-      shareBtn.type = "button";
-      shareBtn.className = "btn-secondary-inline";
-      shareBtn.textContent = qty > 1 ? `📤 共有する（${i}/${qty}）` : "📤 共有する";
-      shareBtn.addEventListener("click", async () => {
-        try {
-          const blob = await (await fetch(dataUrl)).blob();
-          const namePart = `${(item.productName || "label").replace(/[\\/:*?"<>|]/g, "")}${qty > 1 ? `_${i}-${qty}` : ""}`;
-          const file = new File([blob], `${namePart}.png`, { type: "image/png" });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: item.productName || "検品シール" });
-          } else {
-            showToast("この端末では共有機能が使えません。画像を長押しして保存してください");
-          }
-        } catch (err) {
-          // ユーザーが共有をキャンセルした場合などは何もしない
-        }
-      });
-      card.appendChild(shareBtn);
-      list.appendChild(card);
-    }
-  });
-  document.getElementById("btLabelOverlay").classList.add("show");
+  finishBrotherLabels(grid, "pick", "検品シール（62×29mm）", total);
 }
 
 // ===================== Phase2: エクセル一括登録 =====================
@@ -3037,5 +2813,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-02-festival-prepared-v9";
+window.KOBUNSHA_APP_VERSION = "2026-10-04-brother-ql800-v10";
 init();
