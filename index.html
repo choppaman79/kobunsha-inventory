@@ -1327,9 +1327,9 @@
       <p id="slipDetailDoneNote" style="display:none;font-size:13px;color:var(--ok-text);font-weight:600;margin-top:12px;">この伝票は検品完了済みです（在庫反映済み）</p>
 
       <div id="slipReceivingLabelWrap" style="display:none;margin-top:10px;">
-        <button type="button" class="btn-secondary-inline" id="slipReceivingLabelBtn">🏷️ 入荷QRラベルを印刷（23×23）</button>
+        <button type="button" class="btn-secondary-inline" id="slipReceivingLabelBtn">🏷️ QRのみのシールを入荷数量分印刷（23×23）</button>
       </div>
-      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      <div id="slipPickLabelWrap" style="margin-top:10px;display:none;gap:8px;flex-wrap:wrap;">
         <button type="button" class="btn-secondary-inline" id="slipPickLabelBtn">🏷️ 検品シールを印刷（62×29）</button>
       </div>
     </div>
@@ -1454,9 +1454,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=20261004-inventory-integrity-v11"></script>
+<script src="app.js?v=20261004-receiving-qr-v12"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-10-04-inventory-integrity-v11") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-10-04-receiving-qr-v12") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
