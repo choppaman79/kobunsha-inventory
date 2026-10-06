@@ -647,12 +647,17 @@ function showBrotherLabelPreview(kind, title, count) {
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
 
-function appendBrotherQr(grid, productId) {
+function appendBrotherQr(grid, productId, productName) {
   const cell = document.createElement("div");
   cell.className = "brother-qr-label";
   const qrBox = document.createElement("div");
   qrBox.className = "brother-qr-image";
   cell.appendChild(qrBox);
+  const name = document.createElement("div");
+  name.className = "brother-qr-name";
+  name.textContent = productName || allProducts.find(p => p.id === productId)?.name || "商品名未登録";
+  name.title = name.textContent;
+  cell.appendChild(name);
   grid.appendChild(cell);
   new QRCode(qrBox, { text: buildProductUrl(productId), width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M });
 }
@@ -688,7 +693,7 @@ function openQrBulkPrint() {
   finishBrotherLabels(grid, "qr", "商品QRラベル一括印刷（23×23mm）", items.length);
 }
 
-// 入荷のラベルには商品QRだけを印刷する。品目の区切りはプレビューに表示する。
+// 入荷のラベルに商品QRと商品名を印刷する。品目の区切りはプレビューに表示する。
 function printSlipReceivingLabels(slipId) {
   const s = allSlips.find(x => x.id === slipId);
   if (!s || s.type !== "in") return showToast("入荷伝票を開いてください");
@@ -717,10 +722,10 @@ function printSlipReceivingLabels(slipId) {
     heading.className = "brother-group-title";
     heading.textContent = `${index + 1}/${groups.size}　${group.name}${group.code ? `（${group.code}）` : ""}　${group.qty}枚`;
     grid.appendChild(heading);
-    for (let i = 0; i < group.qty; i++) appendBrotherQr(grid, productId);
+    for (let i = 0; i < group.qty; i++) appendBrotherQr(grid, productId, group.name);
     total += group.qty;
   });
-  finishBrotherLabels(grid, "qr", "入荷：QRのみのシール（23×23mm）", total);
+  finishBrotherLabels(grid, "qr", "入荷：QR＋商品名シール（23×23mm）", total);
 }
 
 // 検品シールのQRは現品QRと同じ商品URL。1商品1点につき1枚印刷する。
@@ -2858,5 +2863,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-04-receiving-visible-v13";
+window.KOBUNSHA_APP_VERSION = "2026-10-06-qr-product-name-v14";
 init();
