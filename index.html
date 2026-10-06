@@ -638,9 +638,9 @@
   .brother-label-list { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-start; }
   .brother-group-title { width:100%; font-size:13px; font-weight:700; color:var(--indigo-deep); }
   .brother-qr-label, .brother-pick-label { box-sizing:border-box; background:#fff; color:#000; border:1px dashed var(--line); overflow:hidden; flex:0 0 auto; }
-  .brother-qr-label { width:23mm; height:23mm; padding:2mm; border:0; outline:1px dashed var(--line); display:flex; flex-direction:column; gap:.4mm; align-items:center; justify-content:center; }
-  .brother-qr-image, .brother-qr-image canvas, .brother-qr-image img { width:14mm !important; height:14mm !important; display:block; }
-  .brother-qr-image { flex:0 0 14mm; }
+  .brother-qr-label { width:23mm; height:23mm; padding:2mm; border:0; outline:1px dashed var(--line); display:flex; flex-direction:column; gap:.8mm; align-items:center; justify-content:center; }
+  .brother-qr-image, .brother-qr-image canvas, .brother-qr-image img { width:13.5mm !important; height:13.5mm !important; display:block; }
+  .brother-qr-image { flex:0 0 13.5mm; }
   .brother-qr-name { width:100%; height:4.3mm; flex:0 0 4.3mm; font-size:5pt; font-weight:700; line-height:2.1mm; text-align:center; overflow:hidden; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
   .brother-pick-label { width:62mm; height:29mm; padding:1.5mm 2mm; display:flex; align-items:center; gap:1.4mm; }
   .brother-pick-qr { width:21mm; height:21mm; padding:.6mm; box-sizing:border-box; flex:0 0 auto; }
@@ -1457,9 +1457,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=20261006-label-fit-v15"></script>
+<script src="app.js?v=20261006-label-spacing-v16"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-10-06-label-fit-v15") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-10-06-label-spacing-v16") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
