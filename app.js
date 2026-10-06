@@ -2863,5 +2863,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-06-label-fit-v15";
+window.KOBUNSHA_APP_VERSION = "2026-10-06-label-spacing-v16";
 init();
