@@ -643,7 +643,7 @@ function showBrotherLabelPreview(kind, title, count) {
   area.classList.remove("brother-qr-mode", "brother-pick-mode");
   area.classList.add(kind === "pick" ? "brother-pick-mode" : "brother-qr-mode");
   document.getElementById("qrBulkTitle").textContent = title;
-  document.getElementById("qrBulkHint").textContent = `${count}枚／Brother QL-800・${kind === "pick" ? "DK-1209（62×29mm）" : "DK-1221（23×23mm）"}。PCでQL-800を選び、用紙サイズを合わせて倍率100%・余白なしで印刷してください。`;
+  document.getElementById("qrBulkHint").textContent = `${count}枚／Brother QL-800・${kind === "pick" ? "DK-1209（62×29mm）" : "DK-1221（23×23mm）"}。PCでQL-800を選び、用紙サイズを合わせて倍率100%・ヘッダー／フッターなしで印刷してください。QRシールは四辺に2mmの余裕を確保しています。`;
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
 
@@ -2863,5 +2863,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-06-qr-product-name-v14";
+window.KOBUNSHA_APP_VERSION = "2026-10-06-label-fit-v15";
 init();
