@@ -1333,7 +1333,7 @@
         <button type="button" class="btn-secondary-inline" id="slipReceivingLabelBtn">🏷️ 入荷シールを印刷（QR＋商品名・数量分／23×23）</button>
       </div>
       <div id="slipPickLabelWrap" style="margin-top:10px;display:none;gap:8px;flex-wrap:wrap;">
-        <button type="button" class="btn-secondary-inline" id="slipPickLabelBtn">🏷️ 検品シールを印刷（62×29）</button>
+        <button type="button" class="btn-secondary-inline" id="slipPickLabelBtn">🏷️ 専用検品シールを印刷（62×29）</button>
       </div>
     </div>
 
@@ -1457,9 +1457,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=20261006-label-spacing-v16"></script>
+<script src="app.js?v=20261008-separate-inspection-v17"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-10-06-label-spacing-v16") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-10-08-separate-inspection-v17") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
