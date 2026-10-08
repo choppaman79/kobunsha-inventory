@@ -42,7 +42,8 @@ let scanStream = null;
 let scanRAF = null;
 let scanMode = "global"; // "global" または "slip-item"
 let pendingHashHandled = false;
-let pendingSlipScanCode = null; // 検品シール照合：1回目にスキャンしたコードを一時保持
+let pendingSlipScanCode = null; // 商品QRと伝票別の検品QRを照合
+let inspectedLabelTokens = new Set();
 let slipScannerActive = false;
 let slipScannerIdleTimer = null;
 
@@ -583,6 +584,9 @@ function formatPostingDate(str) {
 function buildProductUrl(id) {
   return `${location.origin}${location.pathname}#product=${encodeURIComponent(id)}`;
 }
+function buildInspectionUrl(slipId, productId, itemIndex, unitIndex) {
+  return `${location.origin}${location.pathname}#inspection=${encodeURIComponent(slipId)}&product=${encodeURIComponent(productId)}&item=${itemIndex}&unit=${unitIndex}`;
+}
 function buildSlipUrl(id) {
   return `${location.origin}${location.pathname}#slip=${encodeURIComponent(id)}`;
 }
@@ -591,6 +595,18 @@ function handlePendingHash() {
   if (pendingHashHandled) return;
   const hash = location.hash;
   if (!hash) return;
+  const inspection = extractScannedId(hash);
+  if (inspection.type === "inspection") {
+    const slip = allSlips.find(x => x.id === inspection.slipId);
+    if (slip) {
+      pendingHashHandled = true;
+      history.replaceState(null, "", location.pathname);
+      switchTab("slips");
+      openSlipDetailModal(slip.id);
+      showToast("検品用QRです。商品QRと組み合わせて検品してください");
+    }
+    return;
+  }
   const pm = hash.match(/#product=([^&]+)/);
   const sm = hash.match(/#slip=([^&]+)/);
   if (pm) {
@@ -728,18 +744,17 @@ function printSlipReceivingLabels(slipId) {
   finishBrotherLabels(grid, "qr", "入荷：QR＋商品名シール（23×23mm）", total);
 }
 
-// 検品シールのQRは現品QRと同じ商品URL。1商品1点につき1枚印刷する。
+// 検品シールは商品QRを流用せず、伝票・品目行・連番を含む専用QRを発行する。
 function printSlipPickLabels(slipId) {
   const s = allSlips.find(x => x.id === slipId);
   if (!s) return;
-  if (s.type === "in") return printSlipReceivingLabels(slipId);
   const grid = document.getElementById("qrBulkGrid");
   grid.className = "brother-label-list";
   grid.replaceChildren();
   const issueDate = s.createdAt?.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
   const shipTo = s.shipTo || s.partner || "";
   let total = 0;
-  (s.items || []).forEach(item => {
+  (s.items || []).forEach((item, itemIndex) => {
     const qty = Number(item.plannedQty);
     if (!item.productId || !Number.isInteger(qty) || qty <= 0) return;
     const price = Number(item.unitPrice || 0);
@@ -753,7 +768,7 @@ function printSlipPickLabels(slipId) {
         <div class="brother-pick-meta">${escapeHtml(shipTo)}${issueDate ? ` / ${escapeHtml(issueDate)}` : ""}</div>
       </div>`;
       grid.appendChild(cell);
-      new QRCode(cell.querySelector(".brother-pick-qr"), { text: buildProductUrl(item.productId), width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M });
+      new QRCode(cell.querySelector(".brother-pick-qr"), { text: buildInspectionUrl(s.id, item.productId, itemIndex, i), width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M });
       total++;
     }
   });
@@ -1193,6 +1208,7 @@ function openSlipDetailModal(id) {
   if (!s) return;
   openSlipId = id;
   pendingSlipScanCode = null;
+  inspectedLabelTokens.clear();
   const typeLabel = s.type === "in" ? "入荷伝票" : "出荷伝票";
   document.getElementById("slipDetailTitle").textContent = typeLabel;
   document.getElementById("slipDetailNumber").textContent = s.slipNumber || "";
@@ -1250,7 +1266,7 @@ function openSlipDetailModal(id) {
 
   const labelWrap = document.getElementById("slipReceivingLabelWrap");
   labelWrap.style.display = s.type === "in" ? "block" : "none";
-  document.getElementById("slipPickLabelWrap").style.display = s.type === "out" ? "flex" : "none";
+  document.getElementById("slipPickLabelWrap").style.display = "flex";
 
   document.getElementById("slipDetailOverlay").classList.add("show");
   document.getElementById("slipBluetoothModeBtn").disabled = isDone;
@@ -2072,6 +2088,11 @@ function scanTick() {
 }
 
 function extractScannedId(text) {
+  const mark = text.indexOf("#inspection=");
+  if (mark !== -1) {
+    const params = new URLSearchParams(text.slice(mark + 1));
+    return { type: "inspection", id: params.get("product") || "", slipId: params.get("inspection") || "", itemIndex: Number(params.get("item") ?? NaN), unitIndex: Number(params.get("unit") ?? NaN) };
+  }
   const pm = text.match(/#product=([^&]+)/);
   if (pm) return { type: "product", id: decodeURIComponent(pm[1]) };
   const sm = text.match(/#slip=([^&]+)/);
@@ -2083,7 +2104,7 @@ function handleScanResult(text) {
   const parsed = extractScannedId(text);
 
   if (scanMode === "slip-item") {
-    handleSlipItemVerifyScan(resolveScannedProductId(text));
+    handleSlipItemVerifyScan(text);
     // 検品モードは閉じずに継続スキャン。連続検知を防ぐため少し間を空けて再開
     setTimeout(() => {
       if (document.getElementById("scanOverlay").classList.contains("show")) {
@@ -2099,7 +2120,13 @@ function handleScanResult(text) {
     else if (allSlips.find(s => s.id === id)) type = "slip";
   }
 
-  if (type === "product") {
+  if (type === "inspection") {
+    const slip = allSlips.find(x => x.id === parsed.slipId);
+    stopScanCamera();
+    closeScanModal();
+    if (slip) { switchTab("slips"); openSlipDetailModal(slip.id); }
+    else showToast("検品QRの伝票が見つかりません");
+  } else if (type === "product") {
     const p = allProducts.find(x => x.id === id);
     stopScanCamera();
     closeScanModal();
@@ -2174,7 +2201,7 @@ function playWarningAlert() {
 }
 
 // ===================== Phase2: 入出庫（検品スキャン処理） =====================
-// 検品シール方式：現品のQRと検品シールのQRを順にスキャンし、2回とも同じ商品であれば1件確認とする
+// 検品シール方式：現品のQRと検品シールのQRを順にスキャンし、異なる種類のQRが同じ商品を指していれば1件確認とする
 function setSlipScanStatus(message, warning) {
   const status = document.getElementById("slipScanStatus");
   if (status) {
@@ -2183,61 +2210,63 @@ function setSlipScanStatus(message, warning) {
   }
 }
 
-function handleSlipItemVerifyScan(productId) {
-  const stepStatus = document.getElementById("scanStepStatus");
+function handleSlipItemVerifyScan(text) {
   const slip = allSlips.find(s => s.id === openSlipId);
-  if (!slip || slip.status === "done") {
-    showToast("この伝票は検品完了済みです");
-    return;
-  }
-  const item = slip?.items?.find(i => i.productId === productId);
-  if (!item) {
+  if (!slip || slip.status === "done") return showToast("伝票を開くか、完了状態を確認してください");
+  const parsed = extractScannedId(text);
+  const productId = resolveScannedProductId(text);
+  const role = parsed.type === "inspection" ? "inspection" : "product";
+  const index = role === "inspection" ? parsed.itemIndex : (slip.items || []).findIndex(i => i.productId === productId);
+  const item = slip.items?.[index];
+  const fail = message => {
+    playWarningAlert();
+    showToast(message);
+    setSlipScanStatus(message, true);
+    const status = document.getElementById("scanStepStatus");
+    if (status) { status.textContent = message; status.style.color = "var(--warn-text, #a3392b)"; }
+  };
+  if (!item || item.productId !== productId ||
+      (role === "inspection" && (parsed.slipId !== openSlipId ||
+        !Number.isSafeInteger(index) || index < 0 ||
+        !Number.isSafeInteger(parsed.unitIndex) || parsed.unitIndex < 1 ||
+        parsed.unitIndex > Number(item.plannedQty)))) {
     pendingSlipScanCode = null;
-    playWarningAlert();
-    showToast("⚠️ この伝票に含まれない商品です");
-    setSlipScanStatus("⚠️ 対象外の商品です。現品から読み直してください。", true);
-    if (stepStatus) stepStatus.textContent = "⚠️ 対象外の商品です。現品から読み直してください。";
-    return;
+    return fail("⚠️ この伝票の商品・検品QRではありません");
   }
-  const pname = item.productName || allProducts.find(x => x.id === productId)?.name || "商品";
-
-  if (pendingSlipScanCode === null) {
-    pendingSlipScanCode = productId;
+  const token = role === "inspection" ? `${parsed.slipId}:${index}:${parsed.unitIndex}` : null;
+  if (token && inspectedLabelTokens.has(token)) {
+    pendingSlipScanCode = null;
+    return fail("⚠️ この検品シールは既に読み取り済みです");
+  }
+  const scan = { role, productId, index, token };
+  if (!pendingSlipScanCode) {
+    pendingSlipScanCode = scan;
     playTone(660, 60, "sine");
-    showToast("1回目OK。もう一方のQR（現品／検品シール）をスキャンしてください");
-    setSlipScanStatus(`① ${pname} を確認しました → ② 検品シールを読み取ってください`, false);
-    if (stepStatus) {
-      stepStatus.style.color = "var(--indigo-deep)";
-      stepStatus.textContent = `① ${pname} を確認しました → ② もう一方のQRをスキャンしてください`;
-    }
+    const message = role === "product" ? "① 商品QRを確認 → ② 検品用シールのQRを読んでください" : "① 検品用QRを確認 → ② 商品に貼ったQRを読んでください";
+    showToast(message);
+    setSlipScanStatus(message, false);
+    const status = document.getElementById("scanStepStatus");
+    if (status) { status.textContent = message; status.style.color = "var(--indigo-deep)"; }
     return;
   }
-  const firstCode = pendingSlipScanCode;
+  const first = pendingSlipScanCode;
+  if (first.role === role) return fail("⚠️ 同じ種類のQRです。商品QRと検品用QRを1回ずつ読んでください");
   pendingSlipScanCode = null;
-  if (firstCode !== productId) {
-    playWarningAlert();
-    showToast("⚠️ 現品と検品シールの商品が一致しません");
-    setSlipScanStatus("⚠️ 商品が一致しません。現品から読み直してください。", true);
-    if (stepStatus) {
-      stepStatus.style.color = "var(--warn-text, #a3392b)";
-      stepStatus.textContent = "⚠️ 一致しませんでした。もう一度、現品→検品シールの順にスキャンしてください";
-    }
-    return;
-  }
-  if (handleSlipItemScan(productId)) {
-    setSlipScanStatus(`✅ ${pname} を確認しました。次の現品を読み取ってください。`, false);
-    if (stepStatus) {
-      stepStatus.style.color = "var(--ok-text, #0f6e56)";
-      stepStatus.textContent = `✅ ${pname} を確認しました。次の商品をスキャンしてください`;
-    }
-  } else {
-    setSlipScanStatus(`⚠️ ${pname} は予定数に達しています。次の現品を読み取ってください。`, true);
+  if (first.productId !== productId) return fail("⚠️ 商品QRと検品用QRの商品が一致しません");
+  const inspection = role === "inspection" ? scan : first;
+  if (handleSlipItemScan(productId, inspection.index)) {
+    inspectedLabelTokens.add(inspection.token);
+    const message = `✅ ${item.productName || "商品"} を確認しました。次の現品を読み取ってください。`;
+    setSlipScanStatus(message, false);
+    const status = document.getElementById("scanStepStatus");
+    if (status) { status.textContent = message; status.style.color = "var(--ok-text, #0f6e56)"; }
   }
 }
 
 function resolveScannedProductId(text) {
   const parsed = extractScannedId(text);
   if (parsed.type === "slip") return null;
+  if (parsed.type === "inspection") return parsed.id || null;
   const byId = allProducts.find(p => p.id === parsed.id);
   if (byId) return byId.id;
   const code = parsed.id.normalize("NFKC").toLowerCase();
@@ -2245,12 +2274,12 @@ function resolveScannedProductId(text) {
   return matches.length === 1 ? matches[0].id : null;
 }
 
-function handleSlipItemScan(productId) {
+function handleSlipItemScan(productId, itemIndex = null) {
   const s = allSlips.find(x => x.id === openSlipId);
   if (!s || s.status === "done") { showToast("伝票が開かれていないか、検品完了済みです"); return false; }
-  const idx = (s.items || []).findIndex(it => it.productId === productId);
+  const idx = itemIndex === null ? (s.items || []).findIndex(it => it.productId === productId) : itemIndex;
 
-  if (idx === -1) {
+  if (!s.items?.[idx] || s.items[idx].productId !== productId) {
     playWarningAlert();
     showToast("⚠️ この伝票に含まれない商品です");
     return false;
@@ -2290,8 +2319,7 @@ function handleScannerWedgeInput(inputEl, mode) {
 
   if (mode === "slip-item") {
     if (!slipScannerActive) return;
-    const productId = resolveScannedProductId(text);
-    handleSlipItemVerifyScan(productId);
+    handleSlipItemVerifyScan(text);
     inputEl.focus();
     return;
   }
@@ -2302,7 +2330,11 @@ function handleScannerWedgeInput(inputEl, mode) {
     else if (allSlips.find(s => s.id === id)) type = "slip";
   }
 
-  if (type === "product") {
+  if (type === "inspection") {
+    const slip = allSlips.find(x => x.id === parsed.slipId);
+    if (slip) { switchTab("slips"); openSlipDetailModal(slip.id); }
+    else showToast("検品QRの伝票が見つかりません");
+  } else if (type === "product") {
     const p = allProducts.find(x => x.id === id);
     if (p) openMoveModal(p.id); else showToast("該当する商品が見つかりません");
   } else if (type === "slip") {
@@ -2863,5 +2895,5 @@ async function markDisasterShipped(id) {
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-06-label-spacing-v16";
+window.KOBUNSHA_APP_VERSION = "2026-10-08-separate-inspection-v17";
 init();
