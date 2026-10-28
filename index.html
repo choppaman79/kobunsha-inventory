@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>弘文社 在庫管理</title>
+<title>弘文社 在庫管理 QR版</title>
 <style>
   :root {
     --ink: #23282b;
@@ -871,6 +871,25 @@
     .product-row { flex-wrap: wrap; }
     .edit-link { margin-left: 0; }
   }
+
+  @page brother-product { size:62mm 29mm; margin:1.8mm; }
+  .brother-product-label { box-sizing:border-box; width:62mm; height:29mm; padding:1.8mm; display:flex; align-items:center; gap:1mm; background:white; color:black; outline:1px dashed #aaa; flex:0 0 auto; overflow:hidden; }
+  .product-label-info { flex:1; min-width:0; }
+  .product-label-name { font-size:7pt; line-height:1.35; font-weight:700; overflow-wrap:anywhere; max-height:15mm; overflow:hidden; }
+  .product-label-price { font-size:12pt; line-height:1.2; font-weight:700; margin-top:1.5mm; }
+  .product-label-bars { width:35.1mm; height:24.6mm; flex:0 0 35.1mm; }
+  .product-label-bars svg { width:35.1mm; height:24.6mm; display:block; max-width:none; }
+  @media print {
+    body.label-print #qrBulkPrintArea.brother-product-mode { width:58.4mm !important; max-width:58.4mm !important; page:brother-product; }
+    body.label-print .brother-product-label { width:58.4mm !important; height:25.3mm !important; padding:0 !important; margin:0 !important; outline:none !important; break-inside:avoid; }
+    body.label-print .brother-product-label:not(.last-label) { break-after:page; }
+  }
+
+.pilot-panel { border:1px solid #d6dfeb; background:#f5f8fc; padding:12px 16px; margin-bottom:16px; border-radius:8px; }
+  .pilot-panel p { margin:8px 0; font-size:13px; line-height:1.55; }
+  .pilot-panel summary { cursor:pointer; font-weight:600; }
+  .pilot-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .pilot-actions input { flex:1; min-width:160px; margin:0; }
 </style>
 </head>
 <body>
@@ -878,7 +897,8 @@
 <!-- ===================== ログイン画面 ===================== -->
 <div id="loginScreen">
   <div class="login-card">
-    <h1>弘文社 在庫管理</h1>
+    <h1>弘文社 在庫管理 QR版</h1>
+    <p style="font-size:12px;margin:4px 0;">在庫データは共通です。<a href="index-jan.html">JANバーコード版を開く</a></p>
     <p class="sub">担当者を選んでログインしてください</p>
     <select id="loginName">
       <option value="">名前を選択...</option>
@@ -892,7 +912,7 @@
 <!-- ===================== アプリ本体 ===================== -->
 <div id="appScreen">
   <header class="topbar">
-    <div class="title">弘文社 在庫管理</div>
+    <div class="title">弘文社 在庫管理 QR版</div>
     <div class="who">
       <span id="whoAmI"></span>
       <button class="logout" id="logoutBtn">ログアウト</button>
@@ -900,6 +920,21 @@
   </header>
 
   <main>
+    <section class="pilot-panel no-print">
+      <strong>おみ霊箱から試験運用</strong>
+      <p id="pilotOperationMessage">運用設定を確認しています…</p>
+      <details id="pilotResetPanel">
+        <summary>開始前の初期化（履歴・伝票の削除／現在庫を0）</summary>
+        <p>対象は通常商品の全件です。おみ霊箱以外も含めて、入出庫履歴と入荷・出荷伝票を削除し、現在庫を0にします。商品マスタと出荷先台帳は残します。</p>
+        <p>他の端末・旧版アプリの操作を止めてから実行してください。防災用品・発注・棚卸し記録・月始祭計画はこの初期化の対象外です。</p>
+        <div class="pilot-actions">
+          <button type="button" class="btn-secondary-inline" id="pilotResetPreviewBtn">初期化対象を確認</button>
+          <button type="button" class="btn-secondary-inline" id="pilotResetBackupBtn" disabled>確認時点のバックアップ</button>
+          <button type="button" class="btn-danger" id="pilotResetExecuteBtn" disabled>履歴・伝票削除と現在庫0を実行</button>
+        </div>
+        <p id="pilotResetStatus" role="status" style="white-space:pre-wrap;">まず「初期化対象を確認」を押してください。</p>
+      </details>
+    </section>
     <div class="tabs">
       <button class="tab-btn active" data-tab="list">在庫一覧</button>
       <button class="tab-btn" data-tab="register">商品登録</button>
@@ -920,7 +955,8 @@
         <input type="text" id="scannerInput" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄（ここをクリックしてスキャン）">
         <div class="spacer"></div>
         <button class="btn-secondary-inline" id="scanGlobalBtn">📷 スキャン</button>
-        <button class="btn-secondary-inline" id="qrBulkPrintBtn">QRラベル印刷（23×23）</button>
+        <button class="btn-secondary-inline" id="qrBulkPrintBtn">商品QRラベル印刷（23×23）</button>
+        
         <button class="btn-secondary-inline" id="bulkModeBtn">商品を選んで一括削除</button>
         <button class="btn-secondary-inline" id="bulkSelectAllBtn" style="display:none;">表示中をすべて選択</button>
         <button class="btn-danger" id="bulkDeleteBtn" style="display:none;">選択した商品を削除</button>
@@ -1151,7 +1187,7 @@
 <!-- ===================== QRコードモーダル (Phase2) ===================== -->
 <div class="modal-overlay" id="qrOverlay">
   <div class="modal" id="qrPrintArea">
-    <h2>QRコード</h2>
+    <h2>商品QR</h2>
     <p id="qrProductName" style="font-size:14.5px;font-weight:600;color:var(--indigo-deep);margin:0 0 4px;"></p>
     <p id="qrProductCode" style="font-size:12px;color:#8a8272;margin:0 0 16px;"></p>
     <div id="qrCanvasBox" style="display:flex;justify-content:center;margin-bottom:18px;"></div>
@@ -1181,6 +1217,17 @@
     <h2 id="slipCreateTitle">伝票を作成</h2>
     <span class="slip-type-badge" id="slipCreateTypeBadge"></span>
     <input type="hidden" id="slipCreateType" value="out">
+
+<div id="destinationCodeWrap" style="display:none;">
+      <label for="slipDestinationCode">出荷先コード（出荷時は必須）</label>
+      <div class="pilot-actions">
+        <input type="text" id="slipDestinationCode" autocomplete="off" maxlength="32" placeholder="例：00123／JINJA-001">
+        <button type="button" class="btn-secondary-inline" id="destinationLookupBtn">呼び出す</button>
+      </div>
+      <p id="destinationLookupStatus" role="status" style="font-size:12px;"></p>
+      <label style="font-size:12px;"><input type="checkbox" id="saveDestinationMaster" style="width:auto;" checked>登録済み出荷先の変更内容を台帳にも保存する</label>
+      <p style="font-size:12px;">新しいコードは伝票保存と同時に台帳へ登録します。既存の住所等を今回だけ変える場合はチェックを外してください。</p>
+    </div>
 
     <label id="slipPartnerLabel">取引先／納品先（任意）</label>
     <input type="text" id="slipPartner" placeholder="例：〇〇神社様">
@@ -1330,7 +1377,7 @@
       <p id="slipDetailDoneNote" style="display:none;font-size:13px;color:var(--ok-text);font-weight:600;margin-top:12px;">この伝票は検品完了済みです（在庫反映済み）</p>
 
       <div id="slipReceivingLabelWrap" style="display:none;margin-top:10px;">
-        <button type="button" class="btn-secondary-inline" id="slipReceivingLabelBtn">🏷️ 入荷シールを印刷（QR＋商品名・数量分／23×23）</button>
+        <button type="button" class="btn-secondary-inline" id="slipReceivingLabelBtn">🏷️ 入荷シールを印刷（QR・商品名／23×23）</button>
       </div>
       <div id="slipPickLabelWrap" style="margin-top:10px;display:none;gap:8px;flex-wrap:wrap;">
         <button type="button" class="btn-secondary-inline" id="slipPickLabelBtn">🏷️ 専用検品シールを印刷（62×29）</button>
@@ -1457,9 +1504,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=20261008-separate-inspection-v17"></script>
+<script src="app-qr.js?v=20261028-destinations-reset-qr-v20"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-10-08-separate-inspection-v17") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-10-28-destinations-reset-qr-v20") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
