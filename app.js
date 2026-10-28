@@ -68,6 +68,7 @@ function init() {
 
   renderCategoryChips();
   initWorkModules();
+  initPilotTools();
 
   document.getElementById("loginBtn").addEventListener("click", handleLogin);
   document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
@@ -452,6 +453,7 @@ function closeMoveModal() {
 }
 
 function handleMoveSave() {
+  if (!inventoryWritesAllowed()) return;
   if (!movingProductId) return;
   const product = allProducts.find(p => p.id === movingProductId);
   if (!product) return;
@@ -478,7 +480,8 @@ function handleMoveSave() {
   const productRef = db.collection(COLLECTION).doc(movingProductId);
   const movementRef = db.collection(MOVEMENTS_COLLECTION).doc();
 
-  db.runTransaction(tx => {
+  db.runTransaction(async tx => {
+    await requireNoActiveReset(tx);
     return tx.get(productRef).then(doc => {
       if (!doc.exists) throw new Error("商品が見つかりません");
       const latestStock = Number(doc.data().currentStock || 0);
@@ -635,16 +638,9 @@ function openQrModal(id) {
   if (!p) return;
   qrProductId = id;
   document.getElementById("qrProductName").textContent = p.name || "";
-  document.getElementById("qrProductCode").textContent = p.code ? `商品コード：${p.code}` : "";
-  const box = document.getElementById("qrCanvasBox");
-  box.innerHTML = "";
-  // QRコードにはこの商品を直接開くURLを埋め込む（スマホの標準カメラからもアプリを開けるように）
-  new QRCode(box, {
-    text: buildProductUrl(id),
-    width: 180,
-    height: 180,
-    correctLevel: QRCode.CorrectLevel.M
-  });
+  document.getElementById("qrProductCode").textContent = p.code || "";
+  const box = document.getElementById("qrCanvasBox"); box.replaceChildren();
+  new QRCode(box, { text: buildProductUrl(id), width:180, height:180, correctLevel:QRCode.CorrectLevel.M });
   document.getElementById("qrOverlay").classList.add("show");
 }
 
@@ -656,26 +652,12 @@ function closeQrModal() {
 // QL-800: DK-1221 (23×23mm) と DK-1209 (62×29mm) に1枚ずつ印刷する。
 function showBrotherLabelPreview(kind, title, count) {
   const area = document.getElementById("qrBulkPrintArea");
-  area.classList.remove("brother-qr-mode", "brother-pick-mode");
+  area.classList.remove("brother-qr-mode", "brother-pick-mode", "brother-product-mode");
   area.classList.add(kind === "pick" ? "brother-pick-mode" : "brother-qr-mode");
   document.getElementById("qrBulkTitle").textContent = title;
   document.getElementById("qrBulkHint").textContent = `${count}枚／Brother QL-800・${kind === "pick" ? "DK-1209（62×29mm）" : "DK-1221（23×23mm）"}。PCでQL-800を選び、用紙サイズを合わせて倍率100%・ヘッダー／フッターなしで印刷してください。QRシールは四辺に2mmの余裕を確保しています。`;
+  document.getElementById("qrBulkPrintOkBtn").disabled = false;
   document.getElementById("qrBulkOverlay").classList.add("show");
-}
-
-function appendBrotherQr(grid, productId, productName) {
-  const cell = document.createElement("div");
-  cell.className = "brother-qr-label";
-  const qrBox = document.createElement("div");
-  qrBox.className = "brother-qr-image";
-  cell.appendChild(qrBox);
-  const name = document.createElement("div");
-  name.className = "brother-qr-name";
-  name.textContent = productName || allProducts.find(p => p.id === productId)?.name || "商品名未登録";
-  name.title = name.textContent;
-  cell.appendChild(name);
-  grid.appendChild(cell);
-  new QRCode(qrBox, { text: buildProductUrl(productId), width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M });
 }
 
 function finishBrotherLabels(grid, kind, title, count) {
@@ -687,64 +669,36 @@ function finishBrotherLabels(grid, kind, title, count) {
 
 function printProductQrLabel(id) {
   if (!allProducts.some(p => p.id === id)) return;
-  const grid = document.getElementById("qrBulkGrid");
-  grid.className = "brother-label-list";
-  grid.replaceChildren();
-  appendBrotherQr(grid, id);
-  document.getElementById("qrOverlay").classList.remove("show");
-  finishBrotherLabels(grid, "qr", "商品QRラベル（23×23mm）", 1);
+  return renderQrProductLabels([{ id, qty: 1 }]);
 }
 
 function openQrBulkPrint() {
   const keyword = document.getElementById("searchBox").value.trim().normalize("NFKC").toLowerCase();
   const items = allProducts.filter(p =>
     (activeCategory === "すべて" || p.category === activeCategory) &&
-    (!keyword || `${p.name || ""} ${p.code || ""}`.normalize("NFKC").toLowerCase().includes(keyword))
+    (!keyword || `${p.name || ""} ${p.code || ""} ${p.barcode || ""}`.normalize("NFKC").toLowerCase().includes(keyword))
   );
   if (!items.length) return showToast("印刷対象の商品がありません");
-  const grid = document.getElementById("qrBulkGrid");
-  grid.className = "brother-label-list";
-  grid.replaceChildren();
-  items.forEach(p => appendBrotherQr(grid, p.id));
-  finishBrotherLabels(grid, "qr", "商品QRラベル一括印刷（23×23mm）", items.length);
+  return renderQrProductLabels(items.map(p => ({ id: p.id, qty: 1 })));
 }
 
-// 入荷のラベルに商品QRと商品名を印刷する。品目の区切りはプレビューに表示する。
+
 function printSlipReceivingLabels(slipId) {
-  const s = allSlips.find(x => x.id === slipId);
-  if (!s || s.type !== "in") return showToast("入荷伝票を開いてください");
-  const groups = new Map();
+  const slip = allSlips.find(x => x.id === slipId);
+  if (!slip || slip.type !== "in") return showToast("入荷伝票を開いてください");
   try {
-  (s.items || []).forEach((item, idx) => {
-    const input = s.status !== "done" && openSlipId === slipId
-      ? document.querySelector(`.slip-check-qty[data-idx="${idx}"]`) : null;
-    const value = s.status === "done" ? item.checkedQty : input ? input.value : item.checkedQty ?? item.plannedQty;
-    const qty = inventoryQuantity(value, (item.productName || "商品") + "の入荷数");
-    if (!item.productId) throw Error("印刷対象の商品を確認してください");
-    if (qty === 0) return;
-    const p = allProducts.find(x => x.id === item.productId);
-    const group = groups.get(item.productId) || { qty: 0, name: item.productName || p?.name || "商品", code: p?.code || "" };
-    group.qty += qty;
-    groups.set(item.productId, group);
-  });
-  } catch (err) { showToast(err.message); return; }
-  if (!groups.size) return showToast("入荷数量が0のため、印刷するQRシールはありません");
-  const grid = document.getElementById("qrBulkGrid");
-  grid.className = "brother-label-list";
-  grid.replaceChildren();
-  let total = 0;
-  [...groups].forEach(([productId, group], index) => {
-    const heading = document.createElement("div");
-    heading.className = "brother-group-title";
-    heading.textContent = `${index + 1}/${groups.size}　${group.name}${group.code ? `（${group.code}）` : ""}　${group.qty}枚`;
-    grid.appendChild(heading);
-    for (let i = 0; i < group.qty; i++) appendBrotherQr(grid, productId, group.name);
-    total += group.qty;
-  });
-  finishBrotherLabels(grid, "qr", "入荷：QR＋商品名シール（23×23mm）", total);
+    const requests = (slip.items || []).map((item, index) => {
+      const input = slip.status !== "done" && openSlipId === slipId
+        ? document.querySelector(`.slip-check-qty[data-idx="${index}"]`) : null;
+      const value = slip.status === "done" ? item.checkedQty : input ? input.value : item.checkedQty ?? item.plannedQty;
+      return { id: item.productId, name: item.productName, qty: inventoryQuantity(value, (item.productName || "商品") + "の入荷数") };
+    }).filter(item => item.qty > 0);
+    if (!requests.length) return showToast("印刷する入荷シールはありません");
+    return renderQrProductLabels(requests);
+  } catch (err) { barcodeError(err); }
 }
+// 検品用は商品用EAN-13とは別の伝票・商品・連番付きQRを維持する。
 
-// 検品シールは商品QRを流用せず、伝票・品目行・連番を含む専用QRを発行する。
 function printSlipPickLabels(slipId) {
   const s = allSlips.find(x => x.id === slipId);
   if (!s) return;
@@ -763,7 +717,7 @@ function printSlipPickLabels(slipId) {
       cell.className = "brother-pick-label";
       cell.innerHTML = `<div class="brother-pick-qr"></div><div class="brother-pick-info">
         <div class="brother-pick-name">${escapeHtml(item.productName || "")}</div>
-        <div>伝票 ${escapeHtml(s.slipNumber || "")}${qty > 1 ? `　${i}/${qty}` : ""}</div>
+        <div>伝票 ${escapeHtml((s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}${qty > 1 ? `　${i}/${qty}` : ""}</div>
         <div class="brother-pick-price">¥${price.toLocaleString()}</div>
         <div class="brother-pick-meta">${escapeHtml(shipTo)}${issueDate ? ` / ${escapeHtml(issueDate)}` : ""}</div>
       </div>`;
@@ -894,6 +848,7 @@ function renderExcelPreview() {
 }
 
 function handleExcelImport() {
+  if (!inventoryWritesAllowed()) return;
   if (excelParsedRows.length === 0) {
     showToast("先にエクセル/CSVファイルを選択してください");
     return;
@@ -986,7 +941,7 @@ function renderSlipList(filter) {
       <div class="slip-main">
         <div class="slip-top">
           <span class="history-type ${s.type === "in" ? "in" : "out"}">${typeLabel}</span>
-          <span class="slip-number">${escapeHtml(s.slipNumber || "")}</span>
+          <span class="slip-number">${escapeHtml((s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}</span>
           <span class="slip-status ${s.status === "done" ? "done" : ""}">${statusLabel}</span>
         </div>
         <div class="history-meta">${escapeHtml(s.partner || "取引先未設定")}　/　${dt}　/　品目数：${(s.items || []).length}</div>
@@ -1032,11 +987,13 @@ function openSlipCreateModal(type) {
   clearSelectedProductCard();
   updateSlipItemAmountPreview();
   renderSlipItemsEditor();
+  prepareDestinationForm(type);
   document.getElementById("slipCreateOverlay").classList.add("show");
   setTimeout(() => document.getElementById("slipItemCodeInput").focus(), 50);
 }
 
 function closeSlipCreateModal() {
+  clearTimeout(destinationLookupTimer);destinationLookupGeneration++;
   document.getElementById("slipCreateOverlay").classList.remove("show");
 }
 
@@ -1161,45 +1118,41 @@ function generateSlipNumber(type) {
   return `${prefix}-${dateStr}-${rand}`;
 }
 
-function handleSlipCreateSave() {
-  if (currentSlipItems.length === 0) {
-    showToast("品目を1件以上追加してください");
-    return;
-  }
+async function handleSlipCreateSave() {
+  if (!inventoryWritesAllowed()) return;
+  if (!currentSlipItems.length) return showToast("商品を追加してください");
   const type = document.getElementById("slipCreateType").value;
-  const partner = document.getElementById("slipPartner").value.trim();
-  const partnerAddress = document.getElementById("slipPartnerAddress").value.trim();
-  const partnerTel = document.getElementById("slipPartnerTel").value.trim();
-  const shipTo = document.getElementById("slipShipTo").value.trim();
-  const postingDate = document.getElementById("slipPostingDate").value;
-  const transactionType = document.getElementById("slipTransactionType").value.trim();
-  const warehouse = document.getElementById("slipWarehouse").value.trim();
-  const orderNo = document.getElementById("slipOrderNo").value.trim();
-  const memo = document.getElementById("slipMemo").value.trim();
-
-  db.collection(SLIPS_COLLECTION).add({
-    type,
-    slipNumber: generateSlipNumber(type),
-    partner,
-    partnerAddress,
-    partnerTel,
-    shipTo,
-    postingDate,
-    transactionType,
-    warehouse,
-    orderNo,
-    memo,
-    status: "draft",
-    items: currentSlipItems,
-    staff: currentStaffName,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  }).then(() => {
-    showToast("伝票を作成しました");
-    closeSlipCreateModal();
-  }).catch(err => {
-    console.error(err);
-    showToast("伝票の作成に失敗しました");
-  });
+  if (!["in","out"].includes(type)) return showToast("伝票区分を確認してください");
+  clearTimeout(destinationLookupTimer); destinationLookupGeneration++;
+  const fields = destinationForm();
+  let code = "";
+  try {
+    if (type === "out") code = normalizeDestinationCode(document.getElementById("slipDestinationCode").value);
+    const items = currentSlipItems.map(item => {
+      const qty = inventoryQuantity(item.plannedQty,"数量");
+      if(qty < 1) throw Error("数量は1以上で入力してください");
+      return { ...item };
+    });
+    const btn = document.getElementById("slipCreateSaveBtn");
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const slip = {
+      type, slipNumber:generateSlipNumber(type), ...fields,
+      postingDate:document.getElementById("slipPostingDate").value,
+      transactionType:document.getElementById("slipTransactionType").value.trim(),
+      warehouse:document.getElementById("slipWarehouse").value.trim(),
+      orderNo:document.getElementById("slipOrderNo").value.trim(),
+      memo:document.getElementById("slipMemo").value.trim(),
+      status:"draft", items, staff:currentStaffName,
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    };
+    try {
+      await savePilotSlip(type,code,fields,slip,document.getElementById("saveDestinationMaster").checked,
+        matchedDestinationCode === code ? matchedDestinationRevision : null);
+      showToast("伝票を作成しました");closeSlipCreateModal();
+    } catch(err) {console.error(err);showToast(err.message || "保存できませんでした。追加ルールと通信状態を確認してください");}
+    finally {btn.disabled=false;}
+  } catch(err) {showToast(err.message);}
 }
 
 // ---- 伝票の詳細・検品・印刷 ----
@@ -1211,7 +1164,7 @@ function openSlipDetailModal(id) {
   inspectedLabelTokens.clear();
   const typeLabel = s.type === "in" ? "入荷伝票" : "出荷伝票";
   document.getElementById("slipDetailTitle").textContent = typeLabel;
-  document.getElementById("slipDetailNumber").textContent = s.slipNumber || "";
+  document.getElementById("slipDetailNumber").textContent = (s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : "");
   document.getElementById("slipDetailPartner").textContent = s.partner || "取引先未設定";
   document.getElementById("slipDetailPartnerAddress").textContent = s.partnerAddress || "";
   document.getElementById("slipDetailPartnerTel").textContent = s.partnerTel || "";
@@ -1345,12 +1298,12 @@ function buildCheckSheetHtml(s) {
       <h2 style="margin:0;">検品表（${typeLabel}）</h2>
       <div class="slip-formal-header-qr">
         <div id="printSheetQr"></div>
-        <span class="slip-formal-header-qr-label">${escapeHtml(s.slipNumber || "")}</span>
+        <span class="slip-formal-header-qr-label">${escapeHtml((s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}</span>
       </div>
       ${companyLetterheadHtml()}
     </div>
     <table class="slip-formal-table">
-      <tr><th>伝票番号</th><td>${escapeHtml(s.slipNumber || "")}</td><th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td></tr>
+      <tr><th>伝票番号</th><td>${escapeHtml((s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}</td><th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td></tr>
       <tr><th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td><th>作成日</th><td>${issueDate}</td></tr>
     </table>
     <table class="slip-detail-table">
@@ -1385,7 +1338,7 @@ function buildDeliverySheetHtml(s) {
       <h2 style="margin:0;">${typeLabel}</h2>
       <div class="slip-formal-header-qr">
         <div id="printSheetQr"></div>
-        <span class="slip-formal-header-qr-label">${escapeHtml(s.slipNumber || "")}</span>
+        <span class="slip-formal-header-qr-label">${escapeHtml((s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}</span>
       </div>
       ${companyLetterheadHtml()}
     </div>
@@ -1395,7 +1348,7 @@ function buildDeliverySheetHtml(s) {
         <th>計上日</th><td>${formatPostingDate(s.postingDate)}</td>
       </tr>
       <tr>
-        <th>伝票番号</th><td>${escapeHtml(s.slipNumber || "")}</td>
+        <th>伝票番号</th><td>${escapeHtml((s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}</td>
         <th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td>
       </tr>
       <tr>
@@ -1766,6 +1719,7 @@ function generateOrderNumber() {
 }
 
 function handleOrderCreateSave() {
+  if (!inventoryWritesAllowed()) return;
   const pending = [...document.querySelectorAll("#orderSupplierPicker .supplier-order-qty")].some(input => input.value !== "" && Number(input.value) !== 0);
   if (pending && !addSupplierOrderItems()) return;
   if (currentOrderItems.length === 0) {
@@ -1855,6 +1809,7 @@ function closeOrderDetailModal() {
 // 発注の状態変更もトランザクションで保護し、入荷済みの状態を戻さない。
 async function changeOrderStatus(ref, allowed, changes) {
   await db.runTransaction(async tx => {
+    await requireNoActiveReset(tx);
     const doc = await tx.get(ref);
     if (!doc.exists || !allowed.includes(doc.data().status)) {
       throw Error("発注の状態が変わりました。開き直してください");
@@ -1864,6 +1819,7 @@ async function changeOrderStatus(ref, allowed, changes) {
 }
 
 function handleOrderMarkOrdered() {
+  if (!inventoryWritesAllowed()) return;
   if (!openOrderId) return;
   changeOrderStatus(db.collection(ORDERS_COLLECTION).doc(openOrderId), ["draft"], {
     status: "ordered",
@@ -1879,6 +1835,7 @@ function handleOrderMarkOrdered() {
 }
 
 function handleOrderCancel() {
+  if (!inventoryWritesAllowed()) return;
   if (!openOrderId) return;
   if (!confirm("この発注をキャンセルします。よろしいですか？")) return;
   changeOrderStatus(db.collection(ORDERS_COLLECTION).doc(openOrderId), ["draft", "ordered"], {
@@ -1916,6 +1873,7 @@ async function completeInventoryRecord(ref, displayed, enteredItems, isOrder, st
   const quantities = enteredItems.map(item =>
     inventoryQuantity(item[quantityField], item.productName + "の数量"));
   await db.runTransaction(async tx => {
+    await requireNoActiveReset(tx);
     const recordDoc = await tx.get(ref);
     if (!recordDoc.exists) throw Error("伝票・発注が削除されています");
     const record = recordDoc.data();
@@ -1980,6 +1938,7 @@ async function completeInventoryRecord(ref, displayed, enteredItems, isOrder, st
 }
 
 function handleOrderMarkReceived() {
+  if (!inventoryWritesAllowed()) return;
   const o = allOrders.find(x => x.id === openOrderId);
   const btn = document.getElementById("orderMarkReceivedBtn");
   if (!o || btn.disabled) return;
@@ -2116,7 +2075,8 @@ function handleScanResult(text) {
 
   let { type, id } = parsed;
   if (type === "unknown") {
-    if (allProducts.find(p => p.id === id)) type = "product";
+    const productId = resolveScannedProductId(text);
+    if (productId) { type = "product"; id = productId; }
     else if (allSlips.find(s => s.id === id)) type = "slip";
   }
 
@@ -2267,6 +2227,8 @@ function resolveScannedProductId(text) {
   const parsed = extractScannedId(text);
   if (parsed.type === "slip") return null;
   if (parsed.type === "inspection") return parsed.id || null;
+  const numbered = allProducts.filter(p => p.barcode === parsed.id || (p.barcodeAliases || []).includes(parsed.id));
+  if (numbered.length) return numbered.length === 1 ? numbered[0].id : null;
   const byId = allProducts.find(p => p.id === parsed.id);
   if (byId) return byId.id;
   const code = parsed.id.normalize("NFKC").toLowerCase();
@@ -2326,7 +2288,8 @@ function handleScannerWedgeInput(inputEl, mode) {
 
   let { type, id } = parsed;
   if (type === "unknown") {
-    if (allProducts.find(p => p.id === id)) type = "product";
+    const productId = resolveScannedProductId(text);
+    if (productId) { type = "product"; id = productId; }
     else if (allSlips.find(s => s.id === id)) type = "slip";
   }
 
@@ -2347,6 +2310,7 @@ function handleScannerWedgeInput(inputEl, mode) {
 }
 
 function handleSlipComplete() {
+  if (!inventoryWritesAllowed()) return;
   const s = allSlips.find(x => x.id === openSlipId);
   const btn = document.getElementById("slipDetailCompleteBtn");
   if (!s || btn.disabled) return;
@@ -2381,6 +2345,7 @@ function handleSlipComplete() {
 
 // ===================== 商品登録 =====================
 function handleRegisterSubmit() {
+  if (!inventoryWritesAllowed()) return;
   const name = document.getElementById("regName").value.trim();
   const code = document.getElementById("regCode").value.trim();
   const supplier = document.getElementById("regSupplier").value.trim();
@@ -2446,7 +2411,9 @@ function closeEditModal() {
 }
 
 function handleEditSave() {
+  if (!inventoryWritesAllowed()) return;
   if (!editingId) return;
+  const targetId = editingId;
   const data = {
     name: document.getElementById("editName").value.trim(),
     code: document.getElementById("editCode").value.trim(),
@@ -2464,12 +2431,14 @@ function handleEditSave() {
     showToast("月始祭準備分を下回る在庫数にはできません");
     return;
   }
-  db.collection(COLLECTION).doc(editingId).update(data)
-    .then(() => { showToast("保存しました"); closeEditModal(); })
+  if (!data.name || !Number.isFinite(data.price) || data.price < 0) return showToast("商品名と売価を確認してください");
+  db.collection(COLLECTION).doc(targetId).update(data)
+    .then(() => { showToast("保存しました"); if (editingId === targetId) closeEditModal(); })
     .catch(err => { console.error(err); showToast("保存に失敗しました"); });
 }
 
 function handleEditDelete() {
+  if (!inventoryWritesAllowed()) return;
   if (!editingId) return;
   if (!confirm("この商品を削除しますか？")) return;
   db.collection(COLLECTION).doc(editingId).delete()
@@ -2577,6 +2546,7 @@ function toggleVisibleSelection(selector, selected) {
   showToast(allChecked ? `${boxes.length}件の選択を解除しました` : `${boxes.length}件を選択しました`);
 }
 async function deleteSelectedRecords(collection, selected, records, label) {
+  if (!inventoryWritesAllowed()) return;
   const ids = [...selected].filter(id => records.some(record => record.id === id));
   if (!ids.length) return showToast("削除する項目を選択してください");
   const typed = prompt(`${label}を${ids.length}件削除します。履歴・伝票の削除では現在庫数は変更されません。確認のため件数「${ids.length}」を入力してください。`);
@@ -2591,6 +2561,7 @@ async function deleteSelectedRecords(collection, selected, records, label) {
   } catch(err) { console.error(err); showToast("削除が途中で止まりました。選択状態を確認してください"); }
 }
 async function bulkDeleteProducts() {
+  if (!inventoryWritesAllowed()) return;
   const ids = [...bulkSelected].filter(id => allProducts.some(p => p.id === id));
   if (!ids.length) return showToast("商品を選択してください");
   const typed = prompt(`${ids.length}件の商品詳細を削除します。伝票・入出庫の履歴は残ります。確認のため件数「${ids.length}」を入力してください。`);
@@ -2688,6 +2659,7 @@ function collectStocktake() {
   });
 }
 async function saveStocktake() {
+  if (!inventoryWritesAllowed()) return;
   if(!stocktakeKey()||stocktakeRecord?.status==="applied") return;
   try {
     const items=collectStocktake();
@@ -2696,6 +2668,7 @@ async function saveStocktake() {
   } catch(err) {console.error(err);showToast(err.message||"保存に失敗しました");}
 }
 async function applyStocktake() {
+  if (!inventoryWritesAllowed()) return;
   const key=stocktakeKey();if(!key||stocktakeRecord?.status==="applied")return;
   const resuming=stocktakeRecord?.status==="applying";
   let items;
@@ -2705,7 +2678,8 @@ async function applyStocktake() {
   const ref=db.collection(STOCKTAKES).doc(key),btn=$w("stocktakeApplyBtn");btn.disabled=true;
   try {
     if(!resuming){
-      await db.runTransaction(async tx=>{
+      await db.runTransaction(async tx => {
+    await requireNoActiveReset(tx);
         const prior=await tx.get(ref);if(prior.exists&&["applying","applied"].includes(prior.data().status))throw Error("既に反映が始まっています。表を開き直してください");
         tx.set(ref,{date:key,festivalMonth:nextFestivalMonth(key),items,status:"applying",appliedCount:0,startedBy:currentStaffName,startedAt:stamp()});
       });
@@ -2714,7 +2688,8 @@ async function applyStocktake() {
     let position=Number(stocktakeRecord.appliedCount||0);
     while(position<items.length){
       const expected=position,chunk=items.slice(position,position+100);
-      await db.runTransaction(async tx=>{
+      await db.runTransaction(async tx => {
+    await requireNoActiveReset(tx);
         const state=await tx.get(ref);
         if(!state.exists||state.data().status!=="applying"||state.data().appliedCount!==expected)throw Error("進捗が変わりました。表を開き直してください");
         const planDoc=await tx.get(db.collection(FESTIVALS).doc(nextFestivalMonth(key)));
@@ -2734,7 +2709,8 @@ async function applyStocktake() {
       position+=chunk.length;stocktakeRecord.appliedCount=position;
       $w("stocktakeStatus").textContent=`在庫反映中：${position}/${items.length}件`;
     }
-    await db.runTransaction(async tx=>{const state=await tx.get(ref);if(!state.exists||state.data().status!=="applying"||state.data().appliedCount!==items.length)throw Error("進捗が変わりました");tx.update(ref,{status:"applied",appliedBy:currentStaffName,appliedAt:stamp()});});
+    await db.runTransaction(async tx => {
+    await requireNoActiveReset(tx);const state=await tx.get(ref);if(!state.exists||state.data().status!=="applying"||state.data().appliedCount!==items.length)throw Error("進捗が変わりました");tx.update(ref,{status:"applied",appliedBy:currentStaffName,appliedAt:stamp()});});
     stocktakeRecord={items,status:"applied",appliedCount:items.length};renderStocktake();showToast("棚卸しの合計実数を在庫に反映しました");
   }catch(err){console.error(err);showToast(`${err.message||"反映に失敗しました"}。途中の場合は再開できます`);}
   finally{btn.disabled=stocktakeRecord?.status==="applied";}
@@ -2796,10 +2772,12 @@ function collectFestival() {
   }).filter(i=>i.qty||festivalFields.some(f=>i[f]));
 }
 async function saveFestival() {
+  if (!inventoryWritesAllowed()) return;
   const month=festivalKey();if(!month||festivalRecord?.status==="settled")return;
   try{
     const items=collectFestival(),ref=db.collection(FESTIVALS).doc(month);
-    await db.runTransaction(async tx=>{const doc=await tx.get(ref),status=doc.exists?doc.data().status:"draft";
+    await db.runTransaction(async tx => {
+    await requireNoActiveReset(tx);const doc=await tx.get(ref),status=doc.exists?doc.data().status:"draft";
       if(status==="settled"||status==="prepared"&&festivalRecord?.status!=="prepared")throw Error("準備状態が変わりました。開き直してください");
       tx.set(ref,{month,items,status,stockMode:doc.exists?doc.data().stockMode||"deducted":"included",updatedBy:currentStaffName,updatedAt:stamp()});
     });
@@ -2807,6 +2785,7 @@ async function saveFestival() {
   }catch(err){console.error(err);showToast(err.message||"保存に失敗しました");}
 }
 async function changeFestival(prepare) {
+  if (!inventoryWritesAllowed()) return;
   const month=festivalKey();if(!month)return;
   let items;try{items=prepare?collectFestival():festivalRecord?.items;}catch(err){return showToast(err.message);}
   if(!items?.some(i=>i.qty))return showToast("準備数量を入力してください");
@@ -2815,7 +2794,8 @@ async function changeFestival(prepare) {
   const ref=db.collection(FESTIVALS).doc(month),btn=prepare?$w("festivalCommitBtn"):$w("festivalReturnBtn");btn.disabled=true;
   try{
     let mode="included";
-    await db.runTransaction(async tx=>{
+    await db.runTransaction(async tx => {
+    await requireNoActiveReset(tx);
       const plan=await tx.get(ref),status=plan.exists?plan.data().status:"draft";
       if(prepare&&status!=="draft"||!prepare&&status!=="prepared")throw Error("準備状態が変わりました。開き直してください");
       mode=prepare?"included":plan.data().stockMode||"deducted";
@@ -2831,6 +2811,7 @@ async function changeFestival(prepare) {
   }catch(err){console.error(err);showToast(err.message||"更新に失敗しました");}finally{btn.disabled=false;renderFestival();}
 }
 async function settleFestival() {
+  if (!inventoryWritesAllowed()) return;
   const month=festivalKey();if(!month||festivalRecord?.status!=="prepared")return;
   let items;try{items=collectFestival();}catch(err){return showToast(err.message);}
   if(items.length>245)return showToast("一度に精算できる商品は245件までです");
@@ -2838,7 +2819,8 @@ async function settleFestival() {
   if(!confirm(`${month}の売上数 合計${sold}点を精算します。戻り・乱丁・見本を確認しましたか？`))return;
   const ref=db.collection(FESTIVALS).doc(month),btn=$w("festivalSettleBtn");btn.disabled=true;
   try{
-    await db.runTransaction(async tx=>{
+    await db.runTransaction(async tx => {
+    await requireNoActiveReset(tx);
       const plan=await tx.get(ref);if(!plan.exists||plan.data().status!=="prepared")throw Error("準備状態が変わりました");
       const mode=plan.data().stockMode||"deducted",planned=new Map(plan.data().items.map(i=>[i.productId,i]));
       if(items.length!==planned.size||items.some(i=>!planned.has(i.productId)||i.qty!==Number(planned.get(i.productId).qty||0)))throw Error("準備数量が変わりました。開き直してください");
@@ -2874,26 +2856,314 @@ function renderDisaster() {
   $w("disasterHistory").querySelectorAll(".shipped-btn").forEach(b=>b.onclick=()=>markDisasterShipped(b.dataset.id));
 }
 async function addDisasterProduct() {
+  if (!inventoryWritesAllowed()) return;
   const name=$w("disasterName").value.trim(), code=$w("disasterCode").value.trim(), unit=$w("disasterUnit").value.trim()||"個", initial=$w("disasterInitial").value;
   if (!name || !integer(initial)) return showToast("用品名と0以上の初期在庫を入力してください");
   try { await db.collection(DISASTER_PRODUCTS).add({name,code,unit,currentStock:Number(initial),createdAt:stamp()}); $w("disasterName").value=$w("disasterCode").value=""; $w("disasterInitial").value="0"; showToast("防災用品を登録しました"); }
   catch(err) { console.error(err); showToast("登録に失敗しました"); }
 }
 async function recordDisasterMovement() {
+  if (!inventoryWritesAllowed()) return;
   const id=$w("disasterProduct").value, type=$w("disasterType").value, qty=Number($w("disasterQty").value), destination=$w("disasterDestination").value.trim();
   if (!id || !Number.isInteger(qty) || qty<1) return showToast("用品と1以上の数量を指定してください");
   if (type==="out" && !destination) return showToast("出荷先を入力してください");
   const ref=db.collection(DISASTER_PRODUCTS).doc(id), move=db.collection(DISASTER_MOVEMENTS).doc();
-  try { await db.runTransaction(async tx=>{ const doc=await tx.get(ref); if (!doc.exists) throw Error("用品が見つかりません"); const n=Number(doc.data().currentStock||0)+(type==="in"?qty:-qty); if(n<0) throw Error("在庫が不足しています"); tx.update(ref,{currentStock:n}); tx.set(move,{productId:id,productName:doc.data().name,type,qty,destination,staff:currentStaffName,createdAt:stamp(),shipmentStatus:type==="out"?"pending":null}); });
+  try { await db.runTransaction(async tx => {
+    await requireNoActiveReset(tx); const doc=await tx.get(ref); if (!doc.exists) throw Error("用品が見つかりません"); const n=Number(doc.data().currentStock||0)+(type==="in"?qty:-qty); if(n<0) throw Error("在庫が不足しています"); tx.update(ref,{currentStock:n}); tx.set(move,{productId:id,productName:doc.data().name,type,qty,destination,staff:currentStaffName,createdAt:stamp(),shipmentStatus:type==="out"?"pending":null}); });
     $w("disasterQty").value="1"; $w("disasterDestination").value=""; showToast("入出荷を記録しました");
   } catch(err) { console.error(err); showToast(err.message||"記録に失敗しました"); }
 }
 async function markDisasterShipped(id) {
+  if (!inventoryWritesAllowed()) return;
   if (!confirm("この出荷を発送済みにしますか？")) return;
   const ref=db.collection(DISASTER_MOVEMENTS).doc(id);
-  try { await db.runTransaction(async tx=>{ const doc=await tx.get(ref); if(!doc.exists||doc.data().type!=="out"||doc.data().shippedAt) throw Error("既に処理されています"); tx.update(ref,{shipmentStatus:"shipped",shippedAt:stamp(),shippedBy:currentStaffName}); }); showToast("発送済みを記録しました"); }
+  try { await db.runTransaction(async tx => {
+    await requireNoActiveReset(tx); const doc=await tx.get(ref); if(!doc.exists||doc.data().type!=="out"||doc.data().shippedAt) throw Error("既に処理されています"); tx.update(ref,{shipmentStatus:"shipped",shippedAt:stamp(),shippedBy:currentStaffName}); }); showToast("発送済みを記録しました"); }
   catch(err) { console.error(err); showToast(err.message||"更新に失敗しました"); }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-08-separate-inspection-v17";
+// 出荷先台帳。QR版/JAN版で同じコードと登録内容を共有する。
+const DESTINATIONS_COLLECTION = "inventory_shipping_destinations";
+const INVENTORY_CONTROL_COLLECTION = "inventory_operation_controls";
+let destinationLookupGeneration = 0, destinationLookupTimer = null;
+let matchedDestinationCode = "", matchedDestinationRevision = null;
+let destinationWasAutofilled = false;
+let inventoryControlReady = false, inventoryResetLocked = false;
+let resetPreview = null, resetRunning = false, controlUnsubscribe = null;
+const destinationFields = ["slipPartner", "slipPartnerAddress", "slipPartnerTel", "slipShipTo"];
+function normalizeDestinationCode(value) {
+  const code = String(value || "").normalize("NFKC").trim().toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(code)) throw Error("出荷先コードは半角英数字・ハイフン・アンダーバーの1～32文字で入力してください");
+  return code;
+}
+function destinationForm() {
+  return Object.fromEntries(["partner","partnerAddress","partnerTel","shipTo"].map((key,i) => [key, document.getElementById(destinationFields[i]).value.trim()]));
+}
+function destinationFormSignature() { return JSON.stringify(destinationForm()); }
+function destinationMessage(message) { document.getElementById("destinationLookupStatus").textContent = message; }
+function prepareDestinationForm(type) {
+  clearTimeout(destinationLookupTimer); destinationLookupGeneration++;
+  matchedDestinationCode = ""; matchedDestinationRevision = null; destinationWasAutofilled = false;
+  document.getElementById("destinationCodeWrap").style.display = type === "out" ? "block" : "none";
+  document.getElementById("slipDestinationCode").value = "";
+  document.getElementById("saveDestinationMaster").checked = true;
+  destinationMessage("初回はコードと出荷先を手入力します。登録後は同じコードで呼び出せます。");
+}
+async function lookupShippingDestination() {
+  if (document.getElementById("slipCreateType").value !== "out") return;
+  const input = document.getElementById("slipDestinationCode");
+  const raw = input.value;
+  if (!raw.trim()) return destinationMessage("出荷先コードを入力してください。");
+  let code;
+  try { code = normalizeDestinationCode(raw); }
+  catch (err) { destinationMessage(err.message); return; }
+  const generation = ++destinationLookupGeneration, signature = destinationFormSignature();
+  destinationMessage("出荷先を検索しています…");
+  try {
+    let doc = await db.collection(DESTINATIONS_COLLECTION).doc(code).get({ source: "server" });
+    let destination = doc.exists ? doc.data() : null;
+    if (!destination) {
+      // 新方式でコードを保存した過去の出荷伝票も呼び出し元にできる。
+      const history = await db.collection(SLIPS_COLLECTION).where("destinationCode", "==", code).get({ source: "server" });
+      const prior = history.docs.filter(d => d.data().type === "out").sort((a,b) => {
+        const seconds = d => d.data().createdAt?.seconds || 0;
+        return seconds(b) - seconds(a);
+      })[0];
+      if (prior) destination = prior.data();
+    }
+    if (generation !== destinationLookupGeneration || document.getElementById("slipCreateType").value !== "out" ||
+        normalizeDestinationCode(input.value) !== code) return;
+    matchedDestinationCode = code;
+    matchedDestinationRevision = doc.exists ? Number(doc.data().revision || 0) : null;
+    if (!destination) {
+      document.getElementById("saveDestinationMaster").checked = true;
+      return destinationMessage("未登録のコードです。出荷先名・住所・TEL等を手入力し、伝票を保存してください。");
+    }
+    document.getElementById("saveDestinationMaster").checked = !doc.exists;
+    if (destinationFormSignature() !== signature) {
+      return destinationMessage("検索中に手入力されたため上書きしていません。必要なら「呼び出す」を押してください。");
+    }
+    input.value = code;
+    destinationFields.forEach((id,i) => {
+      document.getElementById(id).value = destination[["partner","partnerAddress","partnerTel","shipTo"][i]] || "";
+    });
+    destinationWasAutofilled = true;
+    document.getElementById("saveDestinationMaster").checked = !doc.exists;
+    destinationMessage(doc.exists ? "登録済みの出荷先を反映しました。変更を台帳に残す場合は下のチェックを入れてください。" : "過去の出荷伝票から反映しました。保存時に台帳へ登録します。");
+  } catch (err) {
+    if (generation === destinationLookupGeneration) destinationMessage("検索できませんでした。通信状態と出荷先台帳のルールを確認してください。");
+    console.error(err);
+  }
+}
+async function savePilotSlip(type, destinationCode, destination, slip, saveMaster, expectedRevision) {
+  const slipRef = db.collection(SLIPS_COLLECTION).doc();
+  await db.runTransaction(async tx => {
+    await requireNoActiveReset(tx);
+    let master = null, ref = null;
+    if (type === "out") {
+      const code = normalizeDestinationCode(destinationCode);
+      if (!destination.partner && !destination.shipTo) throw Error("出荷先名を入力してください");
+      ref = db.collection(DESTINATIONS_COLLECTION).doc(code);
+      master = await tx.get(ref);
+      if (master.exists && saveMaster) {
+        if (expectedRevision === null || Number(master.data().revision || 0) !== expectedRevision) {
+          throw Error("このコードは別の操作で登録・変更されています。コードで呼び出し直して確認してください");
+        }
+      }
+      if (!master.exists || saveMaster) tx.set(ref, {
+        code, ...destination, revision: master.exists ? Number(master.data().revision || 0) + 1 : 1,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentStaffName
+      });
+    }
+    tx.set(slipRef, { ...slip, ...(type === "out" ? { destinationCode: normalizeDestinationCode(destinationCode) } : {}) });
+  });
+}
+function inventoryWritesAllowed() {
+  if (!inventoryControlReady || inventoryResetLocked) {
+    showToast(inventoryResetLocked ? "在庫の初期化中です。完了するまで操作をお待ちください" : "運用設定を確認中です。追加ルールと通信状態を確認してください");
+    return false;
+  }
+  return true;
+}
+function inventoryControlRef() { return db.collection(INVENTORY_CONTROL_COLLECTION).doc("current"); }
+async function requireNoActiveReset(tx) {
+  const state = await tx.get(inventoryControlRef());
+  if (state.exists && state.data().state === "resetting") throw Error("初期化中のため在庫操作を停止しています");
+}
+function resetStatus(message) { document.getElementById("pilotResetStatus").textContent = message; }
+async function collectInventoryResetPlan() {
+  if (!auth.currentUser) throw Error("ログインしてください");
+  const names = [COLLECTION,MOVEMENTS_COLLECTION,SLIPS_COLLECTION,FESTIVALS,STOCKTAKES];
+  const snapshots = await Promise.all(names.map(name => db.collection(name).get({ source:"server" })));
+  const plan = Object.fromEntries(names.map((name,i) => [name,snapshots[i].docs]));
+  const reserved = plan[COLLECTION].filter(d => Number(d.data().reservedStock || 0) !== 0);
+  const prepared = plan[FESTIVALS].filter(d => d.data().status === "prepared");
+  const applying = plan[STOCKTAKES].filter(d => d.data().status === "applying");
+  if (reserved.length || prepared.length || applying.length) {
+    throw Error("月始祭の準備在庫または反映中の棚卸しがあるため初期化できません。先に準備取消・棚卸しの完了状態を確認してください");
+  }
+  return plan;
+}
+function resetCounts(plan) {
+  return "入出庫履歴 " + plan[MOVEMENTS_COLLECTION].length + "件、入荷・出荷伝票 " + plan[SLIPS_COLLECTION].length +
+    "件、通常商品 " + plan[COLLECTION].length + "件の現在庫を0にします。";
+}
+function downloadResetBackup(plan) {
+  const payload = { savedAt: new Date().toISOString(), projectId:firebase.app().options.projectId, collections:{} };
+  [COLLECTION,MOVEMENTS_COLLECTION,SLIPS_COLLECTION].forEach(name => {
+    payload.collections[name] = plan[name].map(doc => ({ id:doc.id, data:doc.data() }));
+  });
+  const url = URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}));
+  const a = document.createElement("a");a.href=url;a.download="在庫初期化前バックアップ_"+new Date().toISOString().slice(0,10)+".json";a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+async function previewPilotReset() {
+  if (resetRunning) return;
+  document.getElementById("pilotResetExecuteBtn").disabled = true;
+  resetPreview = null;
+  try {
+    resetPreview = await collectInventoryResetPlan();
+    resetStatus("対象："+firebase.app().options.projectId+"\n"+resetCounts(resetPreview)+"\nおみ霊箱以外の通常商品も対象です。商品マスタ・出荷先台帳は残します。");
+    document.getElementById("pilotResetExecuteBtn").disabled = false;
+    document.getElementById("pilotResetBackupBtn").disabled = false;
+  } catch (err) { resetStatus(err.message || "確認できませんでした。ルールと通信状態を確認してください"); }
+}
+async function acquireInventoryReset(runId) {
+  const uid=auth.currentUser?.uid;
+  if (!uid) throw Error("ログインしてください");
+  const ref=inventoryControlRef();
+  await db.runTransaction(async tx=>{
+    const previous=await tx.get(ref);
+    if(previous.exists&&previous.data().state==="resetting"&&previous.data().ownerUid!==uid) throw Error("別の担当者が初期化中です");
+    tx.set(ref,{state:"resetting",ownerUid:uid,runId,startedBy:currentStaffName,startedAt:firebase.firestore.FieldValue.serverTimestamp()});
+  });
+  inventoryResetLocked=true;
+}
+async function releaseInventoryReset(runId, state, message) {
+  await db.runTransaction(async tx=>{
+    const doc=await tx.get(inventoryControlRef());
+    if (!doc.exists || doc.data().runId!==runId || doc.data().ownerUid!==auth.currentUser?.uid) throw Error("初期化の実行状態が変わりました");
+    tx.update(inventoryControlRef(),{state,message,finishedAt:firebase.firestore.FieldValue.serverTimestamp()});
+  });
+  inventoryResetLocked = state === "resetting";
+}
+async function performInventoryReset(plan, progress) {
+  let processed=0;
+  for (const name of [MOVEMENTS_COLLECTION,SLIPS_COLLECTION]) {
+    const docs=plan[name];
+    for(let i=0;i<docs.length;i+=350){
+      const batch=db.batch();docs.slice(i,i+350).forEach(doc=>batch.delete(doc.ref));
+      await batch.commit();processed+=Math.min(350,docs.length-i);progress(processed);
+    }
+  }
+  const products=plan[COLLECTION];
+  for(let i=0;i<products.length;i+=350){
+    const batch=db.batch();products.slice(i,i+350).forEach(doc=>batch.update(doc.ref,{currentStock:0,reservedStock:0}));
+    await batch.commit();processed+=Math.min(350,products.length-i);progress(processed);
+  }
+  // 同時更新などがあれば完了と扱わず、再実行可能な停止状態にする。
+  const after=await Promise.all([COLLECTION,MOVEMENTS_COLLECTION,SLIPS_COLLECTION].map(name=>db.collection(name).get({source:"server"})));
+  if(after[1].docs.length||after[2].docs.length||after[0].docs.some(d=>Number(d.data().currentStock||0)!==0||Number(d.data().reservedStock||0)!==0)) {
+    throw Error("別操作によるデータ変更が検出されました。他の端末を停止して初期化を再実行してください");
+  }
+}
+async function executePilotReset() {
+  if(!resetPreview||resetRunning)return;
+  if(!confirm(resetCounts(resetPreview)+"\n他の端末・旧版アプリの操作を止めてください。削除した履歴は元に戻せません。実行しますか？"))return;
+  resetRunning=true;
+  const runId=Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
+  let locked=false, mutationsStarted=false;
+  document.getElementById("pilotResetExecuteBtn").disabled=true;
+  document.getElementById("pilotResetPreviewBtn").disabled=true;
+  try {
+    await acquireInventoryReset(runId);locked=true;
+    const fresh=await collectInventoryResetPlan();
+    downloadResetBackup(fresh);
+    resetStatus("バックアップのダウンロードを開始しました。初期化しています…");
+    mutationsStarted=true;
+    await performInventoryReset(fresh,n=>resetStatus("初期化中："+n+"件処理しました。この画面を閉じないでください。"));
+    await releaseInventoryReset(runId,"complete","履歴・伝票削除、通常商品の現在庫0をサーバーで確認");
+    historySelected.clear();slipSelected.clear();resetPreview=null;
+    resetStatus("初期化が完了しました。履歴・入荷出荷伝票が0件、通常商品の現在庫が0であることを確認しました。");
+    showToast("初期化が完了しました");
+  } catch(err) {
+    console.error(err);
+    if(locked&&!mutationsStarted) {
+      try{await releaseInventoryReset(runId,"cancelled",err.message||"処理前に停止");}catch(releaseError){console.error(releaseError);}
+    }
+    resetStatus((err.message||"初期化が中断されました")+"\n"+(mutationsStarted?"一部処理済みの可能性があります。同じ担当者で対象を確認し、初期化を再実行してください。":"初期化は完了していません。"));
+  } finally {resetRunning=false;document.getElementById("pilotResetPreviewBtn").disabled=false;}
+}
+function clearInventoryFormsForReset() {
+  destinationLookupGeneration++;clearTimeout(destinationLookupTimer);
+  document.querySelectorAll(".modal-overlay.show").forEach(el=>el.classList.remove("show"));
+  editingId=null;movingProductId=null;openSlipId=null;openOrderId=null;currentSlipItems=[];
+  setSlipScannerMode(false);
+}
+function initPilotTools() {
+  document.getElementById("searchBox").value="おみ霊箱";
+  document.getElementById("destinationLookupBtn").addEventListener("click",lookupShippingDestination);
+  const code=document.getElementById("slipDestinationCode");
+  code.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();clearTimeout(destinationLookupTimer);lookupShippingDestination();}});
+  code.addEventListener("input",()=>{
+    destinationLookupGeneration++;clearTimeout(destinationLookupTimer);
+    if(destinationWasAutofilled){destinationFields.forEach(id=>document.getElementById(id).value="");destinationWasAutofilled=false;}
+    matchedDestinationCode="";matchedDestinationRevision=null;
+    document.getElementById("saveDestinationMaster").checked=true;
+    destinationMessage("コード入力後に呼び出します。未登録なら手入力で登録します。");
+    destinationLookupTimer=setTimeout(lookupShippingDestination,350);
+  });
+  code.addEventListener("blur",()=>{clearTimeout(destinationLookupTimer);lookupShippingDestination();});
+  document.getElementById("pilotResetPreviewBtn").addEventListener("click",previewPilotReset);
+  document.getElementById("pilotResetBackupBtn").addEventListener("click",()=>{if(resetPreview)downloadResetBackup(resetPreview);});
+  document.getElementById("pilotResetExecuteBtn").addEventListener("click",executePilotReset);
+  document.addEventListener("click",e=>{
+    if(!auth.currentUser||e.target.closest("#pilotResetPanel")||e.target.closest("#logoutBtn"))return;
+    if(inventoryResetLocked&&e.target.closest("button,a")){e.preventDefault();e.stopImmediatePropagation();showToast("在庫の初期化中です");}
+  },true);
+  auth.onAuthStateChanged(user=>{
+    if(controlUnsubscribe)controlUnsubscribe();
+    inventoryControlReady=false;inventoryResetLocked=false;
+    if(!user)return;
+    controlUnsubscribe=inventoryControlRef().onSnapshot(doc=>{
+      const wasLocked=inventoryResetLocked;
+      inventoryControlReady=true;inventoryResetLocked=doc.exists&&doc.data().state==="resetting";
+      if(inventoryResetLocked&&!wasLocked)clearInventoryFormsForReset();
+      document.getElementById("pilotOperationMessage").textContent=inventoryResetLocked?"現在、在庫の初期化中です。完了するまで通常操作を停止してください。":"おみ霊箱から試験運用を開始します。初期検索は「おみ霊箱」です。";
+    },err=>{console.error(err);document.getElementById("pilotOperationMessage").textContent="運用設定を読み込めません。READMEの追加ルールを確認してください。";});
+  });
+}
+
+
+window.KOBUNSHA_APP_VERSION = "2026-10-28-destinations-reset-qr-v20";
 init();
+
+
+function renderQrProductLabels(requests) {
+  try {
+  const grid = document.getElementById("qrBulkGrid");
+  const products = new Map(allProducts.map(p => [p.id,p]));
+  const ready = requests.map(r => {
+    if (!products.has(r.id)) throw Error("商品が見つかりません：" + r.id);
+    return { ...r, qty: inventoryQuantity(r.qty, "印刷枚数") };
+  });
+  grid.className = "brother-label-list"; grid.replaceChildren();
+  let count = 0;
+  ready.forEach(request => {
+    const p = products.get(request.id);
+    for (let i = 0; i < request.qty; i++) {
+      const label = document.createElement("div"); label.className = "brother-qr-label";
+      const image = document.createElement("div"); image.className = "brother-qr-image";
+      const name = document.createElement("div"); name.className = "brother-qr-name";
+      name.textContent = request.name || p.name || "商品名未登録"; name.title = name.textContent;
+      label.appendChild(image); label.appendChild(name); grid.appendChild(label);
+      new QRCode(image, { text:buildProductUrl(p.id), width:240, height:240, correctLevel:QRCode.CorrectLevel.M });
+      count++;
+    }
+  });
+  document.getElementById("qrOverlay").classList.remove("show");
+  finishBrotherLabels(grid,"qr","商品QR・商品名（23×23mm）",count);
+  } catch (err) { barcodeError(err); }
+}
+
+function barcodeError(err) { console.error(err); showToast(err.message || "QR処理に失敗しました"); }
