@@ -934,6 +934,19 @@
         </div>
         <p id="pilotResetStatus" role="status" style="white-space:pre-wrap;">まず「初期化対象を確認」を押してください。</p>
       </details>
+      <details id="openingStockPanel" style="margin-top:16px;">
+        <summary>開始在庫の一括入力（Excel）</summary>
+        <p>初期化を行う場合は先に済ませてください。既存商品の現在庫0から開始数量を設定します。商品情報は新規登録しません。</p>
+        <label><input type="checkbox" id="openingStockOnlyOmi" checked> 入力表の出力を「おみ霊箱」を含む商品名に絞る</label>
+        <div class="pilot-actions" style="margin:12px 0;">
+          <button type="button" class="btn-secondary-inline" id="openingStockExportBtn">1. 商品一覧から入力用Excelを出力</button>
+        </div>
+        <p>2. Excelの「開始在庫数」を入力し、保存したファイルを選択してください。空欄は変更せず、0は在庫0として登録します。1回150商品まで。箱換算は行わず、登録単位の総数を入力してください。</p>
+        <input type="file" id="openingStockFile" accept=".xlsx,.xls">
+        <p id="openingStockStatus" role="status" style="white-space:pre-wrap;">現在庫0・開始在庫未登録の商品が対象です。商品コードの重複や不一致は反映前に表示します。</p>
+        <div style="overflow:auto;max-height:360px;"><table class="work-table"><thead><tr><th>商品コード</th><th>商品名</th><th>現在庫</th><th>開始在庫数</th><th>単位</th></tr></thead><tbody id="openingStockPreview"></tbody></table></div>
+        <button type="button" class="btn-primary" id="openingStockApplyBtn" disabled style="margin-top:12px;max-width:300px;">3. 確認した開始在庫を一括登録</button>
+      </details>
     </section>
     <div class="tabs">
       <button class="tab-btn active" data-tab="list">在庫一覧</button>
@@ -1504,9 +1517,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=20261028-destinations-reset-qr-v20-fix1"></script>
+<script src="app-qr.js?v=20261028-opening-stock-qr-v21"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-10-28-destinations-reset-qr-v20") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-10-28-opening-stock-qr-v21") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
