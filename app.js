@@ -69,6 +69,7 @@ function init() {
   renderCategoryChips();
   initWorkModules();
   initPilotTools();
+  initOpeningStockTools();
 
   document.getElementById("loginBtn").addEventListener("click", handleLogin);
   document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
@@ -745,6 +746,10 @@ function handleExcelFile(e) {
       const workbook = XLSX.read(data, { type: "array" });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "", raw: false });
+      if (rows.some(row => Object.keys(row).some(key => normalizeHeader(key) === normalizeHeader("開始在庫数")))) {
+        showToast("開始在庫のファイルは、画面上部の「開始在庫の一括入力（Excel）」から読み込んでください");
+        return;
+      }
       excelParsedRows = rows.map(mapExcelRow).filter(isValidExcelRow);
       renderExcelPreview();
     } catch (err) {
@@ -3058,7 +3063,7 @@ async function performInventoryReset(plan, progress) {
   }
   const products=plan[COLLECTION];
   for(let i=0;i<products.length;i+=350){
-    const batch=db.batch();products.slice(i,i+350).forEach(doc=>batch.update(doc.ref,{currentStock:0,reservedStock:0}));
+    const batch=db.batch();products.slice(i,i+350).forEach(doc=>batch.update(doc.ref,{currentStock:0,reservedStock:0,openingStockImportId:firebase.firestore.FieldValue.delete(),openingStockImportedAt:firebase.firestore.FieldValue.delete()}));
     await batch.commit();processed+=Math.min(350,products.length-i);progress(processed);
   }
   // 同時更新などがあれば完了と扱わず、再実行可能な停止状態にする。
@@ -3095,6 +3100,7 @@ async function executePilotReset() {
   } finally {resetRunning=false;document.getElementById("pilotResetPreviewBtn").disabled=false;}
 }
 function clearInventoryFormsForReset() {
+  invalidateOpeningStock();
   destinationLookupGeneration++;clearTimeout(destinationLookupTimer);
   document.querySelectorAll(".modal-overlay.show").forEach(el=>el.classList.remove("show"));
   editingId=null;movingProductId=null;openSlipId=null;openOrderId=null;currentSlipItems=[];
@@ -3135,7 +3141,153 @@ function initPilotTools() {
 }
 
 
-window.KOBUNSHA_APP_VERSION = "2026-10-28-destinations-reset-qr-v20";
+// ===================== 開始在庫の一括入力（既存商品専用） =====================
+let openingStockPlan = null;
+let openingStockGeneration = 0;
+let openingStockBusy = false;
+const OPENING_STOCK_HEADERS = ["商品ID", "商品コード", "商品名", "単位", "開始在庫数"];
+function openingStockStatus(message) { document.getElementById("openingStockStatus").textContent = message; }
+function invalidateOpeningStock() {
+  openingStockGeneration++;
+  openingStockPlan = null;
+  document.getElementById("openingStockApplyBtn").disabled = true;
+  document.getElementById("openingStockPreview").replaceChildren();
+}
+function openingText(value) { return String(value ?? "").normalize("NFKC").trim(); }
+function parseOpeningQuantity(value) {
+  const text = openingText(value);
+  if (text === "") return null;
+  if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(text)) throw Error("開始在庫数は0以上の整数で入力してください");
+  const qty = Number(text.replace(/,/g,""));
+  if (!Number.isSafeInteger(qty)) throw Error("開始在庫数が大きすぎます");
+  return qty;
+}
+function buildOpeningStockPlan(rows, products) {
+  const used = new Set(), plan = [], errors = [];
+  rows.forEach((row,index) => {
+    try {
+      const qty = parseOpeningQuantity(row["開始在庫数"]);
+      if (qty === null) return; // 空欄は変更しない。0は入力値として扱う。
+      const id = String(row["商品ID"] ?? "").trim();
+      const code = openingText(row["商品コード"]);
+      const name = openingText(row["商品名"]);
+      let matches;
+      if (id) matches = products.filter(p => p.id === id);
+      else if (code) matches = products.filter(p => openingText(p.code) === code);
+      else if (name) matches = products.filter(p => openingText(p.name) === name);
+      else throw Error("商品ID・商品コード・商品名のいずれかが必要です");
+      if (matches.length !== 1) throw Error(matches.length ? "商品が複数あります。商品IDで指定してください" : "既存商品が見つかりません");
+      const p = matches[0];
+      if (code && code !== openingText(p.code)) throw Error("商品コードが一致しません");
+      if (name && name !== openingText(p.name)) throw Error("商品名が一致しません");
+      if (openingText(row["単位"]) && openingText(row["単位"]) !== openingText(p.unit)) throw Error("単位が一致しません。商品に登録された単位の数量を入力してください");
+      if (used.has(p.id)) throw Error("同じ商品が重複しています");
+      used.add(p.id);
+      if (Number(p.currentStock || 0) !== 0) throw Error("現在庫が0ではありません。開始在庫で上書きできません");
+      if (Number(p.reservedStock || 0) !== 0) throw Error("準備在庫があるため登録できません");
+      if (p.openingStockImportId) throw Error("開始在庫は登録済みです。修正は入出庫または棚卸しで行ってください");
+      plan.push({id:p.id, code:p.code || "", name:p.name || "", unit:p.unit || "", qty});
+    } catch(err) { errors.push((index+2)+"行目："+err.message); }
+  });
+  if (errors.length) throw Error(errors.slice(0,20).join("\n")+(errors.length>20?"\nほか "+(errors.length-20)+"件":""));
+  if (!plan.length) throw Error("開始在庫数が入力された行がありません。空欄は取り込みません");
+  if (plan.length > 150) throw Error("1回150商品までです。ファイルを分けてください");
+  return plan;
+}
+async function exportOpeningStockSheet() {
+  if (!inventoryWritesAllowed() || openingStockBusy) return;
+  if (typeof XLSX === "undefined") { showToast("Excel機能が読み込まれていません"); return; }
+  try {
+    const snapshot = await db.collection(COLLECTION).get({source:"server"});
+    const only = document.getElementById("openingStockOnlyOmi").checked;
+    const products = snapshot.docs.map(d=>({...d.data(),id:d.id})).filter(p=>!only||openingText(p.name).includes("おみ霊箱"));
+    if (!products.length) throw Error("対象商品がありません。「おみ霊箱のみ」の選択や商品名を確認してください");
+    products.sort((a,b)=>(a.code||a.name||"").localeCompare(b.code||b.name||"","ja"));
+    const sheet = XLSX.utils.aoa_to_sheet([OPENING_STOCK_HEADERS,...products.map(p=>[p.id,String(p.code||""),p.name||"",p.unit||"",""])]);
+    sheet["!cols"]=[{wch:30},{wch:20},{wch:38},{wch:10},{wch:16}];
+    sheet["!autofilter"]={ref:sheet["!ref"]};
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,sheet,"開始在庫入力");
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+      ["開始在庫の入力方法"],
+      ["開始在庫入力シートの「開始在庫数」のみ入力してください。商品ID・コード・名称・単位は変えないでください。"],
+      ["空欄は変更しません。0は在庫0として登録します。箱換算は行いません。登録単位の総数を入力してください。"],
+      ["現在庫0・開始在庫未登録の商品が対象です。1回150商品まで。商品は新規作成しません。"],
+      ["取り込み前に他の端末の在庫操作を止め、画面の照合結果を確認してください。"],
+      ["登録後に初期化を実行すると入力した開始在庫も0になります。初期化は先に行ってください。"]
+    ]),"入力方法");
+    wb.Sheets["入力方法"]["!cols"]=[{wch:115}];
+    XLSX.writeFile(wb,"開始在庫入力_商品一覧.xlsx");
+    openingStockStatus(products.length+"商品の入力表を出力しました。「開始在庫数」を入力し、この欄で読み込んでください。");
+  } catch(err) { openingStockStatus(err.message || "入力表を出力できませんでした"); }
+}
+async function handleOpeningStockFile(e) {
+  invalidateOpeningStock();
+  const generation=openingStockGeneration, uid=auth.currentUser?.uid;
+  const file=e.target.files[0];
+  if (!file || !inventoryWritesAllowed() || openingStockBusy) return;
+  openingStockStatus("Excelを読み込み、最新の商品情報と照合しています…");
+  try {
+    if(typeof XLSX === "undefined") throw Error("Excel機能が読み込まれていません");
+    const workbook=XLSX.read(await file.arrayBuffer(),{type:"array"});
+    const sheet=workbook.Sheets["開始在庫入力"] || workbook.Sheets[workbook.SheetNames[0]];
+    const matrix=XLSX.utils.sheet_to_json(sheet,{header:1,defval:"",raw:false,blankrows:true});
+    const headers=(matrix[0] || []).map(openingText);
+    if (!headers.includes("開始在庫数") || !headers.some(h=>["商品ID","商品コード","商品名"].includes(h))) throw Error("1行目の見出しが違います。開始在庫用の入力表を使ってください");
+    if (headers.some((h,i)=>h&&headers.indexOf(h)!==i)) throw Error("同じ列名が重複しています");
+    const rows=matrix.slice(1).map(row=>Object.fromEntries(headers.map((h,i)=>[h,row[i]??""])));
+    const snapshot=await db.collection(COLLECTION).get({source:"server"});
+    const plan=buildOpeningStockPlan(rows,snapshot.docs.map(d=>({...d.data(),id:d.id})));
+    if(generation!==openingStockGeneration || uid!==auth.currentUser?.uid || inventoryResetLocked || !inventoryControlReady)return;
+    openingStockPlan=plan;
+    const body=document.getElementById("openingStockPreview");body.replaceChildren();
+    plan.forEach(p=>{const tr=document.createElement("tr");[p.code,p.name,"0",p.qty,p.unit].forEach(value=>{const td=document.createElement("td");td.textContent=String(value);tr.appendChild(td);});body.appendChild(tr);});
+    openingStockStatus(plan.length+"商品を照合しました。現在庫0から入力数に設定します。空欄の行は変更しません。");
+    document.getElementById("openingStockApplyBtn").disabled=false;
+  } catch(err) { if(generation===openingStockGeneration)openingStockStatus(err.message || "読み込みに失敗しました"); }
+}
+async function commitOpeningStock(plan, importId, staff) {
+  const refs=plan.map(p=>db.collection(COLLECTION).doc(p.id));
+  const movementRefs=plan.map(()=>db.collection(MOVEMENTS_COLLECTION).doc());
+  await db.runTransaction(async tx=>{
+    await requireNoActiveReset(tx);
+    const docs=[];
+    for(const ref of refs)docs.push(await tx.get(ref));
+    docs.forEach((doc,i)=>{
+      if(!doc.exists)throw Error("商品が削除されました。Excelを読み込み直してください");
+      const p=doc.data(), row=plan[i];
+      if(p.openingStockImportId || Number(p.currentStock||0)!==0 || Number(p.reservedStock||0)!==0 || (p.name||"")!==row.name || (p.code||"")!==row.code || (p.unit||"")!==row.unit) throw Error("商品・在庫情報が変わりました："+row.name+"。Excelを読み込み直してください");
+    });
+    const timestamp=firebase.firestore.FieldValue.serverTimestamp();
+    plan.forEach((row,i)=>{
+      tx.update(refs[i],{currentStock:row.qty,openingStockImportId:importId,openingStockImportedAt:timestamp});
+      if(row.qty>0)tx.set(movementRefs[i],{productId:row.id,productName:row.name,unit:row.unit,type:"in",qty:row.qty,note:"運用開始時の開始在庫（Excel一括入力）",staff,createdAt:timestamp,openingStockImportId:importId});
+    });
+  });
+}
+async function applyOpeningStock() {
+  if(!inventoryWritesAllowed() || openingStockBusy || !openingStockPlan)return;
+  const plan=openingStockPlan.map(p=>({...p}));
+  if(!confirm(plan.length+"商品の開始在庫を登録します。数量は加算ではなく、現在庫0から入力数に設定します。実行しますか？"))return;
+  openingStockBusy=true;document.getElementById("openingStockApplyBtn").disabled=true;
+  document.getElementById("openingStockFile").disabled=true;
+  try {
+    await commitOpeningStock(plan,"opening-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2),currentStaffName);
+    invalidateOpeningStock();document.getElementById("openingStockFile").value="";
+    openingStockStatus(plan.length+"商品の開始在庫を登録しました。数量が1以上の行は入出庫履歴に「運用開始時の開始在庫」として残しました。");
+    showToast("開始在庫を登録しました");
+  } catch(err) {
+    invalidateOpeningStock();
+    openingStockStatus((err.message||"登録結果を確認できませんでした")+"\n在庫一覧と履歴を確認してからExcelを読み込み直してください。");
+  } finally {openingStockBusy=false;document.getElementById("openingStockFile").disabled=false;}
+}
+function initOpeningStockTools() {
+  document.getElementById("openingStockExportBtn").addEventListener("click",exportOpeningStockSheet);
+  document.getElementById("openingStockFile").addEventListener("change",handleOpeningStockFile);
+  document.getElementById("openingStockApplyBtn").addEventListener("click",applyOpeningStock);
+  auth.onAuthStateChanged(()=>invalidateOpeningStock());
+}
+
+window.KOBUNSHA_APP_VERSION = "2026-10-28-opening-stock-qr-v21";
 init();
 
 
