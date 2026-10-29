@@ -890,6 +890,41 @@
   .pilot-panel summary { cursor:pointer; font-weight:600; }
   .pilot-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
   .pilot-actions input { flex:1; min-width:160px; margin:0; }
+
+  /* 在庫一覧：商品を1行ずつ比較できる表 */
+  .inventory-list-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:10px; font-size:13px; color:#685f52; }
+  #productListCount { font-weight:700; color:var(--indigo-deep); }
+  .inventory-table-scroll { overflow:auto; max-height:70vh; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .inventory-table-scroll:empty { display:none; }
+  .inventory-table-scroll:focus-visible { outline:3px solid var(--indigo); outline-offset:3px; }
+  .inventory-grid { width:100%; min-width:820px; border-collapse:separate; border-spacing:0; table-layout:auto; font-size:14px; }
+  .inventory-grid th { position:sticky; top:0; z-index:1; background:#314563; color:white; padding:13px 12px; text-align:left; font-weight:700; white-space:nowrap; border-right:1px solid #52627b; }
+  .inventory-grid th:last-child { border-right:0; }
+  .inventory-grid td { padding:12px; border-bottom:1px solid #e2ded6; vertical-align:top; }
+  .inventory-grid tbody tr:last-child td { border-bottom:0; }
+  .inventory-grid tbody tr:nth-child(even) { background:#faf9f6; }
+  .inventory-grid tbody tr.inventory-low { background:var(--warn-bg); }
+  .inventory-grid tbody tr:hover { background:#eef2f7; }
+  .inventory-grid .inventory-code { width:120px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .inventory-grid .inventory-name { min-width:230px; overflow-wrap:anywhere; }
+  .inventory-product-name { font-weight:600; }
+  .inventory-grid .inventory-stock { width:100px; text-align:right; font-variant-numeric:tabular-nums; }
+  .inventory-stock strong { font-size:18px; }
+  .inventory-low-label { display:block; color:#9d302a; font-size:11px; white-space:nowrap; margin-top:4px; }
+  .inventory-grid .inventory-unit { width:60px; text-align:center; }
+  .inventory-grid .inventory-price { width:100px; text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .inventory-grid .inventory-action { width:200px; }
+  .inventory-buttons { display:flex; align-items:center; gap:8px; white-space:nowrap; }
+  .inventory-edit { background:none; border:0; padding:7px 3px; font:inherit; cursor:pointer; color:var(--indigo-deep); text-decoration:underline; }
+  .inventory-details { margin-top:6px; color:#685f52; font-size:12px; }
+  .inventory-details summary { cursor:pointer; width:fit-content; }
+  .inventory-details dl { display:grid; grid-template-columns:76px minmax(0,1fr); gap:5px 8px; margin:8px 0 0; }
+  .inventory-details dt { font-weight:600; }
+  .inventory-details dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .inventory-select { width:44px; text-align:center!important; }
+  .inventory-select input { width:20px; height:20px; }
+  .visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
 </style>
 </head>
 <body>
@@ -978,8 +1013,8 @@
       <div class="chip-group" id="categoryChips"></div>
       <br>
 
-      <div class="product-columns" aria-hidden="true"><span>商品名</span><span>商品コード</span><span>仕入れ先</span><span>単価</span><span>ロット</span><span>分類</span><span>備考</span></div>
-      <div class="product-list" id="productList"></div>
+      <div class="inventory-list-heading"><span id="productListCount" role="status">表示：0商品</span><span>商品名の「詳細」で仕入れ先・ロット・分類・備考を確認できます。画面が狭い場合は表を横にスクロールしてください。</span></div>
+      <div class="inventory-table-scroll" id="productList" tabindex="0" role="region" aria-label="商品在庫一覧（横スクロール可能）"></div>
       <div class="empty-state" id="emptyState" style="display:none;">該当する商品がありません</div>
     </section>
 
@@ -1517,11 +1552,11 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-qr.js?v=20261028-opening-stock-qr-v21"></script>
+<script src="app-qr.js?v=20261029-product-table-qr-v22"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-10-28-opening-stock-qr-v21") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-10-29-product-table-qr-v22") {
     const notice = document.createElement("div");
-    notice.textContent = "画面とプログラムの版が一致しません。GitHubの app.js も最新版に置き換えて再読み込みしてください。";
+    notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-qr.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
     document.body.appendChild(notice);
   }
