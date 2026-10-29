@@ -379,33 +379,50 @@ function renderProductList() {
 
   listEl.innerHTML = "";
   emptyEl.style.display = items.length === 0 ? "block" : "none";
-
-  items.forEach(p => {
-    const isLow = Number(p.currentStock) <= Number(p.minStock);
-    const row = document.createElement("div");
-    row.className = "product-row" + (isLow ? " low" : "");
-    row.innerHTML = `
-      ${bulkMode ? `<input type="checkbox" class="bulk-check" data-id="${p.id}" ${bulkSelected.has(p.id) ? "checked" : ""} aria-label="${escapeHtml(p.name)}を選択" style="width:20px;flex-shrink:0;">` : ""}
-      <div class="product-fields">
-        <div class="product-field"><span class="field-label">商品名</span>${escapeHtml(p.name || "")}</div>
-        <div class="product-field"><span class="field-label">商品コード</span>${escapeHtml(p.code || "―")}</div>
-        <div class="product-field"><span class="field-label">仕入れ先</span>${escapeHtml(p.supplier || "―")}</div>
-        <div class="product-field"><span class="field-label">単価</span>¥${Number(p.price || 0).toLocaleString()}</div>
-        <div class="product-field"><span class="field-label">ロット</span>${escapeHtml(p.lot || "―")}</div>
-        <div class="product-field"><span class="field-label">分類</span>${escapeHtml(p.category || "未分類")}</div>
-        <div class="product-field"><span class="field-label">備考</span>${escapeHtml(p.note || "―")}</div>
-      </div>
-      <div class="product-actions"><div class="stock-control" title="現在庫数（僅少ライン：${Number(p.minStock || 0)}）">
-        <div class="stock-num ${isLow ? "low" : ""}">${p.currentStock ?? 0}</div>
-        <span style="font-size:11px;color:#8a8272;">${escapeHtml(p.unit || "")}</span>
-      </div>
-      <button class="btn-move" data-action="move" data-id="${p.id}">入出庫</button>
-      <button class="btn-qr" data-id="${p.id}">QR</button>
-      <a class="edit-link" data-id="${p.id}">編集</a>
-      </div>
-    `;
-    listEl.appendChild(row);
-  });
+  document.getElementById("productListCount").textContent = `表示：${items.length}商品`;
+  if (items.length) {
+    const table = document.createElement("table");
+    table.className = "inventory-grid";
+    table.innerHTML = `<caption class="visually-hidden">商品在庫一覧</caption><thead><tr>
+      ${bulkMode ? '<th scope="col" class="inventory-select">選択</th>' : ''}
+      <th scope="col" class="inventory-code">商品コード</th>
+      <th scope="col" class="inventory-name">商品名</th>
+      <th scope="col" class="inventory-stock">現在庫数</th>
+      <th scope="col" class="inventory-unit">単位</th>
+      <th scope="col" class="inventory-price">単価</th>
+      <th scope="col" class="inventory-action">操作</th>
+    </tr></thead>`;
+    const tbody = document.createElement("tbody");
+    items.forEach(p => {
+      const isLow = Number(p.currentStock ?? 0) <= Number(p.minStock ?? 0);
+      const id = escapeHtml(p.id);
+      const row = document.createElement("tr");
+      row.className = isLow ? "inventory-low" : "";
+      row.innerHTML = `
+        ${bulkMode ? `<td class="inventory-select"><input type="checkbox" class="bulk-check" data-id="${id}" ${bulkSelected.has(p.id) ? "checked" : ""} aria-label="${escapeHtml(p.name || '')}を選択"></td>` : ''}
+        <td class="inventory-code">${escapeHtml(p.code || "―")}</td>
+        <td class="inventory-name"><span class="inventory-product-name">${escapeHtml(p.name || "商品名未登録")}</span>
+          <details class="inventory-details"><summary>詳細</summary><dl>
+            <dt>仕入れ先</dt><dd>${escapeHtml(p.supplier || "―")}</dd>
+            <dt>ロット</dt><dd>${escapeHtml(p.lot || "―")}</dd>
+            <dt>分類</dt><dd>${escapeHtml(p.category || "未分類")}</dd>
+            <dt>備考</dt><dd>${escapeHtml(p.note || "―")}</dd>
+            <dt>僅少ライン</dt><dd>${Number(p.minStock || 0).toLocaleString("ja-JP")}${escapeHtml(p.unit || "")}</dd>
+          </dl></details>
+        </td>
+        <td class="inventory-stock"><strong>${Number(p.currentStock ?? 0).toLocaleString("ja-JP")}</strong>${isLow ? '<span class="inventory-low-label">在庫僅少</span>' : ''}</td>
+        <td class="inventory-unit">${escapeHtml(p.unit || "―")}</td>
+        <td class="inventory-price">¥${Number(p.price || 0).toLocaleString("ja-JP")}</td>
+        <td class="inventory-action"><div class="inventory-buttons">
+          <button type="button" class="btn-move" data-action="move" data-id="${id}">入出庫</button>
+          <button type="button" class="btn-qr" data-id="${id}">QR</button>
+          <button type="button" class="inventory-edit edit-link" data-id="${id}">編集</button>
+        </div></td>`;
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    listEl.appendChild(table);
+  }
 
   listEl.querySelectorAll(".bulk-check").forEach(box => box.addEventListener("change", () => { if (box.checked) bulkSelected.add(box.dataset.id); else bulkSelected.delete(box.dataset.id); updateBulkButton(); }));
   listEl.querySelectorAll(".btn-move").forEach(btn => {
@@ -3287,7 +3304,7 @@ function initOpeningStockTools() {
   auth.onAuthStateChanged(()=>invalidateOpeningStock());
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-28-opening-stock-qr-v21";
+window.KOBUNSHA_APP_VERSION = "2026-10-29-product-table-qr-v22";
 init();
 
 
