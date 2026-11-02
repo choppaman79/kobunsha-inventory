@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>弘文社 在庫管理 JANバーコード版</title>
+<style>
+  :root {
+    --ink: #23282b;
+    --paper: #f6f3ec;
+    --panel: #ffffff;
+    --line: #ddd6c4;
+    --indigo: #2f4156;
+    --indigo-deep: #1f2d3d;
+    --bronze: #a8763e;
+    --bronze-soft: #e9dcc3;
+    --warn-bg: #fbeceb;
+    --warn-text: #a3392b;
+    --ok-text: #4a6b4f;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- ログイン画面 ---------- */
+  #loginScreen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .login-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 36px 30px;
+    width: 100%;
+    max-width: 360px;
+  }
+  .login-card h1 {
+    font-size: 20px;
+    letter-spacing: .02em;
+    margin: 0 0 4px;
+    color: var(--indigo-deep);
+  }
+  .login-card p.sub {
+    margin: 0 0 24px;
+    color: #6b6357;
+    font-size: 13px;
+  }
+  select, input[type=password], input[type=text], input[type=number], input[type=date] {
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    font-size: 15px;
+    color: var(--ink);
+    margin-bottom: 14px;
+  }
+  select:focus, input:focus {
+    outline: none;
+    border-color: var(--bronze);
+    box-shadow: 0 0 0 3px var(--bronze-soft);
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+  }
+  .btn-primary {
+    width: 100%;
+    padding: 12px;
+    background: var(--indigo);
+    color: #fff;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+  .btn-primary:hover { background: var(--indigo-deep); }
+  .error-msg {
+    color: var(--warn-text);
+    font-size: 13px;
+    margin: -6px 0 14px;
+    min-height: 16px;
+  }
+
+  /* ---------- アプリ本体 ---------- */
+  #appScreen { display: none; min-height: 100vh; }
+  header.topbar {
+    background: var(--indigo-deep);
+    color: #f2efe6;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header.topbar .title {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .03em;
+  }
+  header.topbar .who {
+    font-size: 12px;
+    color: #c9c2b0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header.topbar button.logout {
+    background: transparent;
+    color: #c9c2b0;
+    font-size: 12px;
+    text-decoration: underline;
+    padding: 4px;
+  }
+
+  main {
+    max-width: 1520px;
+    margin: 0 auto;
+    padding: 24px clamp(16px, 2.5vw, 36px) 80px;
+  }
+
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tab-btn {
+    background: transparent;
+    padding: 10px 16px;
+    font-size: 16px;
+    color: #756b5c;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab-btn.active {
+    color: var(--indigo-deep);
+    border-bottom-color: var(--bronze);
+    font-weight: 600;
+  }
+  .tab-badge {
+    display: inline-block;
+    min-width: 18px;
+    padding: 1px 5px;
+    margin-left: 4px;
+    border-radius: 999px;
+    background: var(--warn-text);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    vertical-align: middle;
+  }
+
+  /* ---------- Phase4: 発注管理 ---------- */
+  .low-stock-alert {
+    background: var(--warn-bg);
+    border: 1px solid #e3b2ab;
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+  .low-stock-alert-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--warn-text);
+  }
+  .low-stock-alert-row {
+    font-size: 12.5px;
+    color: var(--ink);
+    padding: 3px 0;
+  }
+  .slip-status.cancelled { background: #ece7dd; color: #756b5c; }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+  .toolbar input[type=text] { margin: 0; max-width: 340px; }
+  .toolbar select { margin: 0; max-width: 160px; }
+  .chip-group { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    font-size: 13px;
+    color: #5c5648;
+  }
+  .chip.active {
+    background: var(--indigo);
+    border-color: var(--indigo);
+    color: #fff;
+  }
+
+  .spacer { flex: 1; }
+  .btn-add {
+    background: var(--bronze);
+    color: #fff;
+    padding: 9px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .btn-add:hover { background: #8f622f; }
+
+  .summary-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .summary-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    min-width: 110px;
+  }
+  .summary-card .num { font-size: 22px; font-weight: 700; color: var(--indigo-deep); }
+  .summary-card .lbl { font-size: 11px; color: #8a8272; margin-top: 2px; }
+  .summary-card.warn .num { color: var(--warn-text); }
+
+  .product-list { display: flex; flex-direction: column; gap: 8px; }
+  .product-columns, .product-fields {
+    display: grid;
+    grid-template-columns: minmax(180px,2fr) minmax(95px,1fr) minmax(110px,1.2fr) minmax(90px,.9fr) minmax(75px,.7fr) minmax(95px,.9fr) minmax(130px,1.4fr);
+    align-items: center; gap: 12px;
+  }
+  .product-columns { padding: 0 258px 0 14px; font-size: 13px; font-weight: 700; color: #625a4f; }
+  .product-columns > span, .product-field { min-width: 0; overflow-wrap: anywhere; }
+  .product-columns > span:not(:first-child), .product-field:not(:first-child) {
+    border-left:1px solid var(--line); padding-left:10px;
+  }
+  .product-fields { flex: 1; min-width: 0; font-size: 15px; }
+  .product-field:first-child { font-weight: 700; color: var(--indigo-deep); }
+  .field-label { display: none; }
+  .product-actions { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
+  @media (max-width: 1200px) {
+    .product-columns { display: none; }
+    .product-row { flex-wrap: wrap; }
+    .product-fields { grid-template-columns: repeat(2,minmax(0,1fr)); flex-basis: 100%; }
+    .field-label { display: block; font-size: 12px; font-weight: 400; color: #786f64; margin-bottom: 2px; }
+    .product-actions { margin-left: auto; }
+  }
+  @media (max-width: 560px) {
+    .product-fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .product-actions { width: 100%; flex-wrap: wrap; }
+  }
+  .product-row {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .product-row.low { border-color: #e3b2ab; background: var(--warn-bg); }
+  .product-main { flex: 1; min-width: 0; }
+  .product-name { font-size: 16px; font-weight: 600; color: var(--indigo-deep); }
+  .product-meta { font-size: 12px; color: #8a8272; margin-top: 2px; }
+  .cat-tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--bronze-soft);
+    color: #6b4a20;
+    margin-right: 6px;
+  }
+  .stock-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .stock-btn {
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    font-size: 16px;
+    color: var(--indigo-deep);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stock-btn:hover { background: var(--bronze-soft); }
+  .stock-num { min-width: 42px; text-align: center; font-size: 16px; font-weight: 700; }
+  .stock-num.low { color: var(--warn-text); }
+  .edit-link {
+    font-size: 12px;
+    color: #8a8272;
+    text-decoration: underline;
+    margin-left: 8px;
+    white-space: nowrap;
+  }
+  .btn-move {
+    background: var(--indigo);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .btn-move:hover { background: var(--indigo-deep); }
+
+  /* ---------- 入出庫モーダル ---------- */
+  .move-type-group {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .move-type-btn {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    font-size: 14px;
+    font-weight: 600;
+    color: #6b6357;
+  }
+  .move-type-btn.active[data-type="in"] {
+    background: #e8f0e9;
+    border-color: var(--ok-text);
+    color: var(--ok-text);
+  }
+  .move-type-btn.active[data-type="out"] {
+    background: var(--warn-bg);
+    border-color: var(--warn-text);
+    color: var(--warn-text);
+  }
+
+  /* ---------- 入出庫履歴 ---------- */
+  .history-list { display: flex; flex-direction: column; gap: 8px; }
+  .history-row {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .history-main { flex: 1; min-width: 0; }
+  .history-top { display: flex; align-items: center; gap: 8px; }
+  .history-type {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .history-type.in { background: #e8f0e9; color: var(--ok-text); }
+  .history-type.out { background: var(--warn-bg); color: var(--warn-text); }
+  .history-name { font-size: 14px; font-weight: 600; color: var(--indigo-deep); }
+  .history-meta { font-size: 12px; color: #8a8272; margin-top: 3px; }
+  .history-qty { font-size: 16px; font-weight: 700; white-space: nowrap; }
+  .history-qty.in { color: var(--ok-text); }
+  .history-qty.out { color: var(--warn-text); }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #8a8272;
+    font-size: 14px;
+  }
+
+  /* ---------- モーダル ---------- */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(31,45,61,.45);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 100;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--panel);
+    border-radius: var(--radius);
+    padding: 26px 24px;
+    width: 100%;
+    max-width: 400px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal h2 { font-size: 16px; margin: 0 0 18px; color: var(--indigo-deep); }
+  .modal label {
+    display: block;
+    font-size: 12px;
+    color: #6b6357;
+    margin: 0 0 4px;
+  }
+  .modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .btn-secondary {
+    flex: 1;
+    padding: 11px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 14px;
+    color: #6b6357;
+  }
+  .btn-danger {
+    padding: 11px 14px;
+    background: transparent;
+    border: 1px solid #e3b2ab;
+    color: var(--warn-text);
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .modal .btn-primary { flex: 2; }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--indigo-deep);
+    color: #fff;
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: all .25s ease;
+    z-index: 200;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .btn-qr {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    color: var(--indigo-deep);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .btn-qr:hover { background: var(--bronze-soft); }
+  .btn-secondary-inline {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: #5c5648;
+    padding: 9px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .btn-secondary-inline:hover { background: var(--bronze-soft); }
+
+  .section-divider { border: none; border-top: 1px solid var(--line); margin: 26px 0 20px; }
+  .section-title { font-size: 15px; color: var(--indigo-deep); margin: 0 0 6px; }
+
+  /* ---------- エクセルプレビュー ---------- */
+  .excel-preview-scroll { max-height: 460px; overflow-y: auto; overflow-x:hidden; border: 1px solid var(--line); border-radius: 8px; }
+  .excel-preview-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .excel-preview-table th, .excel-preview-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    white-space: nowrap;
+  }
+  .excel-preview-table th { background: var(--paper); position: sticky; top: 0; }
+  .excel-preview-table, .excel-preview-table tbody { display:block; }
+  .excel-preview-table thead { display:none; }
+  .excel-preview-table tr { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-bottom:1px solid var(--line); padding:8px; }
+  .excel-preview-table td { white-space:normal; overflow-wrap:anywhere; border:0; }
+  .excel-preview-table td::before { content:attr(data-label); display:block; color:#685f52; font-size:12px; font-weight:700; margin-bottom:3px; }
+
+  /* ---------- 伝票一覧 ---------- */
+  .slip-list { display: flex; flex-direction: column; gap: 8px; }
+  .slip-row {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    cursor: pointer;
+  }
+  .slip-row:hover { border-color: var(--bronze); }
+  .slip-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .slip-number { font-size: 13px; font-weight: 700; color: var(--indigo-deep); }
+  .slip-status {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--warn-bg);
+    color: var(--warn-text);
+  }
+  .slip-status.done { background: #e8f0e9; color: var(--ok-text); }
+
+  .btn-add-in { background: var(--ok-text, #3d7a4d); }
+  .btn-add-in:hover { filter: brightness(0.95); }
+
+  .slip-type-badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 999px;
+    margin-bottom: 16px;
+  }
+  .slip-type-badge.out { background: var(--warn-bg); color: var(--warn-text); }
+  .slip-type-badge.in { background: #e8f0e9; color: var(--ok-text); }
+
+  /* ---------- 伝票作成：品目エディタ ---------- */
+  .slip-items-editor { display: flex; flex-direction: column; gap: 6px; }
+  .slip-item-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  .slip-item-name { flex: 1; }
+  .slip-item-remove {
+    background: transparent; color: var(--warn-text); font-size: 16px; font-weight: 700; padding: 0 4px;
+  }
+
+  .slip-selected-card {
+    background: #e8f0e9;
+    border: 1px solid var(--ok-text, #3d7a4d);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  .slip-selected-name { font-size: 14.5px; font-weight: 700; color: var(--indigo-deep); }
+  .slip-selected-meta { font-size: 12px; color: #4c6b53; margin-top: 2px; }
+  .slip-item-price { font-size: 12px; color: #6b6357; margin-top: 2px; }
+  .slip-item-remark { font-size: 12px; color: #6b6357; font-style: italic; }
+
+  /* ---------- 伝票フォーマル表示（発行日・取引先・自社情報など） ---------- */
+  .slip-formal-header {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: start;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .slip-formal-header h2 {
+    font-size: clamp(15px, 4.2vw, 18px);
+  }
+  .slip-formal-header-qr {
+    justify-self: center;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .slip-formal-header-qr .slip-formal-header-qr-label {
+    font-size: clamp(9px, 2.4vw, 10.5px);
+    color: #8a8272;
+  }
+  .slip-formal-companybox {
+    justify-self: end;
+    text-align: left; font-size: clamp(10px, 2.6vw, 11.5px); color: #6b6357; line-height: 1.6; white-space: nowrap;
+  }
+  .slip-formal-companyname {
+    font-size: clamp(12.5px, 3.4vw, 14.5px); font-weight: 700; color: var(--indigo-deep); margin-top: 3px;
+  }
+  .slip-formal-table {
+    width: 100%; border-collapse: collapse; font-size: clamp(11px, 3vw, 12.5px); margin-bottom: 12px;
+  }
+  .slip-formal-table th, .slip-formal-table td {
+    border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top;
+  }
+  .slip-formal-table th {
+    background: var(--paper); color: #6b6357; font-weight: 700; width: 84px; white-space: nowrap;
+  }
+
+  /* ---------- 伝票詳細テーブル ---------- */
+  .slip-detail-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .slip-detail-table { width: 100%; border-collapse: collapse; font-size: clamp(11px, 3vw, 12.5px); margin-top: 6px; }
+  .slip-detail-table th, .slip-detail-table td {
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+  }
+  .slip-detail-table th { white-space:nowrap; }
+  #orderDetailOverlay .slip-detail-table { table-layout:fixed; }
+  #orderDetailOverlay .slip-detail-table td { overflow-wrap:anywhere; }
+  #orderDetailOverlay .order-received-qty { width:100%; min-width:0; }
+  @media screen {
+    #slipDetailOverlay .slip-detail-table, #orderDetailOverlay .slip-detail-table,
+    #slipDetailOverlay .slip-detail-table tbody, #orderDetailOverlay .slip-detail-table tbody { display:block; width:100%; }
+    #slipDetailOverlay .slip-detail-table thead, #orderDetailOverlay .slip-detail-table thead { display:none; }
+    #slipDetailOverlay .slip-detail-table tbody tr, #orderDetailOverlay .slip-detail-table tbody tr {
+      display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border:1px solid var(--line); border-radius:8px; padding:6px; margin:8px 0;
+    }
+    #slipDetailOverlay .slip-detail-table tbody td, #orderDetailOverlay .slip-detail-table tbody td { min-width:0; overflow-wrap:anywhere; }
+    #slipDetailOverlay .slip-detail-table tbody td::before, #orderDetailOverlay .slip-detail-table tbody td::before {
+      content:attr(data-label); display:block; color:#6b6357; font-size:12px; font-weight:700; margin-bottom:3px;
+    }
+    #slipDetailOverlay .slip-detail-table tfoot, #slipDetailOverlay .slip-detail-table tfoot tr { display:block; }
+    #slipDetailOverlay .slip-detail-table tfoot td { display:inline-block; }
+  }
+  .slip-detail-table tfoot td { border-bottom: none; border-top: 2px solid var(--ink); padding-top: 10px; }
+  .slip-check-qty { width: 64px; margin: 0; padding: 6px; }
+  .print-only { display: none; }
+  .print-sheet { display: none; }
+  .print-sheet .fill-blank { border-bottom: 1px solid var(--ink); display: inline-block; width: 100%; min-height: 16px; }
+  .print-sheet .checkbox-glyph { font-size: 15px; text-align: center; }
+
+  /* ---------- Brother QL-800用の1枚ずつのラベル ---------- */
+  @page brother-qr { size: 23mm 23mm; margin: 2mm; }
+  @page brother-pick { size: 62mm 29mm; margin: 0; }
+  .brother-label-list { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-start; }
+  .brother-group-title { width:100%; font-size:13px; font-weight:700; color:var(--indigo-deep); }
+  .brother-qr-label, .brother-pick-label { box-sizing:border-box; background:#fff; color:#000; border:1px dashed var(--line); overflow:hidden; flex:0 0 auto; }
+  .brother-qr-label { width:23mm; height:23mm; padding:2mm; border:0; outline:1px dashed var(--line); display:flex; flex-direction:column; gap:.8mm; align-items:center; justify-content:center; }
+  .brother-qr-image, .brother-qr-image canvas, .brother-qr-image img { width:13.5mm !important; height:13.5mm !important; display:block; }
+  .brother-qr-image { flex:0 0 13.5mm; }
+  .brother-qr-name { width:100%; height:4.3mm; flex:0 0 4.3mm; font-size:5pt; font-weight:700; line-height:2.1mm; text-align:center; overflow:hidden; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .brother-pick-label { width:62mm; height:29mm; padding:1.5mm 2mm; display:flex; align-items:center; gap:1.4mm; }
+  .brother-pick-qr { width:21mm; height:21mm; padding:.6mm; box-sizing:border-box; flex:0 0 auto; }
+  .brother-pick-qr canvas, .brother-pick-qr img { width:19.8mm !important; height:19.8mm !important; display:block; }
+  .brother-pick-info { flex:1; min-width:0; font-size:7pt; line-height:1.25; display:flex; flex-direction:column; gap:.7mm; overflow:hidden; }
+  .brother-pick-name { font-weight:700; font-size:8pt; line-height:1.2; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; }
+  .brother-pick-price { font-weight:700; }
+  .brother-pick-meta { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .brother-print-hint { font-size:12px; color:#6b6357; line-height:1.5; margin:0 0 14px; }
+
+  /* ---------- 印刷用スタイル ---------- */
+  @page { margin: 10mm; }
+  @media print {
+    #loginScreen, #appScreen { display: none !important; }
+    .modal-overlay { display: none !important; }
+    body.label-print .modal-overlay.show:not(#qrBulkOverlay) { display: none !important; }
+    body.slip-print .modal-overlay.show:not(#slipDetailOverlay) { display: none !important; }
+    body.order-print .modal-overlay.show:not(#orderDetailOverlay) { display:none !important; }
+    body.order-print #orderDetailOverlay .modal-actions { display:none !important; }
+    body.order-print #orderReceivedQtyHint, body.order-print #orderDetailDoneNote,
+    body.order-print #orderDetailCancelledNote { display:none !important; }
+    body.label-print #slipPrintSheet { display: none !important; }
+    .modal-overlay.show {
+      display: block !important; position: static !important;
+      background: none !important; padding: 0 !important;
+    }
+    .modal-overlay.show .modal {
+      width: 100% !important; max-width: 100% !important;
+      max-height: none !important; overflow: visible !important;
+      box-shadow: none !important; border: none !important;
+      margin: 0 !important; padding: 0 !important;
+    }
+    body.label-print { margin:0 !important; padding:0 !important; }
+    body.label-print #qrBulkPrintArea.brother-qr-mode { width:19mm !important; max-width:19mm !important; page:brother-qr; }
+    body.label-print .brother-qr-label { width:19mm !important; height:18.8mm !important; padding:0 !important; margin:0 !important; outline:0 !important; }
+    body.label-print #qrBulkPrintArea.brother-pick-mode { width:62mm !important; max-width:62mm !important; page:brother-pick; }
+    body.label-print #qrBulkGrid { display:block !important; }
+    body.label-print .brother-group-title { display:none !important; }
+    body.label-print .brother-qr-label, body.label-print .brother-pick-label { border:0 !important; break-inside:avoid; }
+    body.label-print .brother-qr-label:not(.last-label), body.label-print .brother-pick-label:not(.last-label) { break-after:page; }
+    .no-print { display: none !important; }
+    .print-sheet { display: block !important; }
+    .print-only { display: table-cell !important; }
+  }
+
+  /* ---------- カメラスキャン (Phase3) ---------- */
+  .scan-video-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .scan-video-wrap video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .scan-frame {
+    position: absolute;
+    top: 15%; left: 15%; right: 15%; bottom: 15%;
+    border: 2px solid #fff;
+    border-radius: 10px;
+    box-shadow: 0 0 0 999px rgba(0,0,0,.25);
+    pointer-events: none;
+  }
+
+  /* ---------- ハンディスキャナー入力欄 (Phase3.5) ---------- */
+  .scanner-input {
+    border: 1.5px dashed var(--bronze);
+    background: var(--bronze-soft, #f5efe4);
+    font-size: 13px;
+    max-width: 260px;
+  }
+  .scanner-input:focus {
+    border-style: solid;
+    background: #fff;
+  }
+
+  .work-panel { background:#fff; padding:20px; border:1px solid var(--line); border-radius:10px; }
+  .work-panel h2 { margin:0 0 8px; font-size:20px; }
+  .work-panel p { color:#6b6357; font-size:14px; line-height:1.7; }
+  .work-panel label { font-size:14px; }
+  .work-panel input[type=month], .work-panel input[type=date] { padding:8px; border:1px solid var(--line); border-radius:6px; }
+  .work-scroll { max-width:100%; overflow-x:hidden; overflow-y:auto; border:1px solid var(--line); border-radius:8px; }
+  #tabStocktake .work-scroll, #tabFestival .work-scroll { max-height:72vh; }
+  .work-table, .work-table tbody { display:block; width:100%; font-size:14px; line-height:1.45; }
+  .work-table thead { display:none; }
+  .work-table tbody tr { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; border-bottom:1px solid var(--line); background:#fff; padding:8px; }
+  .work-table tbody tr:nth-child(even) { background:#f9f7f2; }
+  .work-table tbody td { display:block; min-width:0; padding:8px 10px; overflow-wrap:anywhere; }
+  .work-table tbody td:nth-child(2) { grid-column:span 2; font-weight:700; color:var(--indigo-deep); }
+  .work-table tbody td::before { content:attr(data-label); display:block; color:#6b6357; font-size:12px; font-weight:600; margin-bottom:4px; }
+  .work-table input, .work-table input[type=number] { margin:0; width:100%; min-width:0; padding:7px; }
+  @media (max-width:900px) {
+    .work-table tbody tr, .excel-preview-table tr { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .work-table tbody td:nth-child(2) { grid-column:span 1; }
+  }
+  @media (max-width:520px) {
+    .work-table tbody tr, .excel-preview-table tr { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .work-table tbody td:nth-child(2), .excel-preview-table td:first-child { grid-column:span 2; }
+  }
+  /* 棚卸し・月始祭は、横スクロールせず1商品を1行で表示 */
+  #tabStocktake .work-table, #tabFestival .work-table {
+    display:table; width:100%; min-width:0; table-layout:fixed; border-collapse:collapse;
+    font-size:clamp(9px, .85vw, 12px);
+  }
+  #tabStocktake .work-table thead, #tabFestival .work-table thead { display:table-header-group; }
+  #tabStocktake .work-table tbody, #tabFestival .work-table tbody { display:table-row-group; width:auto; }
+  #tabStocktake .work-table tbody tr, #tabFestival .work-table tbody tr { display:table-row; padding:0; }
+  #tabStocktake .work-table th, #tabFestival .work-table th,
+  #tabStocktake .work-table tbody td, #tabFestival .work-table tbody td {
+    display:table-cell; min-width:0; padding:5px 3px; border:1px solid var(--line);
+    vertical-align:middle; font-weight:normal; overflow-wrap:anywhere; word-break:normal;
+  }
+  #tabStocktake .work-table th, #tabFestival .work-table th {
+    position:sticky; top:0; z-index:1; background:#eee9df; font-weight:700;
+    white-space:normal; overflow-wrap:normal; word-break:keep-all;
+  }
+  #tabStocktake .work-table tbody td:nth-child(2), #tabFestival .work-table tbody td:nth-child(2) {
+    font-weight:700; color:var(--indigo-deep); overflow-wrap:anywhere;
+  }
+  #tabStocktake .work-table tbody td::before, #tabFestival .work-table tbody td::before { display:none; }
+  #tabStocktake .work-table input, #tabFestival .work-table input,
+  #tabStocktake .work-table input[type=number], #tabFestival .work-table input[type=number] {
+    width:100%; min-width:0; margin:0; padding:4px 2px; font-size:inherit;
+  }
+  #tabStocktake .work-table th:nth-child(1), #tabStocktake .work-table td:nth-child(1) { width:7%; }
+  #tabStocktake .work-table th:nth-child(2), #tabStocktake .work-table td:nth-child(2) { width:23%; }
+  #tabStocktake .work-table th:nth-child(3), #tabStocktake .work-table td:nth-child(3) { width:7%; }
+  #tabStocktake .work-table th:nth-child(n+4):nth-child(-n+9),
+  #tabStocktake .work-table td:nth-child(n+4):nth-child(-n+9) { width:8%; }
+  #tabStocktake .work-table th:nth-child(10), #tabStocktake .work-table td:nth-child(10) { width:5%; }
+  #tabStocktake .work-table th:nth-child(11), #tabStocktake .work-table td:nth-child(11) { width:10%; }
+  #tabFestival .work-table th:nth-child(1), #tabFestival .work-table td:nth-child(1) { width:7%; }
+  #tabFestival .work-table th:nth-child(2), #tabFestival .work-table td:nth-child(2) { width:23%; }
+  #tabFestival .work-table th:nth-child(3), #tabFestival .work-table td:nth-child(3) { width:7%; }
+  #tabFestival .work-table th:nth-child(4), #tabFestival .work-table td:nth-child(4) { width:9%; }
+  #tabFestival .work-table th:nth-child(n+5):nth-child(-n+9),
+  #tabFestival .work-table td:nth-child(n+5):nth-child(-n+9) { width:6%; }
+  #tabFestival .work-table th:nth-child(10), #tabFestival .work-table td:nth-child(10) { width:7%; }
+  #tabFestival .work-table th:nth-child(11), #tabFestival .work-table td:nth-child(11) { width:8%; }
+  #tabFestival .work-table th:nth-child(12), #tabFestival .work-table td:nth-child(12) { width:9%; }
+  @media (max-width:800px) {
+    #tabStocktake .work-table, #tabFestival .work-table { font-size:8px; }
+    #tabStocktake .work-table th, #tabFestival .work-table th,
+    #tabStocktake .work-table tbody td, #tabFestival .work-table tbody td { padding:3px 1px; }
+  }
+  #festivalPreparedPanel { margin-top:24px; padding-top:18px; border-top:2px solid var(--line); }
+  #festivalPreparedPanel h3 { margin:0 0 6px; font-size:17px; color:var(--indigo-deep); }
+  #festivalPreparedPanel #festivalPreparedPrintBtn { margin:4px 0 12px; }
+  #festivalPreparedPanel .work-table { display:table; width:100%; table-layout:fixed; border-collapse:collapse; font-size:13px; }
+  #festivalPreparedPanel .work-table thead { display:table-header-group; }
+  #festivalPreparedPanel .work-table tbody { display:table-row-group; width:auto; }
+  #festivalPreparedPanel .work-table tbody tr { display:table-row; padding:0; }
+  #festivalPreparedPanel .work-table th, #festivalPreparedPanel .work-table tbody td {
+    display:table-cell; padding:7px 6px; min-width:0; border:1px solid var(--line); overflow-wrap:anywhere;
+  }
+  #festivalPreparedPanel .work-table th { position:sticky; top:0; z-index:1; background:#eee9df; }
+  #festivalPreparedPanel .work-table tbody td::before { display:none; }
+  #festivalPreparedPanel .work-table th:nth-child(1), #festivalPreparedPanel .work-table td:nth-child(1) { width:12%; }
+  #festivalPreparedPanel .work-table th:nth-child(2), #festivalPreparedPanel .work-table td:nth-child(2) { width:45%; }
+  #festivalPreparedPanel .work-table th:nth-child(3), #festivalPreparedPanel .work-table td:nth-child(3) { width:15%; }
+  #festivalPreparedPanel .work-table th:nth-child(4), #festivalPreparedPanel .work-table td:nth-child(4) { width:14%; }
+  #festivalPreparedPanel .work-table th:nth-child(5), #festivalPreparedPanel .work-table td:nth-child(5) { width:14%; }
+  .work-actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+  .work-actions .btn-primary { width:auto; }
+  .work-status { margin:10px 0; font-size:15px; font-weight:600; }
+  .work-filter { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0; }
+  .work-filter select, .work-filter input { width:auto; min-width:150px; max-width:100%; margin:0; }
+  .work-filter .filter-count { font-size:13px; color:#6b6357; }
+  .work-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
+  .work-grid .btn-primary { max-width:250px; }
+  .supplier-order-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:14px; margin-bottom:16px; background:#fff; border:1px solid var(--line); border-radius:8px; }
+  .supplier-order-bar label { font-size:14px; font-weight:700; }
+  .supplier-order-bar select { width:min(360px,100%); margin:0; }
+  .supplier-picker { max-height:360px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; margin-bottom:10px; }
+  .supplier-picker-row { display:grid; grid-template-columns:minmax(0,1fr) 100px 90px; align-items:center; gap:8px; padding:9px; border-bottom:1px solid var(--line); font-size:14px; }
+  .supplier-picker-row:nth-child(even) { background:#f9f7f2; }
+  .supplier-picker-row small { display:block; color:#6b6357; }
+  .supplier-picker-row input { margin:0; min-width:0; }
+  .order-edit-qty { display:flex !important; align-items:center; gap:5px; margin:0 !important; white-space:nowrap; }
+  .order-edit-qty input { width:78px; margin:0; }
+  .verify-scanner-box { background:#f3f6f8; border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:12px; }
+  .verify-scanner-box .scanner-input { max-width:none; margin:9px 0 4px !important; }
+  .verify-scanner-box p { margin:6px 0; font-size:13px; line-height:1.5; }
+  .verify-scanner-box .scan-ready { color:var(--ok-text); font-weight:700; }
+  .verify-scanner-box .scan-warning { color:var(--warn-text); font-weight:700; }
+  @media (max-width:520px) { .supplier-picker-row { grid-template-columns:minmax(0,1fr) 78px; } .supplier-picker-row .supplier-stock { grid-column:1; } }
+  @page work-landscape { size:A4 landscape; margin:8mm; }
+  @media print {
+    body.work-print .modal-overlay.show { display:none !important; }
+    body.work-print #appScreen,
+    body.work-print main,
+    body.work-print .work-panel { display:block !important; padding:0 !important; margin:0 !important; border:0 !important; }
+    body.work-print .tabs,
+    body.work-print .topbar,
+    body.work-print .work-actions,
+    body.work-print .work-filter,
+    body.work-print .work-panel .toolbar button,
+    body.work-print .work-grid,
+    body.work-print #disasterProducts,
+    body.work-print #disasterHistory,
+    body.work-print main > section:not(.print-target) { display:none !important; }
+    body.work-print .work-panel { page:work-landscape; }
+    body.work-print .work-scroll { overflow:visible !important; max-height:none !important; border:0; }
+    body.work-print .work-table { display:table; width:100%; table-layout:fixed; border-collapse:collapse; font-size:9px; }
+    body.work-print .work-table thead { display:table-header-group; }
+    body.work-print .work-table tbody { display:table-row-group; }
+    body.work-print .work-table tbody tr { display:table-row; background:#fff; }
+    body.work-print .work-table th, body.work-print .work-table tbody td {
+      display:table-cell; min-width:0 !important; padding:3px; border:1px solid var(--line);
+      white-space:normal; word-break:keep-all; font-weight:normal;
+    }
+    body.work-print .work-table th { font-weight:700; background:#eee9df !important; }
+    body.work-print .work-table td::before { display:none; }
+    body.work-print .work-table input,
+    body.work-print .work-table input[type=number] {
+      width:100%; min-width:0; padding:0; border:0; background:transparent; font-size:9px;
+    }
+    body.work-print .work-table tr { break-inside:avoid; }
+    body.work-print #festivalPreparedPrintBtn { display:none !important; }
+    body.work-print:not(.prepared-print) #festivalPreparedPanel { display:none !important; }
+    body.work-print.prepared-print #festivalMainTableWrap { display:none !important; }
+  }
+  @media (max-width: 480px) { .work-grid { grid-template-columns:1fr; }
+    .product-row { flex-wrap: wrap; }
+    .edit-link { margin-left: 0; }
+  }
+
+  @page brother-product { size:62mm 29mm; margin:1.8mm; }
+  .brother-product-label { box-sizing:border-box; width:62mm; height:29mm; padding:1.8mm; display:flex; align-items:center; gap:1mm; background:white; color:black; outline:1px dashed #aaa; flex:0 0 auto; overflow:hidden; }
+  .product-label-info { flex:1; min-width:0; }
+  .product-label-name { font-size:7pt; line-height:1.35; font-weight:700; overflow-wrap:anywhere; max-height:15mm; overflow:hidden; }
+  .product-label-price { font-size:12pt; line-height:1.2; font-weight:700; margin-top:1.5mm; }
+  .product-label-bars { width:35.1mm; height:24.6mm; flex:0 0 35.1mm; }
+  .product-label-bars svg { width:35.1mm; height:24.6mm; display:block; max-width:none; }
+  @media print {
+    body.label-print #qrBulkPrintArea.brother-product-mode { width:58.4mm !important; max-width:58.4mm !important; page:brother-product; }
+    body.label-print .brother-product-label { width:58.4mm !important; height:25.3mm !important; padding:0 !important; margin:0 !important; outline:none !important; break-inside:avoid; }
+    body.label-print .brother-product-label:not(.last-label) { break-after:page; }
+  }
+
+.pilot-panel { border:1px solid #d6dfeb; background:#f5f8fc; padding:12px 16px; margin-bottom:16px; border-radius:8px; }
+  .pilot-panel p { margin:8px 0; font-size:13px; line-height:1.55; }
+  .pilot-panel summary { cursor:pointer; font-weight:600; }
+  .pilot-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .pilot-actions input { flex:1; min-width:160px; margin:0; }
+  /* 在庫一覧：商品を1行ずつ比較できる表 */
+  .inventory-list-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:10px; font-size:13px; color:#685f52; }
+  #productListCount { font-weight:700; color:var(--indigo-deep); }
+  .inventory-table-scroll { overflow:auto; max-height:70vh; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .inventory-table-scroll:empty { display:none; }
+  .inventory-table-scroll:focus-visible { outline:3px solid var(--indigo); outline-offset:3px; }
+  .inventory-grid { width:100%; min-width:820px; border-collapse:separate; border-spacing:0; table-layout:auto; font-size:14px; }
+  .inventory-grid th { position:sticky; top:0; z-index:1; background:#314563; color:white; padding:13px 12px; text-align:left; font-weight:700; white-space:nowrap; border-right:1px solid #52627b; }
+  .inventory-grid th:last-child { border-right:0; }
+  .inventory-grid td { padding:12px; border-bottom:1px solid #e2ded6; vertical-align:top; }
+  .inventory-grid tbody tr:last-child td { border-bottom:0; }
+  .inventory-grid tbody tr:nth-child(even) { background:#faf9f6; }
+  .inventory-grid tbody tr.inventory-low { background:var(--warn-bg); }
+  .inventory-grid tbody tr:hover { background:#eef2f7; }
+  .inventory-grid .inventory-code { width:120px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .inventory-grid .inventory-name { min-width:230px; overflow-wrap:anywhere; }
+  .inventory-product-name { font-weight:600; }
+  .inventory-grid .inventory-stock { width:100px; text-align:right; font-variant-numeric:tabular-nums; }
+  .inventory-stock strong { font-size:18px; }
+  .inventory-low-label { display:block; color:#9d302a; font-size:11px; white-space:nowrap; margin-top:4px; }
+  .inventory-grid .inventory-unit { width:60px; text-align:center; }
+  .inventory-grid .inventory-price { width:100px; text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .inventory-grid .inventory-action { width:200px; }
+  .inventory-buttons { display:flex; align-items:center; gap:8px; white-space:nowrap; }
+  .inventory-edit { background:none; border:0; padding:7px 3px; font:inherit; cursor:pointer; color:var(--indigo-deep); text-decoration:underline; }
+  .inventory-details { margin-top:6px; color:#685f52; font-size:12px; }
+  .inventory-details summary { cursor:pointer; width:fit-content; }
+  .inventory-details dl { display:grid; grid-template-columns:76px minmax(0,1fr); gap:5px 8px; margin:8px 0 0; }
+  .inventory-details dt { font-weight:600; }
+  .inventory-details dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .inventory-select { width:44px; text-align:center!important; }
+  .inventory-select input { width:20px; height:20px; }
+  .visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+
+</style>
+</head>
+<body>
+
+<!-- ===================== ログイン画面 ===================== -->
+<div id="loginScreen">
+  <div class="login-card">
+    <h1>弘文社 在庫管理 JANバーコード版</h1>
+    <p style="font-size:12px;margin:4px 0;">在庫データは共通です。<a href="./">QR版を開く</a></p>
+    <p class="sub">担当者を選んでログインしてください</p>
+    <select id="loginName">
+      <option value="">名前を選択...</option>
+    </select>
+    <input type="password" id="loginPassword" placeholder="パスワード">
+    <div class="error-msg" id="loginError"></div>
+    <button class="btn-primary" id="loginBtn">ログイン</button>
+  </div>
+</div>
+
+<!-- ===================== アプリ本体 ===================== -->
+<div id="appScreen">
+  <header class="topbar">
+    <div class="title">弘文社 在庫管理 JANバーコード版</div>
+    <div class="who">
+      <span id="whoAmI"></span>
+      <button class="logout" id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="pilot-panel no-print">
+      <strong>おみ霊箱から試験運用</strong>
+      <p id="pilotOperationMessage">運用設定を確認しています…</p>
+      <details id="pilotResetPanel">
+        <summary>開始前の初期化（履歴・伝票の削除／現在庫を0）</summary>
+        <p>対象は通常商品の全件です。おみ霊箱以外も含めて、入出庫履歴と入荷・出荷伝票を削除し、現在庫を0にします。商品マスタと出荷先台帳は残します。</p>
+        <p>他の端末・旧版アプリの操作を止めてから実行してください。防災用品・発注・棚卸し記録・月始祭計画はこの初期化の対象外です。</p>
+        <div class="pilot-actions">
+          <button type="button" class="btn-secondary-inline" id="pilotResetPreviewBtn">初期化対象を確認</button>
+          <button type="button" class="btn-secondary-inline" id="pilotResetBackupBtn" disabled>確認時点のバックアップ</button>
+          <button type="button" class="btn-danger" id="pilotResetExecuteBtn" disabled>履歴・伝票削除と現在庫0を実行</button>
+        </div>
+        <p id="pilotResetStatus" role="status" style="white-space:pre-wrap;">まず「初期化対象を確認」を押してください。</p>
+      </details>
+      <details id="openingStockPanel" style="margin-top:16px;">
+        <summary>開始在庫の一括入力（Excel）</summary>
+        <p>初期化を行う場合は先に済ませてください。既存商品の現在庫0から開始数量を設定します。商品情報は新規登録しません。</p>
+        <label><input type="checkbox" id="openingStockOnlyOmi" checked> 入力表の出力を「おみ霊箱」を含む商品名に絞る</label>
+        <div class="pilot-actions" style="margin:12px 0;">
+          <button type="button" class="btn-secondary-inline" id="openingStockExportBtn">1. 商品一覧から入力用Excelを出力</button>
+        </div>
+        <p>2. Excelの「開始在庫数」を入力し、保存したファイルを選択してください。空欄は変更せず、0は在庫0として登録します。1回150商品まで。箱換算は行わず、登録単位の総数を入力してください。</p>
+        <input type="file" id="openingStockFile" accept=".xlsx,.xls">
+        <p id="openingStockStatus" role="status" style="white-space:pre-wrap;">現在庫0・開始在庫未登録の商品が対象です。商品コードの重複や不一致は反映前に表示します。</p>
+        <div style="overflow:auto;max-height:360px;"><table class="work-table"><thead><tr><th>商品コード</th><th>商品名</th><th>現在庫</th><th>開始在庫数</th><th>単位</th></tr></thead><tbody id="openingStockPreview"></tbody></table></div>
+        <button type="button" class="btn-primary" id="openingStockApplyBtn" disabled style="margin-top:12px;max-width:300px;">3. 確認した開始在庫を一括登録</button>
+      </details>
+    </section>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="list">在庫一覧</button>
+      <button class="tab-btn" data-tab="register">商品登録</button>
+      <button class="tab-btn" data-tab="history">入出庫履歴</button>
+      <button class="tab-btn" data-tab="slips">伝票・検品</button>
+      <button class="tab-btn" data-tab="stocktake">棚卸し</button>
+      <button class="tab-btn" data-tab="festival">月始祭準備</button>
+      <button class="tab-btn" data-tab="disaster">防災用品</button>
+      <button class="tab-btn" data-tab="orders">発注管理<span id="orderLowBadge" class="tab-badge" style="display:none;"></span></button>
+    </div>
+
+    <!-- ---- 在庫一覧タブ ---- -->
+    <section id="tabList">
+      <div class="summary-row" id="summaryRow"></div>
+
+      <div class="toolbar">
+        <input type="text" id="searchBox" placeholder="商品名・商品コード・バーコード・仕入れ先で検索">
+        <input type="text" id="scannerInput" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄（ここをクリックしてスキャン）">
+        <div class="spacer"></div>
+        <button class="btn-secondary-inline" id="scanGlobalBtn">📷 スキャン</button>
+        <button class="btn-secondary-inline" id="qrBulkPrintBtn">商品バーコード・値札印刷（62×29）</button>
+        <button class="btn-secondary-inline" id="posCsvBtn">POS用 商品CSV出力</button>
+        <button class="btn-secondary-inline" id="bulkModeBtn">商品を選んで一括削除</button>
+        <button class="btn-secondary-inline" id="bulkSelectAllBtn" style="display:none;">表示中をすべて選択</button>
+        <button class="btn-danger" id="bulkDeleteBtn" style="display:none;">選択した商品を削除</button>
+        <button class="btn-add" id="openAddBtn">＋ 商品を登録</button>
+      </div>
+      <div class="chip-group" id="categoryChips"></div>
+      <br>
+
+      <div class="inventory-list-heading"><span id="productListCount" role="status">表示：0商品</span><span>商品名の「詳細」で仕入れ先・ロット・分類・備考を確認できます。画面が狭い場合は表を横にスクロールしてください。</span></div>
+      <div class="inventory-table-scroll" id="productList" tabindex="0" role="region" aria-label="商品在庫一覧（横スクロール可能）"></div>
+
+      <div class="empty-state" id="emptyState" style="display:none;">該当する商品がありません</div>
+    </section>
+
+    <!-- ---- 商品登録タブ（一覧と同じフォームをモーダルなしで表示） ---- -->
+    <section id="tabRegister" style="display:none;">
+      <p style="font-size:13px;color:#6b6357;margin-bottom:16px;">
+        新しい商品をここから登録できます。既存商品の編集は「在庫一覧」の各行から行ってください。
+      </p>
+      <label>商品名</label>
+      <input type="text" id="regName" placeholder="例：御神鏡 5寸">
+      <label>商品コード（任意）</label>
+      <input type="text" id="regCode" placeholder="例：K-1023">
+      <label>仕入れ先（任意）</label>
+      <input type="text" id="regSupplier" placeholder="例：○○商事">
+      <label>単価（売価・円）</label>
+      <input type="number" id="regPrice" placeholder="例：3000" min="0">
+      <label>ロット（任意）</label>
+      <input type="text" id="regLot" placeholder="例：2026-10">
+      <label>分類</label>
+      <select id="regCategory"></select>
+      <label>単位</label>
+      <input type="text" id="regUnit" placeholder="例：個、箱、セット" value="個">
+      <label>現在庫数</label>
+      <input type="number" id="regStock" value="0" min="0">
+      <label>在庫僅少の目安（この数以下で警告表示）</label>
+      <input type="number" id="regMinStock" value="3" min="0">
+      <label>備考（任意）</label>
+      <input type="text" id="regNote" placeholder="補足情報">
+      <button class="btn-primary" id="regSubmitBtn" style="max-width:280px;">この内容で登録する</button>
+
+      <hr class="section-divider">
+
+      <h3 class="section-title">エクセル／CSVで一括登録</h3>
+      <p style="font-size:13px;color:#6b6357;margin-bottom:12px;">
+        ExcelまたはCSVの1行目を見出しにしてください。「商品名・商品コード・仕入れ先・単価・ロット・分類・備考」に対応します。単位・現在庫数・在庫僅少ラインも取り込めます。登録前に内容を確認してください。
+      </p>
+      <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv">
+      <div id="excelPreviewWrap" style="display:none;margin-top:14px;">
+        <p id="excelPreviewCount" style="font-size:13px;color:var(--indigo-deep);font-weight:600;"></p>
+        <div class="excel-preview-scroll">
+          <table class="excel-preview-table">
+            <thead>
+              <tr><th>商品名</th><th>商品コード</th><th>仕入れ先</th><th>単価</th><th>ロット</th><th>分類</th><th>備考</th><th>在庫数</th></tr>
+            </thead>
+            <tbody id="excelPreviewBody"></tbody>
+          </table>
+        </div>
+        <button class="btn-primary" id="excelImportBtn" style="max-width:280px;margin-top:14px;">この内容で一括登録する</button>
+      </div>
+    </section>
+
+    <!-- ---- 入出庫履歴タブ (Phase2) ---- -->
+    <section id="tabHistory" style="display:none;">
+      <div class="toolbar">
+        <input type="text" id="historySearchBox" placeholder="商品名で検索">
+        <button class="btn-secondary-inline" id="historySelectAllBtn">表示中をすべて選択</button>
+        <button class="btn-danger" id="historyDeleteBtn">選択した履歴を削除（0件）</button>
+      </div>
+      <div class="history-list" id="historyList"></div>
+      <div class="empty-state" id="historyEmptyState" style="display:none;">履歴がありません</div>
+    </section>
+
+    <!-- ---- 伝票・検品タブ (Phase2) ---- -->
+    <section id="tabSlips" style="display:none;">
+      <div class="toolbar">
+        <div class="chip-group">
+          <button class="chip slip-filter-btn active" data-filter="all">すべて</button>
+          <button class="chip slip-filter-btn" data-filter="out">出荷</button>
+          <button class="chip slip-filter-btn" data-filter="in">入荷</button>
+          <button class="chip slip-filter-btn" data-filter="draft">未検品</button>
+          <button class="chip slip-filter-btn" data-filter="done">検品完了</button>
+        </div>
+        <div class="spacer"></div>
+        <input type="text" id="scannerInputSlips" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄">
+        <button class="btn-secondary-inline" id="scanGlobalBtn2">📷 伝票をスキャン</button>
+        <button class="btn-add" id="slipCreateOutBtn">＋ 出荷伝票を作成</button>
+        <button class="btn-add btn-add-in" id="slipCreateInBtn">＋ 入荷伝票を作成</button>
+      </div>
+      <div class="toolbar"><button class="btn-secondary-inline" id="slipSelectAllBtn">表示中をすべて選択</button><button class="btn-danger" id="slipDeleteBtn">選択した伝票を削除（0件）</button></div>
+      <div class="slip-list" id="slipList"></div>
+      <div class="empty-state" id="slipEmptyState" style="display:none;">伝票がありません</div>
+    </section>
+
+    <section id="tabStocktake" class="work-panel" style="display:none;">
+      <h2>棚卸し表</h2>
+      <p>帳簿合計は通常在庫から取得します。翌月の月始祭準備分を別に数え、倉庫実数と準備分実数の合計を在庫として確定します。</p>
+      <div class="toolbar"><label>棚卸日 <input type="date" id="stocktakeDate"></label><div class="spacer"></div>
+        <button class="btn-secondary-inline" id="stocktakeLoadBtn">この日の表を開く</button>
+        <button class="btn-secondary-inline" id="stocktakePrintBtn">印刷</button></div>
+      <div id="stocktakeStatus" class="work-status"></div>
+      <div class="work-filter">
+        <label for="stocktakeCategory">ジャンル</label><select id="stocktakeCategory"><option value="">すべて</option></select>
+        <input type="text" id="stocktakeSearch" placeholder="商品名・コードで検索" aria-label="棚卸しの商品検索">
+        <label for="stocktakeSort">並び順</label><select id="stocktakeSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">帳簿数の多い順</option></select>
+        <span id="stocktakeFilterCount" class="filter-count"></span>
+      </div>
+      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>翌月準備<br>帳簿数</th><th>倉庫<br>帳簿数</th><th>帳簿合計</th><th>準備分<br>実数</th><th>倉庫実数</th><th>実数合計</th><th>差異</th><th>備考</th></tr></thead><tbody id="stocktakeRows"></tbody></table></div>
+      <div class="work-actions"><button class="btn-secondary-inline" id="stocktakeSaveBtn">入力内容を保存</button><button class="btn-primary" id="stocktakeApplyBtn">差異を在庫に反映</button></div>
+    </section>
+
+    <section id="tabFestival" class="work-panel" style="display:none;">
+      <h2>月始祭準備・頒布集計</h2><p>翌月分を事前に準備します。準備確定後も準備分は総在庫に含まれます。み祭り後に戻り数などを入力して売上数を確定します。</p>
+      <div class="toolbar"><label>対象月 <input type="month" id="festivalMonth"></label><div class="spacer"></div>
+        <button class="btn-secondary-inline" id="festivalLoadBtn">この月を開く</button><button class="btn-secondary-inline" id="festivalPrintBtn">印刷</button></div>
+      <div id="festivalStatus" class="work-status"></div>
+      <div class="work-filter">
+        <label for="festivalCategory">ジャンル</label><select id="festivalCategory"><option value="">すべて</option></select>
+        <input type="text" id="festivalSearch" placeholder="商品名・コードで検索" aria-label="月始祭の商品検索">
+        <label for="festivalSort">並び順</label><select id="festivalSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">総在庫の多い順</option></select>
+        <span id="festivalFilterCount" class="filter-count"></span>
+      </div>
+      <div class="work-scroll" id="festivalMainTableWrap"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>総在庫</th><th>準備（S1出）</th><th>追加</th><th>直送</th><th>戻り</th><th>乱丁</th><th>見本</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
+      <div id="festivalPreparedPanel"><h3>準備分のみの一覧表</h3><p id="festivalPreparedCount">準備数量がある商品を表示します。上のジャンル・検索条件が反映されます。</p><button type="button" class="btn-secondary-inline" id="festivalPreparedPrintBtn">準備分のみを印刷</button><div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>準備数量</th><th>単位</th></tr></thead><tbody id="festivalPreparedRows"></tbody></table></div></div>
+      <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">入力を保存</button><button class="btn-primary" id="festivalCommitBtn">準備を確定</button><button class="btn-secondary-inline" id="festivalReturnBtn">準備を取り消す</button><button class="btn-primary" id="festivalSettleBtn">頒布を精算・在庫反映</button></div>
+    </section>
+
+    <section id="tabDisaster" class="work-panel" style="display:none;">
+      <h2>防災用品</h2><p>通常の商品在庫とは別に管理します。出荷を記録した後で発送済みに変更できます。</p>
+      <div class="work-grid"><div><label>用品名</label><input type="text" id="disasterName" placeholder="例：保存水"><label>品番</label><input type="text" id="disasterCode"><label>単位</label><input type="text" id="disasterUnit" value="個"><label>初期在庫</label><input type="number" id="disasterInitial" min="0" value="0" step="1"><button class="btn-primary" id="disasterAddBtn">用品を登録</button></div>
+      <div><label>対象用品</label><select id="disasterProduct"></select><label>区分</label><select id="disasterType"><option value="in">入庫</option><option value="out">出荷</option></select><label>数量</label><input type="number" id="disasterQty" min="1" value="1" step="1"><label>発送先・備考</label><input type="text" id="disasterDestination"><button class="btn-primary" id="disasterMoveBtn">入出荷を記録</button></div></div>
+      <h3>防災用品の在庫</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>品番</th><th>用品名</th><th>在庫数</th></tr></thead><tbody id="disasterProducts"></tbody></table></div>
+      <h3>入出荷・発送履歴</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>日時</th><th>用品</th><th>区分</th><th>数量</th><th>発送先・備考</th><th>発送状況</th></tr></thead><tbody id="disasterHistory"></tbody></table></div>
+    </section>
+
+    <!-- ---- 発注管理タブ (Phase4) ---- -->
+    <section id="tabOrders" style="display:none;">
+      <div class="low-stock-alert" id="lowStockAlertBox" style="display:none;">
+        <div class="low-stock-alert-head">
+          <strong>⚠️ 発注が必要な商品が<span id="lowStockAlertCount">0</span>件あります</strong>
+          <button type="button" class="btn-secondary-inline" id="lowStockCreateOrderBtn">選択した仕入れ先の不足品を追加</button>
+        </div>
+        <div id="lowStockAlertList"></div>
+      </div>
+      <div class="supplier-order-bar">
+        <label for="orderSupplierSelect">仕入れ先を選択</label>
+        <select id="orderSupplierSelect"><option value="">仕入れ先を選択...</option></select>
+        <button type="button" class="btn-add" id="createSupplierOrderBtn">この仕入れ先の発注表を作成</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="chip-group">
+          <button class="chip order-filter-btn active" data-filter="all">すべて</button>
+          <button class="chip order-filter-btn" data-filter="draft">未発注</button>
+          <button class="chip order-filter-btn" data-filter="ordered">発注済み</button>
+          <button class="chip order-filter-btn" data-filter="received">入荷済み</button>
+          <button class="chip order-filter-btn" data-filter="cancelled">キャンセル</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn-secondary-inline" id="orderNotifyBtn">🔕 ブラウザ通知を有効にする</button>
+        <button class="btn-add" id="orderCreateBtn">＋ 発注を作成</button>
+      </div>
+      <div class="slip-list" id="orderList"></div>
+      <div class="empty-state" id="orderEmptyState" style="display:none;">発注がありません</div>
+    </section>
+  </main>
+</div>
+
+<!-- ===================== 入出庫モーダル (Phase2) ===================== -->
+<div class="modal-overlay" id="moveOverlay">
+  <div class="modal">
+    <h2>入出庫を記録</h2>
+    <p id="moveProductName" style="font-size:14.5px;font-weight:600;color:var(--indigo-deep);margin:0 0 2px;"></p>
+    <p id="moveCurrentStock" style="font-size:12px;color:#8a8272;margin:0 0 16px;"></p>
+
+    <label>区分</label>
+    <div class="move-type-group">
+      <button type="button" class="move-type-btn active" data-type="in">＋ 入庫</button>
+      <button type="button" class="move-type-btn" data-type="out">－ 出庫</button>
+    </div>
+    <input type="hidden" id="moveType" value="in">
+
+    <label>数量</label>
+    <input type="number" id="moveQty" min="1" value="1">
+    <label>備考（任意）</label>
+    <input type="text" id="moveNote" placeholder="例：〇〇様納品分、棚卸調整など">
+    <div class="error-msg" id="moveError"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="moveCancelBtn">キャンセル</button>
+      <button class="btn-primary" id="moveSaveBtn">記録する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 編集モーダル ===================== -->
+<div class="modal-overlay" id="editOverlay">
+  <div class="modal">
+    <h2>商品を編集</h2>
+    <label>商品名</label>
+    <input type="text" id="editName">
+    <label>商品コード（任意）</label>
+    <input type="text" id="editCode">
+    <label>販売用バーコード（13桁）</label>
+    <input type="text" id="editBarcode" inputmode="numeric" maxlength="13" placeholder="空欄なら店内用番号を自動発行">
+    <p style="font-size:12px;">POS確定後は登録番号に合わせて変更できます。変更後は値札を再印刷してください。</p>
+    <label>仕入れ先（任意）</label>
+    <input type="text" id="editSupplier">
+    <label>単価（売価・円）</label>
+    <input type="number" id="editPrice" min="0">
+    <label>ロット（任意）</label>
+    <input type="text" id="editLot">
+    <label>分類</label>
+    <select id="editCategory"></select>
+    <label>単位</label>
+    <input type="text" id="editUnit">
+    <label>現在庫数</label>
+    <input type="number" id="editStock" min="0">
+    <label>在庫僅少の目安</label>
+    <input type="number" id="editMinStock" min="0">
+    <label>備考</label>
+    <input type="text" id="editNote">
+    <div class="modal-actions">
+      <button class="btn-danger" id="editDeleteBtn">削除</button>
+      <button class="btn-secondary" id="editCancelBtn">キャンセル</button>
+      <button class="btn-primary" id="editSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ===================== QRコードモーダル (Phase2) ===================== -->
+<div class="modal-overlay" id="qrOverlay">
+  <div class="modal" id="qrPrintArea">
+    <h2>商品バーコード</h2>
+    <p id="qrProductName" style="font-size:14.5px;font-weight:600;color:var(--indigo-deep);margin:0 0 4px;"></p>
+    <p id="qrProductCode" style="font-size:12px;color:#8a8272;margin:0 0 16px;"></p>
+    <div id="qrCanvasBox" style="display:flex;justify-content:center;margin-bottom:18px;"></div>
+    <div class="modal-actions no-print">
+      <button class="btn-secondary" id="qrCloseBtn">閉じる</button>
+      <button class="btn-primary" id="qrPrintBtn">印刷する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== QRラベル一括印刷 (Phase2) ===================== -->
+<div class="modal-overlay" id="qrBulkOverlay">
+  <div class="modal" id="qrBulkPrintArea" style="max-width:680px;">
+    <h2 class="no-print" id="qrBulkTitle">Brother QL-800 ラベル印刷</h2>
+    <p class="brother-print-hint no-print" id="qrBulkHint"></p>
+    <div class="brother-label-list" id="qrBulkGrid"></div>
+    <div class="modal-actions no-print">
+      <button class="btn-secondary" id="qrBulkCloseBtn">閉じる</button>
+      <button class="btn-primary" id="qrBulkPrintOkBtn">印刷する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 伝票作成モーダル (Phase2) ===================== -->
+<div class="modal-overlay" id="slipCreateOverlay">
+  <div class="modal" style="max-width:480px;">
+    <h2 id="slipCreateTitle">伝票を作成</h2>
+    <span class="slip-type-badge" id="slipCreateTypeBadge"></span>
+    <input type="hidden" id="slipCreateType" value="out">
+
+<div id="destinationCodeWrap" style="display:none;">
+      <label for="slipDestinationCode">出荷先コード（出荷時は必須）</label>
+      <div class="pilot-actions">
+        <input type="text" id="slipDestinationCode" autocomplete="off" maxlength="32" placeholder="例：00123／JINJA-001">
+        <button type="button" class="btn-secondary-inline" id="destinationLookupBtn">呼び出す</button>
+      </div>
+      <p id="destinationLookupStatus" role="status" style="font-size:12px;"></p>
+      <label style="font-size:12px;"><input type="checkbox" id="saveDestinationMaster" style="width:auto;" checked>登録済み出荷先の変更内容を台帳にも保存する</label>
+      <p style="font-size:12px;">新しいコードは伝票保存と同時に台帳へ登録します。既存の住所等を今回だけ変える場合はチェックを外してください。</p>
+    </div>
+
+    <label id="slipPartnerLabel">取引先／納品先（任意）</label>
+    <input type="text" id="slipPartner" placeholder="例：〇〇神社様">
+    <label>取引先住所（任意）</label>
+    <input type="text" id="slipPartnerAddress" placeholder="例：東京都〇〇区……">
+    <label>取引先TEL（任意）</label>
+    <input type="text" id="slipPartnerTel" placeholder="例：03-1234-5678">
+    <label id="slipShipToLabel">出荷先（任意）</label>
+    <input type="text" id="slipShipTo" placeholder="取引先と異なる場合のみ入力">
+
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;">
+        <label>計上日</label>
+        <input type="date" id="slipPostingDate">
+      </div>
+      <div style="flex:1;">
+        <label>取引区分（任意）</label>
+        <input type="text" id="slipTransactionType" placeholder="例：掛／現金">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;">
+        <label>倉庫（任意）</label>
+        <input type="text" id="slipWarehouse" placeholder="例：本社倉庫">
+      </div>
+      <div style="flex:1;">
+        <label>発注№（任意）</label>
+        <input type="text" id="slipOrderNo" placeholder="先方発注番号など">
+      </div>
+    </div>
+
+    <label>備考（任意）</label>
+    <input type="text" id="slipMemo" placeholder="納品場所や便名など">
+
+    <hr class="section-divider">
+    <label>品目を追加</label>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <input type="text" id="slipItemCodeInput" placeholder="商品コードを入力してEnter" style="flex:1;">
+    </div>
+    <p id="slipItemCodeError" class="error-msg" style="margin:-4px 0 8px;"></p>
+
+    <div id="slipItemSelectedCard" class="slip-selected-card" style="display:none;">
+      <div class="slip-selected-name" id="slipSelectedName"></div>
+      <div class="slip-selected-meta" id="slipSelectedMeta"></div>
+    </div>
+
+    <details style="margin:4px 0 10px;">
+      <summary style="font-size:12.5px;color:#8a8272;cursor:pointer;">商品コードが分からない場合は商品名から選ぶ</summary>
+      <select id="slipItemProduct" style="margin-top:8px;"></select>
+    </details>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <label style="margin:0;white-space:nowrap;">数量</label>
+      <input type="number" id="slipItemQty" min="1" value="1" style="flex:1;margin-bottom:0;">
+      <label style="margin:0;white-space:nowrap;">単価</label>
+      <input type="number" id="slipItemPrice" min="0" step="1" placeholder="円" style="flex:1;margin-bottom:0;">
+    </div>
+    <p id="slipItemAmountPreview" style="font-size:12px;color:#6b6357;margin:-4px 0 8px;text-align:right;"></p>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="text" id="slipItemRemark" placeholder="摘要（任意）" style="flex:1;margin-bottom:0;">
+      <button type="button" class="btn-secondary" id="slipItemAddBtn" style="flex:1;">追加</button>
+    </div>
+
+    <div class="slip-items-editor" id="slipItemsEditor" style="margin-top:14px;"></div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="slipCreateCancelBtn">キャンセル</button>
+      <button class="btn-primary" id="slipCreateSaveBtn">伝票を作成する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 伝票詳細・検品モーダル (Phase2) ===================== -->
+<div class="modal-overlay" id="slipDetailOverlay">
+  <div class="modal" id="slipDetailPrintArea" style="max-width:680px;">
+    <div class="no-print">
+      <div class="slip-formal-header">
+        <h2 id="slipDetailTitle" style="margin:0;">伝票</h2>
+        <div class="slip-formal-header-qr">
+          <div id="slipQrBox"></div>
+          <span class="slip-formal-header-qr-label">↑ スキャンでこの画面を開けます</span>
+        </div>
+        <div class="slip-formal-companybox">
+          <div>住所　東京都府中市八幡町1-4-3</div>
+          <div>電話　042(334)1660番(代)</div>
+          <div>FAX　042(334)1665番</div>
+          <div class="slip-formal-companyname">株式会社　弘文社</div>
+        </div>
+      </div>
+
+      <table class="slip-formal-table">
+        <tr>
+          <th>発行日</th><td id="slipDetailIssueDate"></td>
+          <th>計上日</th><td id="slipDetailPostingDate"></td>
+        </tr>
+        <tr>
+          <th>伝票番号</th><td id="slipDetailNumber"></td>
+          <th id="slipDetailShipToLabel">出荷先</th><td id="slipDetailShipTo"></td>
+        </tr>
+        <tr>
+          <th>取引先</th>
+          <td colspan="3">
+            名称：<span id="slipDetailPartner"></span>　
+            住所：<span id="slipDetailPartnerAddress"></span>　
+            TEL：<span id="slipDetailPartnerTel"></span>
+          </td>
+        </tr>
+        <tr>
+          <th>取引区分</th><td id="slipDetailTransactionType"></td>
+          <th>倉庫</th><td id="slipDetailWarehouse"></td>
+        </tr>
+        <tr>
+          <th>発注№</th><td colspan="3" id="slipDetailOrderNo"></td>
+        </tr>
+      </table>
+
+      <p id="slipDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 8px;"></p>
+
+      <div class="verify-scanner-box no-print">
+        <button type="button" class="btn-primary" id="slipBluetoothModeBtn">Bluetooth検品を開始</button>
+        <p>Tera HW0010をiPadのBluetooth HIDに接続し、即時送信・読み取り後Enterに設定してください。</p>
+        <input type="text" id="slipItemScannerInput" class="scanner-input" placeholder="現品QR → 検品シールQR の順に読み取り" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
+        <div id="slipScanStatus" role="status" aria-live="polite">Bluetooth検品を開始すると読み取りを受け付けます。</div>
+        <button type="button" class="btn-secondary-inline" id="slipScanFocusBtn" style="margin-top:9px;">スキャナー入力に戻る</button>
+        <button type="button" class="btn-secondary-inline" id="slipDetailScanBtn" style="margin-top:9px;">📷 カメラで検品</button>
+      </div>
+
+      <table class="slip-detail-table">
+        <thead>
+          <tr>
+            <th>商品コード</th><th>商品名</th><th>単価</th><th>数量</th><th>金額</th><th>摘要</th>
+            <th>確認数</th><th>検品済</th>
+          </tr>
+        </thead>
+        <tbody id="slipDetailBody"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4" style="text-align:right;font-weight:700;">合計金額</td>
+            <td colspan="2" id="slipDetailTotal" style="font-weight:700;"></td>
+            <td></td><td></td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <p style="font-size:13px;margin-top:12px;">備考：<span id="slipDetailMemo"></span></p>
+
+      <p id="slipDetailDoneNote" style="display:none;font-size:13px;color:var(--ok-text);font-weight:600;margin-top:12px;">この伝票は検品完了済みです（在庫反映済み）</p>
+
+      <div id="slipReceivingLabelWrap" style="display:none;margin-top:10px;">
+        <button type="button" class="btn-secondary-inline" id="slipReceivingLabelBtn">🏷️ 入荷シールを印刷（バーコード・品名・売価／62×29）</button>
+      </div>
+      <div id="slipPickLabelWrap" style="margin-top:10px;display:none;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn-secondary-inline" id="slipPickLabelBtn">🏷️ 専用検品シールを印刷（62×29）</button>
+      </div>
+    </div>
+
+    <div id="slipPrintSheet" class="print-sheet"></div>
+
+    <div class="modal-actions no-print" style="flex-wrap:wrap;">
+      <button class="btn-secondary" id="slipDetailCloseBtn">閉じる</button>
+      <button class="btn-secondary" id="slipDetailPrintCheckBtn">🔍 検品表</button>
+      <button class="btn-secondary" id="slipDetailPrintDeliveryBtn">📦 納品書</button>
+      <button class="btn-primary" id="slipDetailCompleteBtn">検品完了として記録する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 発注作成モーダル (Phase4) ===================== -->
+<div class="modal-overlay" id="orderCreateOverlay">
+  <div class="modal" style="max-width:480px;">
+    <h2>発注を作成</h2>
+
+    <label for="orderPartner">仕入れ先</label>
+    <input type="text" id="orderPartner" placeholder="仕入れ先を選択してください" readonly>
+    <label>メモ（任意）</label>
+    <input type="text" id="orderMemo" placeholder="納期の目安など">
+
+    <hr class="section-divider">
+    <div id="orderSupplierPicker" class="supplier-picker"></div>
+    <button type="button" class="btn-secondary-inline" id="orderAddSupplierItemsBtn">数量を入力した商品を追加</button>
+    <hr class="section-divider">
+    <label>品目を追加</label>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <input type="text" id="orderItemCodeInput" placeholder="商品コードを入力してEnter" style="flex:1;">
+    </div>
+    <p id="orderItemCodeError" class="error-msg" style="margin:-4px 0 8px;"></p>
+
+    <div id="orderItemSelectedCard" class="slip-selected-card" style="display:none;">
+      <div class="slip-selected-name" id="orderSelectedName"></div>
+      <div class="slip-selected-meta" id="orderSelectedMeta"></div>
+    </div>
+
+    <details style="margin:4px 0 10px;">
+      <summary style="font-size:12.5px;color:#8a8272;cursor:pointer;">商品コードが分からない場合は商品名から選ぶ</summary>
+      <select id="orderItemProduct" style="margin-top:8px;"></select>
+    </details>
+
+    <div style="display:flex;gap:8px;align-items:center;">
+      <label style="margin:0;white-space:nowrap;">発注数量</label>
+      <input type="number" id="orderItemQty" min="1" value="1" style="flex:1;">
+      <button type="button" class="btn-secondary" id="orderItemAddBtn" style="flex:1;">追加</button>
+    </div>
+
+    <div class="slip-items-editor" id="orderItemsEditor" style="margin-top:14px;"></div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="orderCreateCancelBtn">キャンセル</button>
+      <button class="btn-primary" id="orderCreateSaveBtn">発注案を作成する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 発注詳細モーダル (Phase4) ===================== -->
+<div class="modal-overlay" id="orderDetailOverlay">
+  <div class="modal" style="max-width:600px;">
+    <h2>発注表</h2>
+    <div class="slip-detail-head">
+      <div><strong id="orderDetailNumber"></strong>　<span class="slip-status" id="orderDetailStatus"></span></div>
+      <div id="orderDetailDate" style="font-size:12px;color:#8a8272;"></div>
+    </div>
+    <p style="font-size:14px;margin:10px 0 2px;">仕入先：<span id="orderDetailPartner"></span></p>
+    <p id="orderDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 2px;"></p>
+    <p id="orderDetailMemo" style="font-size:12px;color:#8a8272;margin:0 0 10px;"></p>
+
+    <p id="orderReceivedQtyHint" style="display:none;font-size:12px;color:#8a8272;margin:0 0 8px;">実際に入荷した数量を確認・修正してください</p>
+
+    <table class="slip-detail-table">
+      <thead>
+        <tr><th>商品名</th><th>コード</th><th>発注数量</th><th>入荷数量</th></tr>
+      </thead>
+      <tbody id="orderDetailBody"></tbody>
+    </table>
+
+    <p id="orderDetailDoneNote" style="display:none;font-size:13px;color:var(--ok-text);font-weight:600;margin-top:12px;">この発注は入荷済みです（在庫反映済み）</p>
+    <p id="orderDetailCancelledNote" style="display:none;font-size:13px;color:var(--warn-text);font-weight:600;margin-top:12px;">この発注はキャンセルされました</p>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="orderDetailCloseBtn">閉じる</button>
+      <button class="btn-secondary" id="orderDetailPrintBtn">発注表を印刷</button>
+      <button class="btn-secondary" id="orderCancelBtn" style="display:none;">発注をキャンセル</button>
+      <button class="btn-primary" id="orderMarkOrderedBtn" style="display:none;">発注済みにする</button>
+      <button class="btn-primary" id="orderMarkReceivedBtn" style="display:none;">入荷完了として記録する（在庫に反映）</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== カメラスキャンモーダル (Phase3) ===================== -->
+<div class="modal-overlay" id="scanOverlay">
+  <div class="modal" style="max-width:420px;">
+    <h2 id="scanModalTitle">QRコードをスキャン</h2>
+    <div class="scan-video-wrap">
+      <video id="scanVideo" playsinline muted></video>
+      <canvas id="scanCanvas" style="display:none;"></canvas>
+      <div class="scan-frame"></div>
+    </div>
+    <p id="scanHint" style="font-size:12px;color:#8a8272;margin-top:10px;">商品または伝票のQRコードにカメラを向けてください</p>
+    <p id="scanStepStatus" style="display:none;font-size:13.5px;font-weight:700;margin-top:6px;"></p>
+    <p class="error-msg" id="scanError"></p>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="scanCloseBtn">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+
+<!-- Phase2追加: エクセル取込用 / QRコード生成用ライブラリ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- Phase3追加: スマホカメラでのQRコード読み取り用ライブラリ -->
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+<script src="firebase-config.js"></script>
+<script src="app-jan.js?v=20261031-product-table-jan-v23"></script>
+<script>
+  if (window.KOBUNSHA_APP_VERSION !== "2026-10-31-product-table-jan-v23") {
+    const notice = document.createElement("div");
+    notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
+    notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
+    document.body.appendChild(notice);
+  }
+</script>
+</body>
+</html>
