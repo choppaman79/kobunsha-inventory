@@ -3053,7 +3053,7 @@ async function previewPilotReset() {
   resetPreview = null;
   try {
     resetPreview = await collectInventoryResetPlan();
-    resetStatus("対象："+firebase.app().options.projectId+"\n"+resetCounts(resetPreview)+"\nおみ霊箱以外の通常商品も対象です。商品マスタ・出荷先台帳は残します。");
+    resetStatus("対象："+firebase.app().options.projectId+"\n"+resetCounts(resetPreview)+"\n紙製御み霊箱以外の通常商品も対象です。商品マスタ・出荷先台帳は残します。");
     document.getElementById("pilotResetExecuteBtn").disabled = false;
     document.getElementById("pilotResetBackupBtn").disabled = false;
   } catch (err) { resetStatus(err.message || "確認できませんでした。ルールと通信状態を確認してください"); }
@@ -3132,7 +3132,7 @@ function clearInventoryFormsForReset() {
   setSlipScannerMode(false);
 }
 function initPilotTools() {
-  document.getElementById("searchBox").value="おみ霊箱";
+  document.getElementById("searchBox").value="紙製御み霊箱";
   document.getElementById("destinationLookupBtn").addEventListener("click",lookupShippingDestination);
   const code=document.getElementById("slipDestinationCode");
   code.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();clearTimeout(destinationLookupTimer);lookupShippingDestination();}});
@@ -3160,7 +3160,7 @@ function initPilotTools() {
       const wasLocked=inventoryResetLocked;
       inventoryControlReady=true;inventoryResetLocked=doc.exists&&doc.data().state==="resetting";
       if(inventoryResetLocked&&!wasLocked)clearInventoryFormsForReset();
-      document.getElementById("pilotOperationMessage").textContent=inventoryResetLocked?"現在、在庫の初期化中です。完了するまで通常操作を停止してください。":"おみ霊箱から試験運用を開始します。初期検索は「おみ霊箱」です。";
+      document.getElementById("pilotOperationMessage").textContent=inventoryResetLocked?"現在、在庫の初期化中です。完了するまで通常操作を停止してください。":"紙製御み霊箱から試験運用を開始します。初期検索は「紙製御み霊箱」です。";
     },err=>{console.error(err);document.getElementById("pilotOperationMessage").textContent="運用設定を読み込めません。READMEの追加ルールを確認してください。";});
   });
 }
@@ -3225,8 +3225,8 @@ async function exportOpeningStockSheet() {
   try {
     const snapshot = await db.collection(COLLECTION).get({source:"server"});
     const only = document.getElementById("openingStockOnlyOmi").checked;
-    const products = snapshot.docs.map(d=>({...d.data(),id:d.id})).filter(p=>!only||openingText(p.name).includes("おみ霊箱"));
-    if (!products.length) throw Error("対象商品がありません。「おみ霊箱のみ」の選択や商品名を確認してください");
+    const products = snapshot.docs.map(d=>({...d.data(),id:d.id})).filter(p=>!only||openingText(p.name).includes("紙製御み霊箱"));
+    if (!products.length) throw Error("対象商品がありません。「紙製御み霊箱のみ」の選択や商品名を確認してください");
     products.sort((a,b)=>(a.code||a.name||"").localeCompare(b.code||b.name||"","ja"));
     const sheet = XLSX.utils.aoa_to_sheet([OPENING_STOCK_HEADERS,...products.map(p=>[p.id,String(p.code||""),p.name||"",p.unit||"",""])]);
     sheet["!cols"]=[{wch:30},{wch:20},{wch:38},{wch:10},{wch:16}];
