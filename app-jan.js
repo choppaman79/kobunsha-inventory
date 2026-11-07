@@ -3317,6 +3317,7 @@ function initOpeningStockTools() {
 // 商品バーコードの用紙選択。23mmは縮小印刷のため実機で読取確認が必要。
 let productLabelSize = "23";
 let productLabelPreviewCount = 0;
+let compactBarcodeReduction = 1;
 // 300dpiで1モジュールを2ドットにそろえ、線と隙間の端数縮小を避ける。
 function makeCompactProductBarcode(code) {
   const bits = ean13Bits(code);
@@ -3332,12 +3333,16 @@ function makeCompactProductBarcode(code) {
   context.fillStyle = "#fff";
   context.fillRect(0, 0, 226, 116);
   context.fillStyle = "#000";
-  [...bits].forEach((bit, i) => {
-    if (bit !== "1") return;
-    const guard = i < 3 || i >= 45 && i < 50 || i >= 92;
-    context.fillRect((11 + i) * 2, 0, 2, guard ? 98 : 88);
-  });
-  context.font = "16px monospace";
+  // 黒い連続区間をまとめて補正する。太いバーの内部に白い隙間を作らない。
+  for (let i = 0; i < bits.length;) {
+    if (bits[i] !== "1") { i++; continue; }
+    const start = i;
+    while (i < bits.length && bits[i] === "1") i++;
+    const guard = start < 3 || start >= 45 && start < 50 || start >= 92;
+    const width = Math.max(1, (i - start) * 2 - compactBarcodeReduction);
+    context.fillRect((11 + start) * 2, 0, width, guard ? 94 : 84);
+  }
+  context.font = "18px monospace";
   context.textAlign = "center";
   context.textBaseline = "alphabetic";
   context.fillText(code, 113, 112);
@@ -3352,7 +3357,7 @@ function fitCompactProductText() {
   if (productLabelSize !== "23") return true;
   let fits = true;
   document.getElementById("qrBulkGrid").querySelectorAll(".brother-product-label").forEach(cell => {
-    [[".product-label-name", 4.5, 3.8, 0.1], [".product-label-price", 6.5, 5, 0.25]].forEach(([selector, start, min, step]) => {
+    [[".product-label-name", 5, 3.8, 0.1], [".product-label-price", 7, 5, 0.25]].forEach(([selector, start, min, step]) => {
       const element = cell.querySelector(selector);
       if (!element) { fits = false; return; }
       let size = start;
@@ -3372,6 +3377,8 @@ function fitCompactProductText() {
 function updateProductLabelSize() {
   const select = document.getElementById("productLabelSizeSelect");
   productLabelSize = select.value === "62" ? "62" : "23";
+  compactBarcodeReduction = document.getElementById("productBarcodeWeightSelect").value === "standard" ? 0 : 1;
+  document.getElementById("productBarcodeWeightTools").hidden = productLabelSize !== "23";
   const area = document.getElementById("qrBulkPrintArea");
   area.classList.remove("brother-qr-mode", "brother-pick-mode", "brother-product-small-mode");
   area.classList.add("brother-product-mode");
@@ -3383,6 +3390,9 @@ function updateProductLabelSize() {
   document.getElementById("qrBulkHint").textContent = productLabelPreviewCount + "枚／" + (productLabelSize === "23"
     ? "DK-1221（23×23mm）。300dpi・倍率100%・ヘッダー／フッターなし。用紙に合わせる拡大縮小は使わないでください。商品名は3行まで、文字周りの余白を確保して印刷します。標準より小さいバーコードです。最初に1枚だけ印刷し、Tera HW0010で商品が正しく開くか確認してください。POSでの読取は未確認です。"
     : "DK-1209（62×29mm）。倍率100%・ヘッダー／フッターなし。価格は商品マスタの売価です。POS利用には同じ商品番号と価格の登録が必要です。");
+  if (productLabelSize === "23") document.getElementById("qrBulkHint").textContent += compactBarcodeReduction
+    ? " 線は「細く補正」です。線が欠ける場合は「標準」に戻してください。"
+    : " 線は「標準」です。黒い線が太る場合は「細く補正」を試してください。";
   const fits = fitCompactProductText();
   document.getElementById("qrBulkPrintOkBtn").disabled = !fits;
   if (!fits) document.getElementById("qrBulkHint").textContent += " 文字が収まらない商品があります。用紙を62×29mmに切り替えてください。";
@@ -3393,6 +3403,9 @@ function initProductLabelSizes() {
   const select = document.getElementById("productLabelSizeSelect");
   select.value = productLabelSize;
   select.addEventListener("change", updateProductLabelSize);
+  const weight = document.getElementById("productBarcodeWeightSelect");
+  weight.value = "thin";
+  weight.addEventListener("change", updateProductLabelSize);
 }
 
 // ブラウザ・ドライバーの実設定は読めないため、今回選ぶ設定と開き方を表示する。
@@ -3401,6 +3414,7 @@ function updateLabelPrinterGuide() {
   const small = area.classList.contains("brother-product-small-mode") || area.classList.contains("brother-qr-mode");
   const compactBarcode = area.classList.contains("brother-product-small-mode");
   document.getElementById("printerGuidePaper").textContent = small ? "23×23mm（DK-1221）" : "62×29mm（DK-1209）";
+  document.getElementById("printerGuideWeight").textContent = compactBarcode ? (compactBarcodeReduction ? "細く補正（印字太り対策）" : "標準") : "標準";
   document.getElementById("printerGuideResolution").textContent = compactBarcode ? "300dpi" : "プリンターの標準設定";
   document.getElementById("printerGuideSummary").textContent = "今回の用紙：" + (small ? "23×23mm" : "62×29mm") + " ／ 倍率100% ／ ヘッダー・フッターなし";
 }
@@ -3416,7 +3430,7 @@ function initLabelPrinterGuide() {
   document.getElementById("qrPrinterHelpBtn").addEventListener("click", openLabelPrinterGuide);
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-07-printer-guide-jan-v28";
+window.KOBUNSHA_APP_VERSION = "2026-11-07-ink-spread-jan-v29";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
