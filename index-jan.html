@@ -927,15 +927,15 @@
 
 
   @page brother-product-small { size:23mm 23mm; margin:1.9mm; }
-  .brother-product-small-mode .brother-product-label { width:23mm; height:23mm; padding:2.1mm 1.9mm; flex-direction:column; align-items:center; justify-content:flex-start; gap:.35mm; }
-  .brother-product-small-mode .product-label-info { box-sizing:border-box; flex:0 0 8.4mm; width:100%; height:8.4mm; padding:0 1mm; text-align:center; }
-  .brother-product-small-mode .product-label-name { box-sizing:border-box; height:5.6mm; max-height:5.6mm; line-height:1.8mm; font-size:4.5pt; padding:.1mm 0; overflow:hidden; display:block; white-space:normal; overflow-wrap:anywhere; word-break:normal; }
-  .brother-product-small-mode .product-label-price { box-sizing:border-box; height:2.8mm; line-height:2.8mm; font-size:6.5pt; margin:0; padding:0; white-space:nowrap; overflow:hidden; }
+  .brother-product-small-mode .brother-product-label { width:23mm; height:23mm; padding:1.95mm 1.9mm; flex-direction:column; align-items:center; justify-content:flex-start; gap:.1mm; }
+  .brother-product-small-mode .product-label-info { box-sizing:border-box; flex:0 0 8.9mm; width:100%; height:8.9mm; padding:0 1mm; text-align:center; }
+  .brother-product-small-mode .product-label-name { box-sizing:border-box; height:6mm; max-height:6mm; line-height:1.9mm; font-size:5pt; font-weight:600; padding:.1mm 0; overflow:hidden; display:block; white-space:normal; overflow-wrap:anywhere; word-break:normal; }
+  .brother-product-small-mode .product-label-price { box-sizing:border-box; height:2.9mm; line-height:2.9mm; font-size:7pt; margin:0; padding:0; white-space:nowrap; overflow:hidden; }
   .brother-product-small-mode .product-label-bars { flex:0 0 9.8213333333mm; width:19.1346666667mm; height:9.8213333333mm; }
   .brother-product-small-mode .product-label-bars canvas { width:19.1346666667mm; height:9.8213333333mm; display:block; max-width:none; image-rendering:pixelated; }
   @media print {
     body.label-print #qrBulkPrintArea.brother-product-mode.brother-product-small-mode { width:19.2mm !important; max-width:19.2mm !important; page:brother-product-small; }
-    body.label-print .brother-product-small-mode .brother-product-label { width:19.2mm !important; height:19.1mm !important; padding:.2mm 0 !important; }
+    body.label-print .brother-product-small-mode .brother-product-label { width:19.2mm !important; height:19.1mm !important; padding:.1mm 0 !important; }
   }
 
   .label-printer-settings { border:1px solid #cbd6e5; background:#f3f6fa; border-radius:8px; margin:0 0 16px; padding:12px 14px; font-size:13px; line-height:1.7; }
@@ -1286,6 +1286,14 @@
         <option value="23">23×23mm（QR版と同じ用紙・読取確認が必要）</option>
         <option value="62">62×29mm（従来のバーコード用紙）</option>
       </select>
+      <div id="productBarcodeWeightTools" style="margin-top:10px;">
+        <label for="productBarcodeWeightSelect">バーコードの黒い線</label>
+        <select id="productBarcodeWeightSelect" style="max-width:360px;margin-top:6px;">
+          <option value="thin">細く補正（黒い線が太るとき）</option>
+          <option value="standard">標準（補正なし）</option>
+        </select>
+        <p class="printer-guide-note">印字太りを補正します。線が欠けたり読みにくくなった場合は「標準」に戻し、1枚ずつ比較してください。</p>
+      </div>
     </div>
     <aside class="label-printer-settings no-print" aria-label="プリンター設定の確認">
       <p id="printerGuideSummary" role="status">用紙と倍率を確認してから印刷してください。</p>
@@ -1301,9 +1309,10 @@
           <dt>用紙サイズ</dt><dd id="printerGuidePaper">23×23mm（DK-1221）</dd>
           <dt>倍率</dt><dd>100%（「用紙に合わせる」は使わない）</dd>
           <dt>解像度</dt><dd id="printerGuideResolution">300dpi</dd>
+          <dt>黒い線の補正</dt><dd id="printerGuideWeight">細く補正（印字太り対策）</dd>
           <dt>ヘッダー・フッター</dt><dd>ブラウザの印刷設定で「なし」にする</dd>
         </dl>
-        <p class="printer-guide-note">ここに表示しているのは今回選ぶ設定です。実際の設定は印刷画面で確認してください。詳細設定の自動起動や変更はできません。</p>
+        <p class="printer-guide-note">ここに表示しているのは今回選ぶ設定です。実際の設定は印刷画面で確認してください。詳細設定の自動起動や変更はできません。黒が濃すぎる場合はBrotherのプリンター設定ツールでも印刷濃度を調整できます。変更は1項目ずつ行ってください。 <a href="https://support.brother.ca/app/answers/detail/a_id/159086/kw/cc4-108-0000a420/related/1" target="_blank" rel="noopener noreferrer">印刷濃度の調整方法（Brother公式・英語）</a></p>
       </details>
     </aside>
     <div class="brother-label-list" id="qrBulkGrid"></div>
@@ -1608,9 +1617,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261107-printer-guide-jan-v28"></script>
+<script src="app-jan.js?v=20261107-ink-spread-jan-v29"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-07-printer-guide-jan-v28") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-07-ink-spread-jan-v29") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
