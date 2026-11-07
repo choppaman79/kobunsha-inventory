@@ -3315,21 +3315,35 @@ function initOpeningStockTools() {
 // 商品バーコードの用紙選択。23mmは縮小印刷のため実機で読取確認が必要。
 let productLabelSize = "23";
 let productLabelPreviewCount = 0;
-function makeProductLabelSvg(code) {
-  const svg = makeEanSvg(code);
-  if (productLabelSize !== "23") return svg;
-  // 幅方向の95モジュールと左右の白地を保持し、上下の高さだけ調整する。
-  svg.setAttribute("viewBox", "0 0 117 60");
-  svg.setAttribute("width", "18.8mm");
-  svg.setAttribute("height", "9.64mm");
-  svg.querySelectorAll("rect").forEach(rect => {
-    if (rect.getAttribute("fill") === "white") rect.setAttribute("height", "60");
-    else rect.setAttribute("height", rect.getAttribute("height") === "74.25" ? "51.25" : "46.25");
+// 300dpiで1モジュールを2ドットにそろえ、線と隙間の端数縮小を避ける。
+function makeCompactProductBarcode(code) {
+  const bits = ean13Bits(code);
+  const canvas = document.createElement("canvas");
+  // EAN-13：左11・右7モジュールの白地を含む113モジュール。
+  canvas.width = 226;
+  canvas.height = 116;
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", "商品バーコード " + code);
+  const context = canvas.getContext("2d");
+  if (!context) throw Error("バーコードの画像を作成できませんでした");
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, 226, 116);
+  context.fillStyle = "#000";
+  [...bits].forEach((bit, i) => {
+    if (bit !== "1") return;
+    const guard = i < 3 || i >= 45 && i < 50 || i >= 92;
+    context.fillRect((11 + i) * 2, 0, 2, guard ? 98 : 88);
   });
-  const digits = svg.querySelector("text");
-  digits.setAttribute("y", "58");
-  digits.setAttribute("font-size", "9");
-  return svg;
+  context.font = "16px monospace";
+  context.textAlign = "center";
+  context.textBaseline = "alphabetic";
+  context.fillText(code, 113, 112);
+  return canvas;
+}
+
+function makeProductLabelSvg(code) {
+  return productLabelSize === "23" ? makeCompactProductBarcode(code) : makeEanSvg(code);
 }
 // 文字を省略せず枠内に収める。収まらないときは小型シールの印刷を止める。
 function fitCompactProductText() {
@@ -3365,7 +3379,7 @@ function updateProductLabelSize() {
   document.getElementById("qrBulkGrid").querySelectorAll(".product-label-name, .product-label-price").forEach(element => { element.style.fontSize = ""; });
   document.getElementById("qrBulkTitle").textContent = productLabelSize === "23" ? "商品バーコード・商品名・価格（23×23mm）" : "商品バーコード・商品名・価格（62×29mm）";
   document.getElementById("qrBulkHint").textContent = productLabelPreviewCount + "枚／" + (productLabelSize === "23"
-    ? "DK-1221（23×23mm）。倍率100%・ヘッダー／フッターなし。商品名は3行まで、文字周りの余白を確保して印刷します。標準より小さいバーコードです。最初に1枚だけ印刷し、Tera HW0010で商品が正しく開くか確認してください。POSでの読取は未確認です。"
+    ? "DK-1221（23×23mm）。300dpi・倍率100%・ヘッダー／フッターなし。用紙に合わせる拡大縮小は使わないでください。商品名は3行まで、文字周りの余白を確保して印刷します。標準より小さいバーコードです。最初に1枚だけ印刷し、Tera HW0010で商品が正しく開くか確認してください。POSでの読取は未確認です。"
     : "DK-1209（62×29mm）。倍率100%・ヘッダー／フッターなし。価格は商品マスタの売価です。POS利用には同じ商品番号と価格の登録が必要です。");
   const fits = fitCompactProductText();
   document.getElementById("qrBulkPrintOkBtn").disabled = !fits;
@@ -3378,7 +3392,7 @@ function initProductLabelSizes() {
   select.addEventListener("change", updateProductLabelSize);
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-07-print-padding-jan-v26";
+window.KOBUNSHA_APP_VERSION = "2026-11-07-sharp-bars-jan-v27";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
