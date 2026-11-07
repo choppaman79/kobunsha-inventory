@@ -71,6 +71,7 @@ function init() {
   initPilotTools();
   initOpeningStockTools();
   initProductLabelSizes();
+  initLabelPrinterGuide();
 
   document.getElementById("loginBtn").addEventListener("click", handleLogin);
   document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
@@ -682,6 +683,7 @@ function showBrotherLabelPreview(kind, title, count) {
   document.getElementById("qrBulkHint").textContent = `${count}枚／Brother QL-800・${kind === "pick" ? "DK-1209（62×29mm）" : "DK-1221（23×23mm）"}。PCでQL-800を選び、用紙サイズを合わせて倍率100%・ヘッダー／フッターなしで印刷してください。QRシールは四辺に2mmの余裕を確保しています。`;
   document.getElementById("qrBulkPrintOkBtn").disabled = false;
   document.getElementById("qrBulkOverlay").classList.add("show");
+  updateLabelPrinterGuide();
 }
 
 function finishBrotherLabels(grid, kind, title, count) {
@@ -3384,6 +3386,7 @@ function updateProductLabelSize() {
   const fits = fitCompactProductText();
   document.getElementById("qrBulkPrintOkBtn").disabled = !fits;
   if (!fits) document.getElementById("qrBulkHint").textContent += " 文字が収まらない商品があります。用紙を62×29mmに切り替えてください。";
+  updateLabelPrinterGuide();
   return fits;
 }
 function initProductLabelSizes() {
@@ -3392,7 +3395,28 @@ function initProductLabelSizes() {
   select.addEventListener("change", updateProductLabelSize);
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-07-sharp-bars-jan-v27";
+// ブラウザ・ドライバーの実設定は読めないため、今回選ぶ設定と開き方を表示する。
+function updateLabelPrinterGuide() {
+  const area = document.getElementById("qrBulkPrintArea");
+  const small = area.classList.contains("brother-product-small-mode") || area.classList.contains("brother-qr-mode");
+  const compactBarcode = area.classList.contains("brother-product-small-mode");
+  document.getElementById("printerGuidePaper").textContent = small ? "23×23mm（DK-1221）" : "62×29mm（DK-1209）";
+  document.getElementById("printerGuideResolution").textContent = compactBarcode ? "300dpi" : "プリンターの標準設定";
+  document.getElementById("printerGuideSummary").textContent = "今回の用紙：" + (small ? "23×23mm" : "62×29mm") + " ／ 倍率100% ／ ヘッダー・フッターなし";
+}
+function openLabelPrinterGuide() {
+  updateLabelPrinterGuide();
+  const guide = document.getElementById("labelPrinterGuide");
+  guide.open = true;
+  const summary = document.getElementById("labelPrinterGuideToggle");
+  summary.focus();
+  summary.scrollIntoView({block:"nearest", behavior:"smooth"});
+}
+function initLabelPrinterGuide() {
+  document.getElementById("qrPrinterHelpBtn").addEventListener("click", openLabelPrinterGuide);
+}
+
+window.KOBUNSHA_APP_VERSION = "2026-11-07-printer-guide-jan-v28";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
