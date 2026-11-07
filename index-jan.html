@@ -937,6 +937,19 @@
     body.label-print #qrBulkPrintArea.brother-product-mode.brother-product-small-mode { width:19.2mm !important; max-width:19.2mm !important; page:brother-product-small; }
     body.label-print .brother-product-small-mode .brother-product-label { width:19.2mm !important; height:19.1mm !important; padding:.2mm 0 !important; }
   }
+
+  .label-printer-settings { border:1px solid #cbd6e5; background:#f3f6fa; border-radius:8px; margin:0 0 16px; padding:12px 14px; font-size:13px; line-height:1.7; }
+  .label-printer-settings > p { margin:0 0 6px; font-weight:700; color:var(--indigo-deep); }
+  .label-printer-settings summary { cursor:pointer; font-weight:600; }
+  .label-printer-settings ol { margin:10px 0; padding-left:23px; }
+  .label-printer-settings li { margin:8px 0; }
+  .label-printer-settings kbd { display:inline-block; padding:1px 6px; border:1px solid #b8c0cb; border-radius:4px; background:white; font-family:inherit; font-weight:700; color:#1e314a; }
+  .label-printer-settings dl { display:grid; grid-template-columns:110px minmax(0,1fr); gap:6px 12px; margin:12px 0; }
+  .label-printer-settings dt { font-weight:600; }
+  .label-printer-settings dd { margin:0; overflow-wrap:anywhere; }
+  .printer-guide-note { font-size:12px; color:#685f52; margin:8px 0 0; }
+  @media (max-width:480px) { .label-printer-settings dl { grid-template-columns:95px minmax(0,1fr); gap:5px 8px; } }
+
 </style>
 </head>
 <body>
@@ -1274,10 +1287,30 @@
         <option value="62">62×29mm（従来のバーコード用紙）</option>
       </select>
     </div>
+    <aside class="label-printer-settings no-print" aria-label="プリンター設定の確認">
+      <p id="printerGuideSummary" role="status">用紙と倍率を確認してから印刷してください。</p>
+      <details id="labelPrinterGuide">
+        <summary id="labelPrinterGuideToggle">プリンターの詳細設定への進み方</summary>
+        <ol>
+          <li>下の「印刷画面を開く」を押します。印刷プレビューが表示されるまで待ってください。</li>
+          <li>WindowsのChromeでは <kbd>Ctrl</kbd> ＋ <kbd>Shift</kbd> ＋ <kbd>P</kbd> を同時に押すと、システムの印刷画面へ進めます。「システムダイアログを使用して印刷」が表示されていれば、そこからも進めます。</li>
+          <li>ラベルプリンターを選び、「詳細設定」「プロパティ」などのボタンを押して、下の設定を確認してください。ボタン名はプリンターによって異なります。</li>
+        </ol>
+        <dl>
+          <dt>プリンター</dt><dd>使用中のラベルプリンター（Brother QL-800など）</dd>
+          <dt>用紙サイズ</dt><dd id="printerGuidePaper">23×23mm（DK-1221）</dd>
+          <dt>倍率</dt><dd>100%（「用紙に合わせる」は使わない）</dd>
+          <dt>解像度</dt><dd id="printerGuideResolution">300dpi</dd>
+          <dt>ヘッダー・フッター</dt><dd>ブラウザの印刷設定で「なし」にする</dd>
+        </dl>
+        <p class="printer-guide-note">ここに表示しているのは今回選ぶ設定です。実際の設定は印刷画面で確認してください。詳細設定の自動起動や変更はできません。</p>
+      </details>
+    </aside>
     <div class="brother-label-list" id="qrBulkGrid"></div>
     <div class="modal-actions no-print">
-      <button class="btn-secondary" id="qrBulkCloseBtn">閉じる</button>
-      <button class="btn-primary" id="qrBulkPrintOkBtn">印刷する</button>
+      <button type="button" class="btn-secondary" id="qrBulkCloseBtn">閉じる</button>
+      <button type="button" class="btn-secondary" id="qrPrinterHelpBtn">プリンター設定の確認</button>
+      <button type="button" class="btn-primary" id="qrBulkPrintOkBtn">印刷画面を開く</button>
     </div>
   </div>
 </div>
@@ -1575,9 +1608,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261107-sharp-bars-jan-v27"></script>
+<script src="app-jan.js?v=20261107-printer-guide-jan-v28"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-07-sharp-bars-jan-v27") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-07-printer-guide-jan-v28") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
