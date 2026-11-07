@@ -70,6 +70,7 @@ function init() {
   initWorkModules();
   initPilotTools();
   initOpeningStockTools();
+  initProductLabelSizes();
 
   document.getElementById("loginBtn").addEventListener("click", handleLogin);
   document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
@@ -674,7 +675,8 @@ function closeQrModal() {
 // QL-800: DK-1221 (23×23mm) と DK-1209 (62×29mm) に1枚ずつ印刷する。
 function showBrotherLabelPreview(kind, title, count) {
   const area = document.getElementById("qrBulkPrintArea");
-  area.classList.remove("brother-qr-mode", "brother-pick-mode", "brother-product-mode");
+  area.classList.remove("brother-qr-mode", "brother-pick-mode", "brother-product-mode", "brother-product-small-mode");
+  document.getElementById("productLabelSizeTools").hidden = true;
   area.classList.add(kind === "pick" ? "brother-pick-mode" : "brother-qr-mode");
   document.getElementById("qrBulkTitle").textContent = title;
   document.getElementById("qrBulkHint").textContent = `${count}枚／Brother QL-800・${kind === "pick" ? "DK-1209（62×29mm）" : "DK-1221（23×23mm）"}。PCでQL-800を選び、用紙サイズを合わせて倍率100%・ヘッダー／フッターなしで印刷してください。QRシールは四辺に2mmの余裕を確保しています。`;
@@ -3310,7 +3312,45 @@ function initOpeningStockTools() {
   auth.onAuthStateChanged(()=>invalidateOpeningStock());
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-10-31-product-table-jan-v23";
+// 商品バーコードの用紙選択。23mmは縮小印刷のため実機で読取確認が必要。
+let productLabelSize = "23";
+let productLabelPreviewCount = 0;
+function makeProductLabelSvg(code) {
+  const svg = makeEanSvg(code);
+  if (productLabelSize !== "23") return svg;
+  // 幅方向の95モジュールと左右の白地を保持し、上下の高さだけ調整する。
+  svg.setAttribute("viewBox", "0 0 117 74");
+  svg.setAttribute("width", "18.8mm");
+  svg.setAttribute("height", "11.89mm");
+  svg.querySelectorAll("rect").forEach(rect => {
+    if (rect.getAttribute("fill") === "white") rect.setAttribute("height", "74");
+    else rect.setAttribute("height", rect.getAttribute("height") === "74.25" ? "65.25" : "60.25");
+  });
+  const digits = svg.querySelector("text");
+  digits.setAttribute("y", "72");
+  digits.setAttribute("font-size", "9");
+  return svg;
+}
+function updateProductLabelSize() {
+  const select = document.getElementById("productLabelSizeSelect");
+  productLabelSize = select.value === "62" ? "62" : "23";
+  const area = document.getElementById("qrBulkPrintArea");
+  area.classList.remove("brother-qr-mode", "brother-pick-mode", "brother-product-small-mode");
+  area.classList.add("brother-product-mode");
+  if (productLabelSize === "23") area.classList.add("brother-product-small-mode");
+  document.getElementById("qrBulkGrid").querySelectorAll(".product-label-bars").forEach(box => box.replaceChildren(makeProductLabelSvg(box.dataset.barcode)));
+  document.getElementById("qrBulkTitle").textContent = productLabelSize === "23" ? "商品バーコード・商品名・価格（23×23mm）" : "商品バーコード・商品名・価格（62×29mm）";
+  document.getElementById("qrBulkHint").textContent = productLabelPreviewCount + "枚／" + (productLabelSize === "23"
+    ? "DK-1221（23×23mm）。倍率100%・ヘッダー／フッターなし。商品名は2行まで。標準より小さいバーコードです。最初に1枚だけ印刷し、Tera HW0010で商品が正しく開くか確認してください。POSでの読取は未確認です。"
+    : "DK-1209（62×29mm）。倍率100%・ヘッダー／フッターなし。価格は商品マスタの売価です。POS利用には同じ商品番号と価格の登録が必要です。");
+}
+function initProductLabelSizes() {
+  const select = document.getElementById("productLabelSizeSelect");
+  select.value = productLabelSize;
+  select.addEventListener("change", updateProductLabelSize);
+}
+
+window.KOBUNSHA_APP_VERSION = "2026-11-07-small-label-jan-v24";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
@@ -3423,19 +3463,20 @@ function appendProductBarcode(grid, product, name) {
   price.textContent = "¥" + Number(product.price).toLocaleString("ja-JP");
   info.appendChild(label); info.appendChild(price); cell.appendChild(info);
   const box = document.createElement("div"); box.className = "product-label-bars";
-  box.appendChild(makeEanSvg(product.barcode)); cell.appendChild(box); grid.appendChild(cell);
+  box.dataset.barcode = product.barcode;
+  box.appendChild(makeProductLabelSvg(product.barcode)); cell.appendChild(box); grid.appendChild(cell);
 }
 function showProductLabelPreview(count) {
-  const area = document.getElementById("qrBulkPrintArea");
-  area.classList.remove("brother-qr-mode", "brother-pick-mode"); area.classList.add("brother-product-mode");
-  document.getElementById("qrBulkTitle").textContent = "商品バーコード・商品名・価格（62×29mm）";
-  document.getElementById("qrBulkHint").textContent = count + "枚／QL-800・DK-1209（62×29mm）。倍率100%・ヘッダー／フッターなし。価格は商品マスタの売価です。POS利用には同じ商品番号と価格の登録が必要です。";
+  productLabelPreviewCount = count;
+  document.getElementById("productLabelSizeTools").hidden = false;
+  updateProductLabelSize();
   document.getElementById("qrBulkOverlay").classList.add("show");
 }
 async function renderProductLabels(requests) {
   const grid = document.getElementById("qrBulkGrid");
   if (productLabelsBusy) return;
   productLabelsBusy = true;
+  document.getElementById("productLabelSizeSelect").disabled = true;
   document.getElementById("qrBulkPrintOkBtn").disabled = true;
   grid.replaceChildren();
   let ready = false;
@@ -3456,7 +3497,7 @@ async function renderProductLabels(requests) {
     showProductLabelPreview(total);
     ready = true;
   } catch (err) { grid.replaceChildren(); barcodeError(err); }
-  finally { productLabelsBusy = false; document.getElementById("qrBulkPrintOkBtn").disabled = !ready; }
+  finally { productLabelsBusy = false; document.getElementById("productLabelSizeSelect").disabled = false; document.getElementById("qrBulkPrintOkBtn").disabled = !ready; }
 }
 let productLabelsBusy = false;
 function csvCell(value) {
