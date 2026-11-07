@@ -926,16 +926,16 @@
 
 
 
-  @page brother-product-small { size:23mm 23mm; margin:2mm; }
-  .brother-product-small-mode .brother-product-label { width:23mm; height:23mm; padding:2.2mm 2mm; flex-direction:column; align-items:center; justify-content:flex-start; gap:.35mm; }
+  @page brother-product-small { size:23mm 23mm; margin:1.9mm; }
+  .brother-product-small-mode .brother-product-label { width:23mm; height:23mm; padding:2.1mm 1.9mm; flex-direction:column; align-items:center; justify-content:flex-start; gap:.35mm; }
   .brother-product-small-mode .product-label-info { box-sizing:border-box; flex:0 0 8.4mm; width:100%; height:8.4mm; padding:0 1mm; text-align:center; }
   .brother-product-small-mode .product-label-name { box-sizing:border-box; height:5.6mm; max-height:5.6mm; line-height:1.8mm; font-size:4.5pt; padding:.1mm 0; overflow:hidden; display:block; white-space:normal; overflow-wrap:anywhere; word-break:normal; }
   .brother-product-small-mode .product-label-price { box-sizing:border-box; height:2.8mm; line-height:2.8mm; font-size:6.5pt; margin:0; padding:0; white-space:nowrap; overflow:hidden; }
-  .brother-product-small-mode .product-label-bars { flex:0 0 9.64mm; width:18.8mm; height:9.64mm; }
-  .brother-product-small-mode .product-label-bars svg { width:18.8mm; height:9.64mm; }
+  .brother-product-small-mode .product-label-bars { flex:0 0 9.8213333333mm; width:19.1346666667mm; height:9.8213333333mm; }
+  .brother-product-small-mode .product-label-bars canvas { width:19.1346666667mm; height:9.8213333333mm; display:block; max-width:none; image-rendering:pixelated; }
   @media print {
-    body.label-print #qrBulkPrintArea.brother-product-mode.brother-product-small-mode { width:19mm !important; max-width:19mm !important; page:brother-product-small; }
-    body.label-print .brother-product-small-mode .brother-product-label { width:19mm !important; height:18.8mm !important; padding:.2mm 0 !important; }
+    body.label-print #qrBulkPrintArea.brother-product-mode.brother-product-small-mode { width:19.2mm !important; max-width:19.2mm !important; page:brother-product-small; }
+    body.label-print .brother-product-small-mode .brother-product-label { width:19.2mm !important; height:19.1mm !important; padding:.2mm 0 !important; }
   }
 </style>
 </head>
@@ -1575,9 +1575,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261107-print-padding-jan-v26"></script>
+<script src="app-jan.js?v=20261107-sharp-bars-jan-v27"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-07-print-padding-jan-v26") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-07-sharp-bars-jan-v27") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
