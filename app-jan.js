@@ -3350,7 +3350,7 @@ function initProductLabelSizes() {
   select.addEventListener("change", updateProductLabelSize);
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-07-small-label-jan-v24";
+window.KOBUNSHA_APP_VERSION = "2026-11-07-default-search-jan-v25";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
