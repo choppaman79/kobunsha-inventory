@@ -3319,18 +3319,40 @@ function makeProductLabelSvg(code) {
   const svg = makeEanSvg(code);
   if (productLabelSize !== "23") return svg;
   // 幅方向の95モジュールと左右の白地を保持し、上下の高さだけ調整する。
-  svg.setAttribute("viewBox", "0 0 117 74");
+  svg.setAttribute("viewBox", "0 0 117 60");
   svg.setAttribute("width", "18.8mm");
-  svg.setAttribute("height", "11.89mm");
+  svg.setAttribute("height", "9.64mm");
   svg.querySelectorAll("rect").forEach(rect => {
-    if (rect.getAttribute("fill") === "white") rect.setAttribute("height", "74");
-    else rect.setAttribute("height", rect.getAttribute("height") === "74.25" ? "65.25" : "60.25");
+    if (rect.getAttribute("fill") === "white") rect.setAttribute("height", "60");
+    else rect.setAttribute("height", rect.getAttribute("height") === "74.25" ? "51.25" : "46.25");
   });
   const digits = svg.querySelector("text");
-  digits.setAttribute("y", "72");
+  digits.setAttribute("y", "58");
   digits.setAttribute("font-size", "9");
   return svg;
 }
+// 文字を省略せず枠内に収める。収まらないときは小型シールの印刷を止める。
+function fitCompactProductText() {
+  if (productLabelSize !== "23") return true;
+  let fits = true;
+  document.getElementById("qrBulkGrid").querySelectorAll(".brother-product-label").forEach(cell => {
+    [[".product-label-name", 4.5, 3.8, 0.1], [".product-label-price", 6.5, 5, 0.25]].forEach(([selector, start, min, step]) => {
+      const element = cell.querySelector(selector);
+      if (!element) { fits = false; return; }
+      let size = start;
+      element.style.fontSize = size + "pt";
+      const overflows = () => element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth;
+      if (element.clientWidth <= 0 || element.clientHeight <= 0) { fits = false; return; }
+      while (overflows() && size > min) {
+        size = Math.max(min, Math.round((size - step) * 100) / 100);
+        element.style.fontSize = size + "pt";
+      }
+      if (overflows()) fits = false;
+    });
+  });
+  return fits;
+}
+
 function updateProductLabelSize() {
   const select = document.getElementById("productLabelSizeSelect");
   productLabelSize = select.value === "62" ? "62" : "23";
@@ -3339,10 +3361,16 @@ function updateProductLabelSize() {
   area.classList.add("brother-product-mode");
   if (productLabelSize === "23") area.classList.add("brother-product-small-mode");
   document.getElementById("qrBulkGrid").querySelectorAll(".product-label-bars").forEach(box => box.replaceChildren(makeProductLabelSvg(box.dataset.barcode)));
+  // 大きい用紙へ戻した場合は通常サイズに戻す。
+  document.getElementById("qrBulkGrid").querySelectorAll(".product-label-name, .product-label-price").forEach(element => { element.style.fontSize = ""; });
   document.getElementById("qrBulkTitle").textContent = productLabelSize === "23" ? "商品バーコード・商品名・価格（23×23mm）" : "商品バーコード・商品名・価格（62×29mm）";
   document.getElementById("qrBulkHint").textContent = productLabelPreviewCount + "枚／" + (productLabelSize === "23"
-    ? "DK-1221（23×23mm）。倍率100%・ヘッダー／フッターなし。商品名は2行まで。標準より小さいバーコードです。最初に1枚だけ印刷し、Tera HW0010で商品が正しく開くか確認してください。POSでの読取は未確認です。"
+    ? "DK-1221（23×23mm）。倍率100%・ヘッダー／フッターなし。商品名は3行まで、文字周りの余白を確保して印刷します。標準より小さいバーコードです。最初に1枚だけ印刷し、Tera HW0010で商品が正しく開くか確認してください。POSでの読取は未確認です。"
     : "DK-1209（62×29mm）。倍率100%・ヘッダー／フッターなし。価格は商品マスタの売価です。POS利用には同じ商品番号と価格の登録が必要です。");
+  const fits = fitCompactProductText();
+  document.getElementById("qrBulkPrintOkBtn").disabled = !fits;
+  if (!fits) document.getElementById("qrBulkHint").textContent += " 文字が収まらない商品があります。用紙を62×29mmに切り替えてください。";
+  return fits;
 }
 function initProductLabelSizes() {
   const select = document.getElementById("productLabelSizeSelect");
@@ -3350,7 +3378,7 @@ function initProductLabelSizes() {
   select.addEventListener("change", updateProductLabelSize);
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-07-default-search-jan-v25";
+window.KOBUNSHA_APP_VERSION = "2026-11-07-print-padding-jan-v26";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
@@ -3459,6 +3487,7 @@ function appendProductBarcode(grid, product, name) {
   const info = document.createElement("div"); info.className = "product-label-info";
   const label = document.createElement("div"); label.className = "product-label-name";
   label.textContent = name || product.name || "商品名未登録";
+  label.title = label.textContent;
   const price = document.createElement("div"); price.className = "product-label-price";
   price.textContent = "¥" + Number(product.price).toLocaleString("ja-JP");
   info.appendChild(label); info.appendChild(price); cell.appendChild(info);
@@ -3469,8 +3498,8 @@ function appendProductBarcode(grid, product, name) {
 function showProductLabelPreview(count) {
   productLabelPreviewCount = count;
   document.getElementById("productLabelSizeTools").hidden = false;
-  updateProductLabelSize();
   document.getElementById("qrBulkOverlay").classList.add("show");
+  return updateProductLabelSize();
 }
 async function renderProductLabels(requests) {
   const grid = document.getElementById("qrBulkGrid");
@@ -3494,8 +3523,7 @@ async function renderProductLabels(requests) {
     grid.lastElementChild.classList.add("last-label");
     grid.className = "brother-label-list";
     document.getElementById("qrOverlay").classList.remove("show");
-    showProductLabelPreview(total);
-    ready = true;
+    ready = showProductLabelPreview(total);
   } catch (err) { grid.replaceChildren(); barcodeError(err); }
   finally { productLabelsBusy = false; document.getElementById("productLabelSizeSelect").disabled = false; document.getElementById("qrBulkPrintOkBtn").disabled = !ready; }
 }
