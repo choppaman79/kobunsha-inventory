@@ -925,6 +925,19 @@
   .visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 
 
+
+  @page brother-product-small { size:23mm 23mm; margin:2mm; }
+  .brother-product-small-mode .brother-product-label { width:23mm; height:23mm; padding:2mm; flex-direction:column; align-items:center; justify-content:center; gap:.5mm; }
+  .brother-product-small-mode .product-label-info { flex:0 0 6.1mm; width:100%; height:6.1mm; text-align:center; }
+  .brother-product-small-mode .product-label-name { height:3.6mm; max-height:3.6mm; line-height:1.8mm; font-size:4.5pt; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .brother-product-small-mode .product-label-price { height:2.5mm; line-height:2.5mm; font-size:6.5pt; margin:0; white-space:nowrap; overflow:hidden; }
+  .brother-product-small-mode .product-label-bars { flex:0 0 11.89mm; width:18.8mm; height:11.89mm; }
+  .brother-product-small-mode .product-label-bars svg { width:18.8mm; height:11.89mm; }
+  @media print {
+    body.label-print #qrBulkPrintArea.brother-product-mode.brother-product-small-mode { width:19mm !important; max-width:19mm !important; page:brother-product-small; }
+    body.label-print .brother-product-small-mode .brother-product-label { width:19mm !important; height:18.8mm !important; padding:0 !important; }
+  }
+
 </style>
 </head>
 <body>
@@ -1003,7 +1016,7 @@
         <input type="text" id="scannerInput" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄（ここをクリックしてスキャン）">
         <div class="spacer"></div>
         <button class="btn-secondary-inline" id="scanGlobalBtn">📷 スキャン</button>
-        <button class="btn-secondary-inline" id="qrBulkPrintBtn">商品バーコード・値札印刷（62×29）</button>
+        <button class="btn-secondary-inline" id="qrBulkPrintBtn">商品バーコード・値札印刷（23×23／62×29）</button>
         <button class="btn-secondary-inline" id="posCsvBtn">POS用 商品CSV出力</button>
         <button class="btn-secondary-inline" id="bulkModeBtn">商品を選んで一括削除</button>
         <button class="btn-secondary-inline" id="bulkSelectAllBtn" style="display:none;">表示中をすべて選択</button>
@@ -1255,6 +1268,13 @@
   <div class="modal" id="qrBulkPrintArea" style="max-width:680px;">
     <h2 class="no-print" id="qrBulkTitle">Brother QL-800 ラベル印刷</h2>
     <p class="brother-print-hint no-print" id="qrBulkHint"></p>
+    <div class="no-print" id="productLabelSizeTools" hidden style="margin-bottom:14px;">
+      <label for="productLabelSizeSelect">商品シールの用紙サイズ</label>
+      <select id="productLabelSizeSelect" style="max-width:360px;margin-top:6px;">
+        <option value="23">23×23mm（QR版と同じ用紙・読取確認が必要）</option>
+        <option value="62">62×29mm（従来のバーコード用紙）</option>
+      </select>
+    </div>
     <div class="brother-label-list" id="qrBulkGrid"></div>
     <div class="modal-actions no-print">
       <button class="btn-secondary" id="qrBulkCloseBtn">閉じる</button>
@@ -1556,9 +1576,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261031-product-table-jan-v23"></script>
+<script src="app-jan.js?v=20261107-small-label-jan-v24"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-10-31-product-table-jan-v23") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-07-small-label-jan-v24") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
