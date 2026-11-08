@@ -1234,6 +1234,8 @@
     <input type="text" id="editCode">
     <label>販売用バーコード（13桁）</label>
     <input type="text" id="editBarcode" inputmode="numeric" maxlength="13" placeholder="空欄なら店内用番号を自動発行">
+    <div id="editBarcodeStatus" role="alert" style="white-space:pre-wrap;color:#9d302a;font-size:13px;line-height:1.7;margin:8px 0;"></div>
+    <button type="button" id="editBarcodeTransferBtn" class="btn-secondary-inline" hidden style="white-space:normal;margin:0 0 12px;">旧番号の使用先を確認して、この商品へ付け替える</button>
     <p style="font-size:12px;">POS確定後は登録番号に合わせて変更できます。変更後は値札を再印刷してください。</p>
     <label>仕入れ先（任意）</label>
     <input type="text" id="editSupplier">
@@ -1617,9 +1619,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261107-ink-spread-jan-v29"></script>
+<script src="app-jan.js?v=20261107-barcode-conflict-jan-v30"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-07-ink-spread-jan-v29") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-07-barcode-conflict-jan-v30") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
