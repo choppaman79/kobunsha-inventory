@@ -121,8 +121,9 @@ function init() {
   });
   document.getElementById("qrBulkPrintOkBtn").addEventListener("click", () => {
     document.body.classList.add("label-print");
-    document.body.classList.remove("slip-print", "work-print");
-    setTimeout(() => window.print(), 30);
+    document.body.classList.remove("slip-print", "work-print", "order-print", "prepared-print");
+    applyLabelPaperSize();
+    setTimeout(() => window.print(), 150);
   });
   document.getElementById("qrBulkOverlay").addEventListener("click", (e) => {
     if (e.target.id === "qrBulkOverlay") document.getElementById("qrBulkOverlay").classList.remove("show");
@@ -3490,7 +3491,32 @@ function initBarcodeTransferTools() {
   barcodeEditFieldIds.forEach(id=>document.getElementById(id).addEventListener("input",clearBarcodeEditStatus));
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-07-barcode-conflict-jan-v30";
+// 印刷ジョブ全体の用紙指定。ラベルの子要素だけに名前付きページを割り当てない。
+function labelPaperSettings() {
+  const area = document.getElementById("qrBulkPrintArea");
+  const small = area.classList.contains("brother-product-small-mode") || area.classList.contains("brother-qr-mode");
+  const product = area.classList.contains("brother-product-mode");
+  return {size: small ? "23mm 23mm" : "62mm 29mm", margin: small ? (area.classList.contains("brother-qr-mode") ? "2mm" : "1.9mm") : (product ? "1.8mm" : "0")};
+}
+function clearLabelPaperSize() {
+  const style = document.getElementById("activeLabelPaperStyle");
+  if (style) style.remove();
+}
+function applyLabelPaperSize() {
+  clearLabelPaperSize();
+  if (!document.body.classList.contains("label-print")) return;
+  const paper = labelPaperSettings();
+  const style = document.createElement("style");
+  style.id = "activeLabelPaperStyle";
+  // 匿名ページにも指定し、親ページが前回の29×90mm等になることを防ぐ。
+  style.textContent = "@page { size:" + paper.size + "; margin:" + paper.margin + "; }\n" +
+    "@media print { html, body.label-print, body.label-print * { page:auto !important; } }";
+  document.head.appendChild(style);
+}
+window.addEventListener("beforeprint", applyLabelPaperSize);
+window.addEventListener("afterprint", clearLabelPaperSize);
+
+window.KOBUNSHA_APP_VERSION = "2026-11-08-label-paper-jan-v31";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
