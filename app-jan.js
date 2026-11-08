@@ -72,6 +72,7 @@ function init() {
   initOpeningStockTools();
   initProductLabelSizes();
   initLabelPrinterGuide();
+  initBarcodeTransferTools();
 
   document.getElementById("loginBtn").addEventListener("click", handleLogin);
   document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
@@ -2419,6 +2420,8 @@ function handleRegisterSubmit() {
 
 // ===================== 商品編集 =====================
 function openEditModal(id) {
+  if (barcodeEditSaveBusy) return showToast("保存中です。完了をお待ちください");
+  clearBarcodeEditStatus();
   const p = allProducts.find(x => x.id === id);
   if (!p) return;
   editingId = id;
@@ -2437,11 +2440,13 @@ function openEditModal(id) {
 }
 
 function closeEditModal() {
+  clearBarcodeEditStatus();
   editingId = null;
   document.getElementById("editOverlay").classList.remove("show");
 }
 
 function handleEditSave() {
+  if (barcodeEditSaveBusy) return;
   if (!inventoryWritesAllowed()) return;
   if (!editingId) return;
   const targetId = editingId;
@@ -2464,9 +2469,12 @@ function handleEditSave() {
   }
   if (!data.name || !Number.isFinite(data.price) || data.price < 0) return showToast("商品名と売価を確認してください");
   const requested = document.getElementById("editBarcode").value.trim();
+  const formState = barcodeEditFormState();
+  clearBarcodeEditStatus();setBarcodeEditBusy(true);
   ensureProductBarcode(targetId, requested, data)
-    .then(() => { showToast("保存しました"); if (editingId === targetId) closeEditModal(); })
-    .catch(barcodeError);
+    .then(() => { renderProductList();showToast("保存しました"); if (editingId === targetId) closeEditModal(); })
+    .catch(error => showBarcodeEditFailure(error,targetId,requested,data,formState))
+    .finally(() => setBarcodeEditBusy(false));
 }
 
 function handleEditDelete() {
@@ -3430,7 +3438,59 @@ function initLabelPrinterGuide() {
   document.getElementById("qrPrinterHelpBtn").addEventListener("click", openLabelPrinterGuide);
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-07-ink-spread-jan-v29";
+let barcodeEditSaveBusy = false;
+let pendingBarcodeTransfer = null;
+const barcodeEditFieldIds = ["editName","editCode","editBarcode","editSupplier","editLot","editCategory","editUnit","editPrice","editStock","editMinStock","editNote"];
+function barcodeProductState(product) {
+  return JSON.stringify(["name","code","barcode","barcodeAliases","supplier","lot","category","unit","price","currentStock","reservedStock","minStock","note"].map(key=>product[key]??null));
+}
+function barcodeEditFormState() { return JSON.stringify(barcodeEditFieldIds.map(id=>document.getElementById(id).value)); }
+function clearBarcodeEditStatus() {
+  pendingBarcodeTransfer = null;
+  document.getElementById("editBarcodeStatus").textContent = "";
+  document.getElementById("editBarcodeTransferBtn").hidden = true;
+}
+function setBarcodeEditBusy(busy) {
+  barcodeEditSaveBusy = busy;
+  document.getElementById("editSaveBtn").disabled = busy;
+  document.getElementById("editBarcodeTransferBtn").disabled = busy;
+  barcodeEditFieldIds.forEach(id=>{document.getElementById(id).disabled=busy;});
+}
+function showBarcodeEditFailure(error, targetId, requested, data, formState) {
+  barcodeError(error);
+  if (editingId !== targetId || barcodeEditFormState() !== formState) return;
+  clearBarcodeEditStatus();
+  document.getElementById("editBarcodeStatus").textContent = error.message || "保存できませんでした";
+  const conflict = error.barcodeConflict;
+  if (conflict?.kind !== "alias") return;
+  pendingBarcodeTransfer = {targetId, requested, data, formState, conflict};
+  const button = document.getElementById("editBarcodeTransferBtn");
+  button.textContent = "旧番号の使用先を確認して、この商品へ付け替える";
+  button.hidden = false;
+}
+async function confirmBarcodeAliasTransfer() {
+  const pending = pendingBarcodeTransfer;
+  if (barcodeEditSaveBusy || !pending || !inventoryWritesAllowed()) return;
+  if (editingId !== pending.targetId || barcodeEditFormState() !== pending.formState) {
+    clearBarcodeEditStatus();return showToast("入力内容が変わりました。保存し直して確認してください");
+  }
+  const c=pending.conflict;
+  const message = "番号："+pending.requested+"\n変更元："+c.ownerName+"（商品コード "+c.ownerCode+"）\n変更元の現在番号："+c.currentBarcode+"\n変更先："+pending.data.name+"（商品コード "+pending.data.code+"）\n\nこの番号を変更元の旧番号から外し、変更先へ登録します。変更元の現在番号は変更しません。\nこの番号が印刷された変更元の古いシールは、今後変更先の商品を開きます。古いシールを使わず、貼り替えてください。\n付け替えて保存しますか？";
+  if(!confirm(message)) return;
+  setBarcodeEditBusy(true);
+  try {
+    await ensureProductBarcode(pending.targetId,pending.requested,pending.data,{fromProductId:c.ownerId,ownerState:c.ownerState,targetState:c.targetState});
+    renderProductList();showToast("旧番号を付け替えて保存しました。対象商品のシールを貼り替えてください");
+    if(editingId===pending.targetId)closeEditModal();
+  } catch(error) { showBarcodeEditFailure(error,pending.targetId,pending.requested,pending.data,pending.formState); }
+  finally { setBarcodeEditBusy(false); }
+}
+function initBarcodeTransferTools() {
+  document.getElementById("editBarcodeTransferBtn").addEventListener("click",confirmBarcodeAliasTransfer);
+  barcodeEditFieldIds.forEach(id=>document.getElementById(id).addEventListener("input",clearBarcodeEditStatus));
+}
+
+window.KOBUNSHA_APP_VERSION = "2026-11-07-barcode-conflict-jan-v30";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
@@ -3485,7 +3545,7 @@ function makeEanSvg(code) {
   digits.textContent = code; svg.appendChild(digits);
   return svg;
 }
-async function ensureProductBarcode(id, requested, changes) {
+async function ensureProductBarcode(id, requested, changes, transfer) {
   const ref = db.collection(COLLECTION).doc(id);
   const registry = db.collection(BARCODE_REGISTRY);
   const result = await db.runTransaction(async tx => {
@@ -3493,6 +3553,9 @@ async function ensureProductBarcode(id, requested, changes) {
     const doc = await tx.get(ref);
     if (!doc.exists) throw Error("商品が削除されています");
     const product = doc.data();
+    if (transfer && barcodeProductState(product) !== transfer.targetState) throw Error("変更先の商品情報が変わりました。編集画面を開き直してください");
+    if (transfer && changes && changes.currentStock !== undefined && Number(changes.currentStock) !== Number(product.currentStock || 0)) throw Error("在庫数の変更と番号の付け替えは分けて行ってください。編集画面を開き直して現在庫を確認してください");
+    let releaseOwner = null;
     let code = requested === undefined ? product.barcode || "" : String(requested).trim();
     let counter = null, next = null;
     if (!code) {
@@ -3514,18 +3577,44 @@ async function ensureProductBarcode(id, requested, changes) {
     }
     if (!validEan13(code)) throw Error("バーコードは検査数字を含む正しい13桁で入力してください");
     const allocated = await tx.get(registry.doc(code));
-    if (allocated.exists && allocated.data().productId !== id) throw Error("そのバーコードは別の商品で使用済みです");
+    if (allocated.exists && allocated.data().productId !== id) {
+      const ownerId = allocated.data().productId;
+      if (typeof ownerId !== "string" || !ownerId || ownerId.includes("/")) throw Error("番号台帳の使用先を確認できません。管理者に確認してください");
+      const ownerRef = db.collection(COLLECTION).doc(ownerId);
+      const ownerDoc = await tx.get(ownerRef);
+      const owner = ownerDoc.exists ? ownerDoc.data() : null;
+      const kind = !owner ? "orphan" : owner.barcode === code ? "current" : (owner.barcodeAliases || []).includes(code) ? "alias" : "inconsistent";
+      if (transfer) {
+        if (kind !== "alias" || transfer.fromProductId !== ownerId || barcodeProductState(owner) !== transfer.ownerState || !validEan13(owner.barcode)) throw Error("番号の使用先が変わりました。保存し直して確認してください");
+        releaseOwner = {ref:ownerRef,id:ownerId,aliases:owner.barcodeAliases.filter(value=>value!==code)};
+      } else {
+        const description = owner ? "「"+(owner.name||"商品名未登録")+"」（商品コード "+(owner.code||"未登録")+"）" : "削除済みの商品";
+        const message = kind === "alias" ? "番号 "+code+" は "+description+" の旧番号として登録されています。現在番号は "+owner.barcode+" です。"
+          : kind === "current" ? "番号 "+code+" は "+description+" が現在使用しています。同じ番号は登録できません。"
+          : "番号 "+code+" は "+description+" に予約されていますが、登録状態を確認できません。管理者に確認してください。";
+        const error = Error(message);
+        error.barcodeConflict = {kind,ownerId,ownerName:owner?.name||"商品名未登録",ownerCode:owner?.code||"未登録",currentBarcode:owner?.barcode||"",ownerState:owner?barcodeProductState(owner):null,targetState:barcodeProductState(product)};
+        throw error;
+      }
+    }
+    if (transfer && !releaseOwner) throw Error("番号の関連付けが変わりました。保存し直して確認してください");
     if (next !== null && allocated.exists) throw Error("自動採番の番号が予約済みです。管理者に確認してください");
-    const aliases = [...new Set([...(product.barcodeAliases || []), ...(product.barcode && product.barcode !== code ? [product.barcode] : [])])];
+    const aliases = [...new Set([...(product.barcodeAliases || []), ...(product.barcode && product.barcode !== code ? [product.barcode] : [])])].filter(value=>value!==code);
     if (changes && Number(changes.currentStock) < Number(product.reservedStock || 0)) throw Error("月始祭準備分を下回る在庫数にはできません");
+    if (releaseOwner) tx.update(releaseOwner.ref,{barcodeAliases:releaseOwner.aliases});
     tx.set(registry.doc(code), { productId: id });
     if (next !== null) tx.set(registry.doc("_sequence"), { next: next + 1 });
     tx.update(ref, { ...(changes || {}), barcode: code, barcodeAliases: aliases, barcodeFormat: "EAN13" });
-    return { id, ...product, ...(changes || {}), barcode: code, barcodeAliases: aliases };
+    return { id, ...product, ...(changes || {}), barcode: code, barcodeAliases: aliases, _releasedOwner:releaseOwner?{id:releaseOwner.id,aliases:releaseOwner.aliases}:null };
   });
+  const {_releasedOwner, ...updated} = result;
   const local = allProducts.find(p => p.id === id);
-  if (local) Object.assign(local, result);
-  return result;
+  if (local) Object.assign(local, updated);
+  if (_releasedOwner) {
+    const previous = allProducts.find(p=>p.id===_releasedOwner.id);
+    if (previous) previous.barcodeAliases = _releasedOwner.aliases;
+  }
+  return updated;
 }
 function barcodeError(err) {
   console.error(err);
