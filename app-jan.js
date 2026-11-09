@@ -3366,9 +3366,10 @@ function fitCompactProductText() {
   if (productLabelSize !== "23") return true;
   let fits = true;
   document.getElementById("qrBulkGrid").querySelectorAll(".brother-product-label").forEach(cell => {
-    [[".product-label-name", 5, 3.8, 0.1], [".product-label-price", 7, 5, 0.25]].forEach(([selector, start, min, step]) => {
+    [[".product-label-name", 5, 3.5, 0.1], [".product-label-color", 5.5, 3.8, 0.1], [".product-label-price", 7, 5, 0.25]].forEach(([selector, start, min, step]) => {
       const element = cell.querySelector(selector);
       if (!element) { fits = false; return; }
+      if (element.hidden) return;
       let size = start;
       element.style.fontSize = size + "pt";
       const overflows = () => element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth;
@@ -3394,10 +3395,10 @@ function updateProductLabelSize() {
   if (productLabelSize === "23") area.classList.add("brother-product-small-mode");
   document.getElementById("qrBulkGrid").querySelectorAll(".product-label-bars").forEach(box => box.replaceChildren(makeProductLabelSvg(box.dataset.barcode)));
   // 大きい用紙へ戻した場合は通常サイズに戻す。
-  document.getElementById("qrBulkGrid").querySelectorAll(".product-label-name, .product-label-price").forEach(element => { element.style.fontSize = ""; });
+  document.getElementById("qrBulkGrid").querySelectorAll(".product-label-name, .product-label-color, .product-label-price").forEach(element => { element.style.fontSize = ""; });
   document.getElementById("qrBulkTitle").textContent = productLabelSize === "23" ? "商品バーコード・商品名・価格（23×23mm）" : "商品バーコード・商品名・価格（62×29mm）";
   document.getElementById("qrBulkHint").textContent = productLabelPreviewCount + "枚／" + (productLabelSize === "23"
-    ? "DK-1221（23×23mm）。300dpi・倍率100%・ヘッダー／フッターなし。用紙に合わせる拡大縮小は使わないでください。商品名は3行まで、文字周りの余白を確保して印刷します。標準より小さいバーコードです。最初に1枚だけ印刷し、Tera HW0010で商品が正しく開くか確認してください。POSでの読取は未確認です。"
+    ? "DK-1221（23×23mm）。300dpi・倍率100%・ヘッダー／フッターなし。用紙に合わせる拡大縮小は使わないでください。商品名2行・色1行・価格の順に印刷します。色は商品名末尾の既知の色名から分けて表示し、判別できない場合は商品名に残します。標準より小さいバーコードです。最初に1枚だけ印刷し、Tera HW0010で商品が正しく開くか確認してください。POSでの読取は未確認です。"
     : "DK-1209（62×29mm）。倍率100%・ヘッダー／フッターなし。価格は商品マスタの売価です。POS利用には同じ商品番号と価格の登録が必要です。");
   if (productLabelSize === "23") document.getElementById("qrBulkHint").textContent += compactBarcodeReduction
     ? " 線は「細く補正」です。線が欠ける場合は「標準」に戻してください。"
@@ -3516,7 +3517,7 @@ function applyLabelPaperSize() {
 window.addEventListener("beforeprint", applyLabelPaperSize);
 window.addEventListener("afterprint", clearLabelPaperSize);
 
-window.KOBUNSHA_APP_VERSION = "2026-11-08-label-paper-jan-v31";
+window.KOBUNSHA_APP_VERSION = "2026-11-09-label-layout-jan-v32";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
@@ -3646,6 +3647,22 @@ function barcodeError(err) {
   console.error(err);
   showToast(err.code === "permission-denied" ? "バーコード用のFirestoreルール追加が必要です。READMEを確認してください" : err.message || "バーコード処理に失敗しました");
 }
+// 印字だけで商品名の末尾にある色を分離。商品マスタは変更しない。
+function productLabelTextParts(rawName) {
+  const full = String(rawName || "商品名未登録").normalize("NFKC").trim();
+  const colors = ["シルバーグレー", "シルバーグレイ", "シルバー", "ゴールド", "アイボリー", "ベージュ", "オレンジ", "イエロー", "パープル", "グリーン", "ネイビー", "ブラウン", "ブラック", "ホワイト", "ピンク", "ブルー", "レッド", "翡翠", "葵", "白", "黒", "赤", "青", "緑", "紫", "黄", "金", "銀", "Pink", "Red", "Blue", "Green", "Yellow", "Purple", "White", "Black", "Silver", "Gold"];
+  for (const color of colors) {
+    const pattern = [...color].join("\\s*");
+    const match = full.match(new RegExp("[\\s　:：/／・_-]*[（(]?" + pattern + "[）)]?\\s*$", "i"));
+    if (match && match.index > 0) {
+      const base = full.slice(0, match.index).trim();
+      if (base) return {name:base.replace(/紙製(?=御み霊箱)/, "紙製\n"), color};
+    }
+  }
+  // 色を推測できない場合も商品名の全文を保持する。
+  return {name:full.replace(/紙製(?=御み霊箱)/, "紙製\n"), color:""};
+}
+
 function appendProductBarcode(grid, product, name) {
   if (!validEan13(product.barcode)) throw Error("商品バーコードが未登録です");
   if (product.price == null || !Number.isFinite(Number(product.price)) || Number(product.price) < 0) throw Error("商品の売価を登録してください：" + product.name);
@@ -3653,11 +3670,16 @@ function appendProductBarcode(grid, product, name) {
   cell.className = "brother-product-label";
   const info = document.createElement("div"); info.className = "product-label-info";
   const label = document.createElement("div"); label.className = "product-label-name";
-  label.textContent = name || product.name || "商品名未登録";
-  label.title = label.textContent;
+  const textParts = productLabelTextParts(name || product.name);
+  label.textContent = textParts.name;
+  label.title = name || product.name || "商品名未登録";
+  const color = document.createElement("div"); color.className = "product-label-color";
+  color.textContent = textParts.color;
+  color.hidden = !textParts.color;
+  if (!textParts.color) cell.classList.add("product-label-no-color");
   const price = document.createElement("div"); price.className = "product-label-price";
   price.textContent = "¥" + Number(product.price).toLocaleString("ja-JP");
-  info.appendChild(label); info.appendChild(price); cell.appendChild(info);
+  info.appendChild(label); info.appendChild(color); info.appendChild(price); cell.appendChild(info);
   const box = document.createElement("div"); box.className = "product-label-bars";
   box.dataset.barcode = product.barcode;
   box.appendChild(makeProductLabelSvg(product.barcode)); cell.appendChild(box); grid.appendChild(cell);
