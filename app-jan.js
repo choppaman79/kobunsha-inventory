@@ -3333,14 +3333,14 @@ function makeCompactProductBarcode(code) {
   const canvas = document.createElement("canvas");
   // EAN-13：左11・右7モジュールの白地を含む113モジュール。
   canvas.width = 226;
-  canvas.height = 116;
+  canvas.height = 88;
   canvas.setAttribute("role", "img");
   canvas.setAttribute("aria-label", "商品バーコード " + code);
   const context = canvas.getContext("2d");
   if (!context) throw Error("バーコードの画像を作成できませんでした");
   context.imageSmoothingEnabled = false;
   context.fillStyle = "#fff";
-  context.fillRect(0, 0, 226, 116);
+  context.fillRect(0, 0, 226, 88);
   context.fillStyle = "#000";
   // 黒い連続区間をまとめて補正する。太いバーの内部に白い隙間を作らない。
   for (let i = 0; i < bits.length;) {
@@ -3349,24 +3349,31 @@ function makeCompactProductBarcode(code) {
     while (i < bits.length && bits[i] === "1") i++;
     const guard = start < 3 || start >= 45 && start < 50 || start >= 92;
     const width = Math.max(1, (i - start) * 2 - compactBarcodeReduction);
-    context.fillRect((11 + start) * 2, 0, width, guard ? 94 : 84);
+    context.fillRect((11 + start) * 2, 0, width, guard ? 84 : 76);
   }
-  context.font = "18px monospace";
-  context.textAlign = "center";
-  context.textBaseline = "alphabetic";
-  context.fillText(code, 113, 112);
   return canvas;
 }
 
 function makeProductLabelSvg(code) {
   return productLabelSize === "23" ? makeCompactProductBarcode(code) : makeEanSvg(code);
 }
+// 数字は画像から分けて専用の行へ。画像の下端で文字を切らない。
+function renderProductBarcodeBox(box) {
+  const code = box.dataset.barcode;
+  box.replaceChildren(makeProductLabelSvg(code));
+  if (productLabelSize === "23") {
+    const digits = document.createElement("div");
+    digits.className = "product-label-digits";
+    digits.textContent = code;
+    box.appendChild(digits);
+  }
+}
 // 文字を省略せず枠内に収める。収まらないときは小型シールの印刷を止める。
 function fitCompactProductText() {
   if (productLabelSize !== "23") return true;
   let fits = true;
   document.getElementById("qrBulkGrid").querySelectorAll(".brother-product-label").forEach(cell => {
-    [[".product-label-name", 5, 3.5, 0.1], [".product-label-color", 5.5, 3.8, 0.1], [".product-label-price", 7, 5, 0.25]].forEach(([selector, start, min, step]) => {
+    [[".product-label-name", 4.8, 3.5, 0.1], [".product-label-color", 5.5, 3.8, 0.1], [".product-label-price", 6.5, 5, 0.25]].forEach(([selector, start, min, step]) => {
       const element = cell.querySelector(selector);
       if (!element) { fits = false; return; }
       if (element.hidden) return;
@@ -3393,7 +3400,7 @@ function updateProductLabelSize() {
   area.classList.remove("brother-qr-mode", "brother-pick-mode", "brother-product-small-mode");
   area.classList.add("brother-product-mode");
   if (productLabelSize === "23") area.classList.add("brother-product-small-mode");
-  document.getElementById("qrBulkGrid").querySelectorAll(".product-label-bars").forEach(box => box.replaceChildren(makeProductLabelSvg(box.dataset.barcode)));
+  document.getElementById("qrBulkGrid").querySelectorAll(".product-label-bars").forEach(renderProductBarcodeBox);
   // 大きい用紙へ戻した場合は通常サイズに戻す。
   document.getElementById("qrBulkGrid").querySelectorAll(".product-label-name, .product-label-color, .product-label-price").forEach(element => { element.style.fontSize = ""; });
   document.getElementById("qrBulkTitle").textContent = productLabelSize === "23" ? "商品バーコード・商品名・価格（23×23mm）" : "商品バーコード・商品名・価格（62×29mm）";
@@ -3517,7 +3524,7 @@ function applyLabelPaperSize() {
 window.addEventListener("beforeprint", applyLabelPaperSize);
 window.addEventListener("afterprint", clearLabelPaperSize);
 
-window.KOBUNSHA_APP_VERSION = "2026-11-09-label-layout-jan-v32";
+window.KOBUNSHA_APP_VERSION = "2026-11-09-text-padding-jan-v33";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
@@ -3682,7 +3689,7 @@ function appendProductBarcode(grid, product, name) {
   info.appendChild(label); info.appendChild(color); info.appendChild(price); cell.appendChild(info);
   const box = document.createElement("div"); box.className = "product-label-bars";
   box.dataset.barcode = product.barcode;
-  box.appendChild(makeProductLabelSvg(product.barcode)); cell.appendChild(box); grid.appendChild(cell);
+  renderProductBarcodeBox(box); cell.appendChild(box); grid.appendChild(cell);
 }
 function showProductLabelPreview(count) {
   productLabelPreviewCount = count;
