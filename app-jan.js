@@ -70,6 +70,7 @@ function init() {
   initWorkModules();
   initPilotTools();
   initOpeningStockTools();
+  initS1ShippingImport();
   initProductLabelSizes();
   initLabelPrinterGuide();
   initBarcodeTransferTools();
@@ -772,6 +773,7 @@ function handleExcelFile(e) {
     try {
       const data = new Uint8Array(ev.target.result);
       const workbook = XLSX.read(data, { type: "array" });
+      if(workbook.Sheets["出荷指示依頼書"])throw Error("このExcelは「伝票・検品」の出荷依頼書取込から選択してください。商品登録には使用できません");
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "", raw: false });
       if (rows.some(row => Object.keys(row).some(key => normalizeHeader(key) === normalizeHeader("開始在庫数")))) {
@@ -2951,6 +2953,7 @@ let resetPreview = null, resetRunning = false, controlUnsubscribe = null;
 const destinationFields = ["slipPartner", "slipPartnerAddress", "slipPartnerTel", "slipShipTo"];
 function normalizeDestinationCode(value) {
   const code = String(value || "").normalize("NFKC").trim().toUpperCase();
+  if(code === "社内")return code;
   if (!/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(code)) throw Error("出荷先コードは半角英数字・ハイフン・アンダーバーの1～32文字で入力してください");
   return code;
 }
@@ -3759,7 +3762,155 @@ async function printOutgoingInspectionLabels(slipId) {
   }
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-10-inspection-jan-v34";
+// S1出荷指示依頼書：原本の4区画から、出荷先ごとの未検品伝票を作成する。
+let s1ImportPlan=null,s1ImportGeneration=0,s1ImportBusy=false;
+function s1Normalize(v){return String(v??"").normalize("NFKC").trim();}
+function s1Name(v){return s1Normalize(v).replace(/\s+/g,"").toLowerCase();}
+function s1ValidDate(value){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+  const d=new Date(value+"T00:00:00Z");return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===value;
+}
+function s1HeaderDate(title,fallback){
+  const text=s1Normalize(title).split("出荷分")[0];
+  let m=text.match(/令和\s*(元|\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日/),year,month,day;
+  if(m){year=(m[1]==="元"?1:Number(m[1]))+2018;month=Number(m[2]);day=Number(m[3]);}
+  else {m=text.match(/(\d{4})\s*年\s*(\d+)\s*月\s*(\d+)\s*日/);if(m){year=Number(m[1]);month=Number(m[2]);day=Number(m[3]);}}
+  if(!m){if(/\d|元/.test(text))throw Error("出荷日の記入が途中です。年月日を全て入力するか、日付欄を空欄にしてください");return fallback;}
+  const date=String(year).padStart(4,"0")+"-"+String(month).padStart(2,"0")+"-"+String(day).padStart(2,"0");
+  if(!s1ValidDate(date))throw Error("出荷日が正しくありません："+title);return date;
+}
+function parseS1ShippingWorkbook(workbook,fallbackDate){
+  if(!s1ValidDate(fallbackDate))throw Error("出荷日を入力してください");
+  const sheet=workbook.Sheets?.["出荷指示依頼書"];
+  if(!sheet)throw Error("「出荷指示依頼書」シートがありません");
+  const end=Number((sheet["!ref"]||"").match(/\d+$/)?.[0]||31);
+  if(end>10000)throw Error("シートの行数が多すぎます。指定の出荷依頼書を使用してください");
+  const cell=(col,row)=>sheet[col+row];
+  function value(col,row){const c=cell(col,row);if(c?.t==="e" || c?.f&&c.v===undefined)throw Error(col+row+"の数式結果を確認し、Excelで再計算・保存してください");return c?.v??"";}
+  const configs=[{code:"0020",title:"A1",header:2,start:3,end:16,cols:["A","B","C","D"]},{code:"0160",title:"A17",header:18,start:19,end,cols:["A","B","C","D"]},{code:"0050",title:"G1",header:2,start:3,end:16,cols:["G","H","I","J"]},{code:"社内",title:"G17",header:18,start:19,end,cols:["G","H","I","J"]}];
+  return configs.map(c=>{
+    const title=s1Normalize(sheet[c.title]?.v),match=title.match(/出荷分\s*(0020|0160|0050|社内)\s*$/);
+    if(!match || match[1]!==c.code)throw Error(c.title+"の出荷先見出しを確認してください（"+c.code+"）");
+    const expected=["商品コード","jan","商品名","数量"];
+    c.cols.forEach((col,i)=>{if(s1Name(value(col,c.header))!==expected[i])throw Error(col+c.header+"の見出しが異なります。元の4区画の形式で保存してください");});
+    const postingDate=s1HeaderDate(title,fallbackDate),rows=[];
+    for(let row=c.start;row<=c.end;row++){
+      let raw=value(c.cols[3],row);if(s1Normalize(raw)==="")continue;
+      let text=s1Normalize(raw);if(/^\d{1,3}(,\d{3})+$/.test(text))text=text.replace(/,/g,"");
+      if(typeof raw==="boolean")throw Error(c.cols[3]+row+"の数量は整数で入力してください");
+      const qty=inventoryQuantity(text,c.code+"・"+c.cols[3]+row+"の数量");if(!qty)continue;
+      const code=s1Normalize(value(c.cols[0],row)),barcode=s1Normalize(value(c.cols[1],row)),name=s1Normalize(value(c.cols[2],row));
+      if(!code || !barcode || !name)throw Error(c.code+"・"+row+"行目の商品コード・JAN・商品名を入力してください");
+      if(!validEan13(barcode))throw Error(c.cols[1]+row+"のJAN番号が正しくありません");
+      rows.push({code,barcode,name,qty,sourceRow:row,quantityCell:c.cols[3]+row});
+    }
+    return {destinationCode:c.code,postingDate,rows};
+  });
+}
+function s1ProductState(p){return JSON.stringify([p.name||"",String(p.code||""),p.unit||"",p.price??null,p.barcode||"",[...(p.barcodeAliases||[])].sort()]);}
+function s1DestinationFields(p,code){return {partner:p?.partner||p?.shipTo||code,partnerAddress:p?.partnerAddress||"",partnerTel:p?.partnerTel||"",shipTo:p?.shipTo||p?.partner||code};}
+function s1DestinationState(p){return JSON.stringify(p?[p.partner||"",p.partnerAddress||"",p.partnerTel||"",p.shipTo||"",Number(p.revision||0)]:null);}
+function matchS1Products(groups,products){
+  const warnings=[],states={},mapped=[];
+  for(const group of groups){
+    const items=[],seen=new Set();
+    for(const row of group.rows){
+      const byCode=products.filter(p=>s1Normalize(p.code)===row.code),byJan=products.filter(p=>p.barcode===row.barcode||(p.barcodeAliases||[]).includes(row.barcode));
+      if(byCode.length!==1)throw Error(group.destinationCode+"・"+row.sourceRow+"行：商品コード「"+row.code+"」が未登録か重複しています");
+      const p=byCode[0];
+      if(byJan.length!==1 || byJan[0].id!==p.id)throw Error(group.destinationCode+"・"+row.sourceRow+"行：商品コードとJANの登録先が一致しません");
+      if(seen.has(p.id))throw Error(group.destinationCode+"：同じ商品が複数行あります。数量を1行にまとめてください");seen.add(p.id);
+      const price=Number(p.price);if(p.price==null||!Number.isFinite(price)||price<0)throw Error("商品マスタの売価を確認してください："+p.name);
+      if(s1Name(row.name)!==s1Name(p.name))warnings.push(group.destinationCode+"・"+row.sourceRow+"行：商品名の表記が異なります。コードとJANが一致した「"+p.name+"」で作成します。");
+      states[p.id]=s1ProductState(p);
+      items.push({productId:p.id,productName:p.name,code:String(p.code||""),unit:p.unit||"個",plannedQty:row.qty,checkedQty:0,checked:false,unitPrice:price,remark:""});
+    }
+    if(items.length){if(items.reduce((n,i)=>n+i.plannedQty,0)>INSPECTION_UNIT_LIMIT)throw Error(group.destinationCode+"の合計が300個を超えています。検品JANを発行できるよう依頼を分けてください");mapped.push({destinationCode:group.destinationCode,postingDate:group.postingDate,items});}
+  }
+  if(!mapped.length)throw Error("数量が入力されていません。D列・J列に出荷数量を入力し、Excelを保存してから選択してください（空欄・0は取り込みません）");
+  const totals=new Map();mapped.forEach(g=>g.items.forEach(i=>totals.set(i.productId,(totals.get(i.productId)||0)+i.plannedQty)));
+  for(const [id,qty] of totals){const p=products.find(p=>p.id===id);if(qty>Number(p.currentStock||0)-Number(p.reservedStock||0))warnings.push(p.name+"：今回の出荷合計"+qty+"が現在の利用可能在庫を超えています。在庫の減算可否は検品完了時に再確認します。");}
+  return {groups:mapped,states,warnings};
+}
+async function s1Digest(text){const bytes=new TextEncoder().encode(text);return [...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))].map(x=>x.toString(16).padStart(2,"0")).join("");}
+function clearS1ImportPreview(){s1ImportGeneration++;s1ImportPlan=null;document.getElementById("s1ImportApplyBtn").disabled=true;document.getElementById("s1ImportPreview").replaceChildren();document.getElementById("s1ImportStatus").textContent="";}
+function setS1Busy(busy){s1ImportBusy=busy;for(const id of ["s1ImportFile","s1ImportDate","s1ImportReference","s1ImportPreviewBtn"])document.getElementById(id).disabled=busy;document.getElementById("s1ImportApplyBtn").disabled=busy||!s1ImportPlan;}
+function showS1Preview(plan){
+  const host=document.getElementById("s1ImportPreview");host.replaceChildren();
+  for(const g of plan.groups){const box=document.createElement("div");box.className="s1-import-group";
+    const heading=document.createElement("h4");heading.textContent=`出荷先 ${g.destinationCode} ／ ${g.destination.shipTo} ／ ${g.postingDate} ／ ${g.items.reduce((n,i)=>n+i.plannedQty,0)}個`;box.appendChild(heading);
+    const table=document.createElement("table");table.className="slip-detail-table";table.innerHTML="<thead><tr><th>商品コード</th><th>商品名</th><th>出荷数</th><th>売価</th></tr></thead>";
+    const body=document.createElement("tbody");g.items.forEach(i=>{const tr=document.createElement("tr");for(const text of [i.code,i.productName,String(i.plannedQty)+i.unit,"¥"+i.unitPrice.toLocaleString("ja-JP")]){const td=document.createElement("td");td.textContent=text;tr.appendChild(td);}body.appendChild(tr);});table.appendChild(body);box.appendChild(table);host.appendChild(box);
+  }
+  for(const message of plan.warnings){const p=document.createElement("p");p.className="s1-import-warning";p.textContent=message;host.appendChild(p);}
+}
+async function previewS1ShippingImport(){
+  if(s1ImportBusy)return;clearS1ImportPreview();const generation=s1ImportGeneration;
+  const file=document.getElementById("s1ImportFile").files[0],date=document.getElementById("s1ImportDate").value,reference=s1Normalize(document.getElementById("s1ImportReference").value);
+  if(!file)return showToast("Excelファイルを選択してください");
+  if(!reference || reference.length>100)return showToast("依頼番号を100文字以内で入力してください。同じ依頼の再取込を防ぐ番号です");
+  if(file.size>20*1024*1024)return showToast("Excelファイルは20MB以下にしてください");
+  if(typeof XLSX==="undefined")return showToast("Excel読込機能を読み込めませんでした。再読み込みしてください");
+  setS1Busy(true);document.getElementById("s1ImportStatus").textContent="数量・商品・出荷先を照合しています…";
+  try{
+    const buffer=await file.arrayBuffer(),book=XLSX.read(buffer,{type:"array"}),parsed=parseS1ShippingWorkbook(book,date);
+    const docs=await db.collection(COLLECTION).get({source:"server"}),products=docs.docs.map(d=>({id:d.id,...d.data()})),plan=matchS1Products(parsed,products);
+    for(const group of plan.groups){
+      const master=await db.collection(DESTINATIONS_COLLECTION).doc(group.destinationCode).get({source:"server"});
+      group.masterState=s1DestinationState(master.exists?master.data():null);group.historyId=null;
+      let destination=master.exists?master.data():null;
+      if(!destination){const previous=await db.collection(SLIPS_COLLECTION).where("destinationCode","==",group.destinationCode).get({source:"server"});const history=previous.docs.map(d=>({id:d.id,...d.data()})).filter(s=>s.type==="out").sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));if(history.length){destination=history[0];group.historyId=history[0].id;group.historyState=s1DestinationState(destination);}}
+      group.destination=s1DestinationFields(destination,group.destinationCode);
+      if(!destination)plan.warnings.push(group.destinationCode+"：出荷先台帳・履歴がないため、出荷先名を「"+group.destinationCode+"」として作成します。住所は空欄です。");
+      const key=await s1Digest(JSON.stringify(["S1-v1",reference,group.postingDate,group.destinationCode]));
+      group.id="s1-"+key;group.slipNumber="SYK-S1-"+group.postingDate.replace(/-/g,"")+"-"+group.destinationCode+"-"+key.slice(0,8);
+      const existing=await db.collection(SLIPS_COLLECTION).doc(group.id).get({source:"server"});
+      if(existing.exists)throw Error(group.destinationCode+"：この依頼番号・出荷日の伝票は作成済みです（"+existing.data().slipNumber+"）。新しい依頼なら依頼番号を変更してください");
+    }
+    if(generation!==s1ImportGeneration)return;
+    plan.reference=reference;plan.fileName=file.name;plan.sourceSheet="出荷指示依頼書";s1ImportPlan=plan;
+    showS1Preview(plan);document.getElementById("s1ImportStatus").textContent=plan.groups.length+"件の出荷伝票を作成します。出荷先・日付・数量を確認して下の作成ボタンを押してください。";
+  }catch(e){if(generation===s1ImportGeneration)document.getElementById("s1ImportStatus").textContent=e.message||"ファイルを読み込めませんでした";}
+  finally{setS1Busy(false);}
+}
+async function commitS1ShippingImport(plan){
+  if(!inventoryWritesAllowed())throw Error("現在は登録できません");
+  const refs=plan.groups.map(g=>db.collection(SLIPS_COLLECTION).doc(g.id));
+  await db.runTransaction(async tx=>{
+    await requireNoActiveReset(tx);
+    const existing=[];for(const ref of refs)existing.push(await tx.get(ref));
+    const products=new Map();for(const id of Object.keys(plan.states))products.set(id,await tx.get(db.collection(COLLECTION).doc(id)));
+    const destinations=[];
+    for(const g of plan.groups){const master=await tx.get(db.collection(DESTINATIONS_COLLECTION).doc(g.destinationCode));const history=g.historyId?await tx.get(db.collection(SLIPS_COLLECTION).doc(g.historyId)):null;destinations.push({master,history});}
+    plan.groups.forEach((g,i)=>{
+      if(existing[i].exists)throw Error(g.destinationCode+"の依頼は既に取り込まれています。伝票一覧を確認してください");
+      const {master,history}=destinations[i];
+      if(s1DestinationState(master.exists?master.data():null)!==g.masterState || g.historyId&&(!history.exists||s1DestinationState(history.data())!==g.historyState))throw Error(g.destinationCode+"の出荷先情報が変更されました。もう一度内容を確認してください");
+      for(const item of g.items){const product=products.get(item.productId);if(!product?.exists||s1ProductState(product.data())!==plan.states[item.productId])throw Error(item.productName+"の商品情報が変更されました。もう一度内容を確認してください");}
+    });
+    const stamp=firebase.firestore.FieldValue.serverTimestamp();
+    plan.groups.forEach((g,i)=>tx.set(refs[i],{type:"out",status:"draft",slipNumber:g.slipNumber,destinationCode:g.destinationCode,...g.destination,postingDate:g.postingDate,transactionType:"出荷",warehouse:"",orderNo:plan.reference,memo:"S1出荷指示依頼書から取込",items:g.items,staff:currentStaffName,createdAt:stamp,sourceImport:{format:"S1-v1",reference:plan.reference,fileName:plan.fileName,sheet:plan.sourceSheet}}));
+  });
+  return refs.map(r=>r.id);
+}
+async function applyS1ShippingImport(){
+  if(s1ImportBusy||!s1ImportPlan)return;
+  const plan=s1ImportPlan;if(!confirm(plan.groups.length+"件の出荷伝票を作成します。在庫は検品完了時に反映します。よろしいですか？"))return;
+  setS1Busy(true);
+  try{await commitS1ShippingImport(plan);const count=plan.groups.length;clearS1ImportPreview();document.getElementById("s1ImportStatus").textContent=count+"件の出荷伝票を作成しました。一覧から開き、出荷指示書・検品JANを発行してください。";showToast(count+"件の出荷伝票を作成しました");}
+  catch(e){clearS1ImportPreview();document.getElementById("s1ImportStatus").textContent=(e.message||"登録結果を確認できませんでした")+"\n伝票一覧を確認し、再実行する場合も同じ依頼番号を使用してください。";}
+  finally{setS1Busy(false);}
+}
+function initS1ShippingImport(){
+  const now=new Date();document.getElementById("s1ImportDate").value=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-"+String(now.getDate()).padStart(2,"0");
+  document.getElementById("s1ImportFile").addEventListener("change",()=>{clearS1ImportPreview();const file=document.getElementById("s1ImportFile").files[0];if(file)document.getElementById("s1ImportReference").value=file.name.replace(/\.[^.]+$/,"");});
+  for(const id of ["s1ImportDate","s1ImportReference"])document.getElementById(id).addEventListener("input",clearS1ImportPreview);
+  document.getElementById("s1ImportPreviewBtn").addEventListener("click",previewS1ShippingImport);
+  document.getElementById("s1ImportApplyBtn").addEventListener("click",applyS1ShippingImport);
+  auth.onAuthStateChanged(()=>{clearS1ImportPreview();});
+}
+
+window.KOBUNSHA_APP_VERSION = "2026-11-10-s1-import-jan-v35";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
