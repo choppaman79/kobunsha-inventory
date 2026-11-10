@@ -3373,7 +3373,7 @@ function fitCompactProductText() {
   if (productLabelSize !== "23") return true;
   let fits = true;
   document.getElementById("qrBulkGrid").querySelectorAll(".brother-product-label").forEach(cell => {
-    [[".product-label-name", 4.2, 3.5, 0.1], [".product-label-color", 5.5, 3.8, 0.1], [".product-label-price", 6.5, 5, 0.25]].forEach(([selector, start, min, step]) => {
+    [[".product-label-name", 5, 3.5, 0.1], [".product-label-color", 5.5, 3.8, 0.1], [".product-label-price", 6.5, 5, 0.25]].forEach(([selector, start, min, step]) => {
       const element = cell.querySelector(selector);
       if (!element) { fits = false; return; }
       if (element.hidden) return;
