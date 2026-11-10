@@ -728,6 +728,7 @@ function printSlipReceivingLabels(slipId) {
 // 検品用は商品用EAN-13とは別の伝票・商品・連番付きQRを維持する。
 
 function printSlipPickLabels(slipId) {
+  if(allSlips.find(x=>x.id===slipId)?.type==="out")return printOutgoingInspectionLabels(slipId).catch(e=>showToast(e.message||"検品シールを作成できませんでした"));
   const s = allSlips.find(x => x.id === slipId);
   if (!s) return;
   const grid = document.getElementById("qrBulkGrid");
@@ -941,6 +942,7 @@ function subscribeSlips() {
     if (document.getElementById("tabSlips").style.display !== "none") {
       renderSlipList(getActiveSlipFilter());
     }
+    if(openSlipId)syncInspectionCounts();
     handlePendingHash();
   }, err => console.error(err));
 }
@@ -1257,6 +1259,10 @@ function openSlipDetailModal(id) {
   document.getElementById("slipBluetoothModeBtn").disabled = isDone;
   document.getElementById("slipScanFocusBtn").disabled = isDone;
   setSlipScannerMode(!isDone);
+  document.getElementById("slipDetailPrintCheckBtn").textContent=s.type==="out"?"📋 出荷指示書・検品JAN":"🔍 検品表";
+  document.getElementById("slipDetailScanBtn").disabled=s.type==="out" || isDone;
+  document.getElementById("slipItemScannerInput").placeholder=s.type==="out"?"現品の商品JAN → 指示書の検品JAN":"現品QR → 検品シールQR";
+  if(s.type==="out")syncInspectionCounts();
 }
 
 function closeSlipDetailModal() {
@@ -1277,7 +1283,7 @@ function setSlipScannerMode(active) {
   const status = document.getElementById("slipScanStatus");
   status.className = slipScannerActive ? "scan-ready" : "";
   status.textContent = slipScannerActive
-    ? "iPadで接続したスキャナーで現品QR、検品シールQRの順に読み取ってください（同じ商品で1件確認）。"
+    ? (allSlips.find(s=>s.id===openSlipId)?.type==="out" ? "出荷指示書を発行後、現品の商品JAN → 指示書の検品JANを読み取ってください（2回で1個確認・自動保存）。" : "スキャナーで現品QR、検品シールQRの順に読み取ってください（同じ商品で1件確認）。")
     : "Bluetooth検品を開始すると読み取りを受け付けます。";
   if (slipScannerActive) setTimeout(() => {
     if (slipScannerActive && document.getElementById("slipDetailOverlay").classList.contains("show")) input.focus();
@@ -1297,9 +1303,14 @@ function companyLetterheadHtml() {
 }
 
 function printSlipSheet(mode) {
+  if(mode==="check" && allSlips.find(x=>x.id===openSlipId)?.type==="out" && (allSlips.find(x=>x.id===openSlipId)?.status==="draft" || allSlips.find(x=>x.id===openSlipId)?.inspectionVersion===1)) {
+    return printOutgoingInspectionSheet(openSlipId).catch(e=>showToast(e.message||"出荷指示書を作成できませんでした"));
+  }
   const s = allSlips.find(x => x.id === openSlipId);
   if (!s) return;
+  clearInspectionPaperSize();
   const sheet = document.getElementById("slipPrintSheet");
+  delete sheet.dataset.inspection;
   if (mode === "check") sheet.innerHTML = buildCheckSheetHtml(s);
   else sheet.innerHTML = buildDeliverySheetHtml(s);
 
@@ -1919,6 +1930,7 @@ async function completeInventoryRecord(ref, displayed, enteredItems, isOrder, st
     }
     if (!Array.isArray(record.items) || !record.items.length ||
         record.items.length !== quantities.length) throw Error("品目を確認してください");
+    if(!isOrder && record.type==="out")assertInspectionComplete(record,enteredItems);
     const type = isOrder ? "in" : record.type;
     if (!["in", "out"].includes(type)) throw Error("入出庫区分を確認してください");
     const items = record.items.map((item, idx) => ({
@@ -2079,6 +2091,8 @@ function scanTick() {
 }
 
 function extractScannedId(text) {
+  const issued=findInspectionCode(String(text).trim());
+  if(issued)return {type:"inspection",id:issued.unit.productId,slipId:issued.slip.id,itemIndex:issued.unit.itemIndex,unitIndex:issued.unit.unitIndex,jan:true};
   const mark = text.indexOf("#inspection=");
   if (mark !== -1) {
     const params = new URLSearchParams(text.slice(mark + 1));
@@ -2202,7 +2216,7 @@ function setSlipScanStatus(message, warning) {
   }
 }
 
-function handleSlipItemVerifyScan(text) {
+function handleLegacySlipItemVerifyScan(text) {
   const slip = allSlips.find(s => s.id === openSlipId);
   if (!slip || slip.status === "done") return showToast("伝票を開くか、完了状態を確認してください");
   const parsed = extractScannedId(text);
@@ -2359,6 +2373,9 @@ function handleSlipComplete() {
       };
     });
   } catch (err) { showToast(err.message); return; }
+  if(s.type==="out") {
+    try{assertInspectionComplete(s,items);}catch(e){showToast(e.message);return;}
+  }
   if (!confirm("検品を完了し、在庫に反映します。よろしいですか？")) return;
   const slipRef = db.collection(SLIPS_COLLECTION).doc(s.id);
   btn.disabled = true;
@@ -3524,7 +3541,225 @@ function applyLabelPaperSize() {
 window.addEventListener("beforeprint", applyLabelPaperSize);
 window.addEventListener("afterprint", clearLabelPaperSize);
 
-window.KOBUNSHA_APP_VERSION = "2026-11-09-text-padding-jan-v33";
+// 個体別の検品専用EAN-13。商品用番号と独立し、再印刷しても同じ番号を使う。
+const INSPECTION_UNIT_LIMIT = 300;
+let inspectionScanQueue = Promise.resolve();
+function inspectionPlan(items) {
+  if (!Array.isArray(items) || !items.length) throw Error("出荷商品がありません");
+  let count=0;
+  const rows=items.map((item,index)=>{
+    if (!item.productId || typeof item.productId!=="string") throw Error("商品を確認してください");
+    const qty=inventoryQuantity(item.plannedQty,"出荷数量");
+    if (!qty) throw Error("出荷数量は1以上にしてください");
+    count+=qty; return [index,item.productId,qty];
+  });
+  if (count>INSPECTION_UNIT_LIMIT) throw Error("検品番号は1伝票300個までです。伝票を分けてください");
+  return {signature:JSON.stringify(rows),count,rows};
+}
+function inspectionLedger(s) {
+  const plan=inspectionPlan(s.items);
+  if (s.inspectionVersion!==1 || s.inspectionPlan!==plan.signature || !Array.isArray(s.inspectionUnits) || s.inspectionUnits.length!==plan.count) throw Error("検品番号と出荷内容が一致しません。伝票を確認してください");
+  const codes=new Set(),positions=new Set();
+  for (const u of s.inspectionUnits) {
+    const item=s.items[u.itemIndex];
+    const pos=u.itemIndex+":"+u.unitIndex;
+    if (!validEan13(u.code) || !item || u.productId!==item.productId || !Number.isSafeInteger(u.itemIndex) || !Number.isSafeInteger(u.unitIndex) || u.unitIndex<1 || u.unitIndex>Number(item.plannedQty) || codes.has(u.code) || positions.has(pos) || typeof u.used!=="boolean") throw Error("検品番号の登録内容を確認してください");
+    codes.add(u.code);positions.add(pos);
+  }
+  return s.inspectionUnits;
+}
+function inspectionCounts(s) {
+  const units=inspectionLedger(s);
+  return s.items.map((_,i)=>units.filter(u=>u.itemIndex===i && u.used).length);
+}
+function assertInspectionComplete(s, entered) {
+  const counts=inspectionCounts(s);
+  if (counts.some((n,i)=>n!==Number(s.items[i].plannedQty) || Number(entered[i]?.checkedQty)!==n || !entered[i]?.checked)) throw Error("全ての現品と検品JANを読み取ってください。未検品の数量があります");
+}
+function updateInspectionLocal(s) {
+  const old=allSlips.find(x=>x.id===s.id);
+  if (old) Object.assign(old,s);
+  if (openSlipId===s.id) syncInspectionCounts();
+}
+function syncInspectionCounts() {
+  const s=allSlips.find(x=>x.id===openSlipId);
+  if (!s || s.type!=="out") return;
+  let counts=s.items.map(i=>s.status==="done"?Number(i.checkedQty||0):0);
+  if (s.inspectionVersion===1) {
+    try {counts=inspectionCounts(s);} catch(e) {setSlipScanStatus(e.message,true);}
+  }
+  s.items.forEach((item,i)=>{
+    const input=document.querySelector(`.slip-check-qty[data-idx="${i}"]`);
+    const check=document.querySelector(`.slip-check-box[data-idx="${i}"]`);
+    if(input){input.value=counts[i];input.readOnly=true;}
+    if(check){check.checked=counts[i]===Number(item.plannedQty);check.disabled=true;}
+  });
+  const button=document.getElementById("slipDetailPrintCheckBtn");
+  if(button)button.textContent=s.status==="done" && s.inspectionVersion!==1?"🔍 検品表（旧方式）":"📋 出荷指示書・検品JAN";
+}
+function findInspectionCode(code) {
+  for (const s of allSlips) {
+    const unit=(s.inspectionUnits||[]).find(u=>u.code===code);
+    if(unit)return {slip:s,unit};
+  }
+  return null;
+}
+async function ensureSlipInspection(slipId) {
+  if (!inventoryWritesAllowed()) throw Error("現在は更新できません");
+  const ref=db.collection(SLIPS_COLLECTION).doc(slipId);
+  const registry=db.collection(BARCODE_REGISTRY),counterRef=registry.doc("_inspection_sequence");
+  const result=await db.runTransaction(async tx=>{
+    await requireNoActiveReset(tx);
+    const doc=await tx.get(ref);
+    if(!doc.exists)throw Error("伝票が見つかりません");
+    const s=doc.data();
+    if(s.type!=="out")throw Error("出荷伝票を開いてください");
+    if(s.inspectionVersion===1){inspectionLedger(s);return {id:slipId,...s};}
+    if(s.inspectionVersion!=null)throw Error("検品方式の版が異なります。管理者に確認してください");
+    if(s.status!=="draft")throw Error("完了済みの伝票には検品番号を新規発行できません");
+    if((s.items||[]).some(i=>Number(i.checkedQty||0)!==0))throw Error("確認済み数量が残っています。数量を確認して新しい出荷伝票を作成してください");
+    const plan=inspectionPlan(s.items),counter=await tx.get(counterRef);
+    let next=counter.exists?Number(counter.data().next):1;
+    if(!Number.isSafeInteger(next)||next<1)throw Error("検品番号の採番設定を確認してください");
+    const reserved=[];let attempts=0;
+    while(reserved.length<plan.count){
+      if(++attempts>plan.count+1000 || next>9999999999)throw Error("検品番号を発行できません。管理者に確認してください");
+      const body="29"+String(next++).padStart(10,"0"),code=body+eanCheckDigit(body);
+      const allocated=await tx.get(registry.doc(code));
+      if(allocated.exists || allProducts.some(p=>p.barcode===code || (p.barcodeAliases||[]).includes(code)))continue;
+      reserved.push(code);
+    }
+    const units=[];
+    for(const [itemIndex,productId,qty] of plan.rows)for(let unitIndex=1;unitIndex<=qty;unitIndex++)units.push({code:reserved[units.length],itemIndex,productId,unitIndex,used:false});
+    // すべての読み取りを済ませてから書く。採番台帳と伝票をまとめて確定。
+    units.forEach(u=>tx.set(registry.doc(u.code),{kind:"inspection",slipId,itemIndex:u.itemIndex,unitIndex:u.unitIndex,productId:u.productId,used:false}));
+    tx.set(counterRef,{next});
+    const changes={inspectionVersion:1,inspectionPlan:plan.signature,inspectionUnits:units,inspectionUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+    tx.update(ref,changes);
+    return {id:slipId,...s,...changes};
+  });
+  updateInspectionLocal(result);return result;
+}
+async function consumeInspectionUnit(slipId, code, productId) {
+  if(!inventoryWritesAllowed())throw Error("現在は更新できません");
+  const ref=db.collection(SLIPS_COLLECTION).doc(slipId),reg=db.collection(BARCODE_REGISTRY).doc(code);
+  const result=await db.runTransaction(async tx=>{
+    await requireNoActiveReset(tx);
+    const record=await tx.get(ref),allocation=await tx.get(reg);
+    if(!record.exists)throw Error("伝票が削除されています");
+    const s=record.data();
+    if(s.type!=="out" || s.status!=="draft")throw Error("出荷伝票が完了済みか、状態が変わっています");
+    const units=inspectionLedger(s),unit=units.find(u=>u.code===code);
+    const a=allocation.exists?allocation.data():null;
+    if(!unit || !a || a.kind!=="inspection" || a.slipId!==slipId || a.productId!==unit.productId || a.itemIndex!==unit.itemIndex || a.unitIndex!==unit.unitIndex)throw Error("この出荷指示書の検品JANではありません");
+    if(unit.productId!==productId)throw Error("現品と検品JANの商品が一致しません");
+    if(unit.used || a.used)throw Error("この検品JANは読み取り済みです。同じ番号は使えません");
+    const inspectionUnits=units.map(u=>u.code===code?{...u,used:true,usedAt:Date.now(),usedBy:currentStaffName||""}:u);
+    const changed={...s,inspectionUnits};const counts=inspectionCounts(changed);
+    const items=s.items.map((item,i)=>({...item,checkedQty:counts[i],checked:counts[i]===Number(item.plannedQty)}));
+    tx.update(reg,{used:true,usedAt:firebase.firestore.FieldValue.serverTimestamp(),usedBy:currentStaffName||""});
+    tx.update(ref,{inspectionUnits,items,inspectionUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+    return {id:slipId,...changed,items};
+  });
+  updateInspectionLocal(result);return result;
+}
+function inspectionFailure(message) {pendingSlipScanCode=null;playWarningAlert();showToast(message);setSlipScanStatus(message,true);}
+function handleSlipItemVerifyScan(text) {
+  const slipId=openSlipId;
+  const s=allSlips.find(s=>s.id===slipId);
+  if(s?.type!=="out")return handleLegacySlipItemVerifyScan(text);
+  inspectionScanQueue=inspectionScanQueue.then(()=>verifyOutgoingInspection(text,slipId)).catch(e=>{if(openSlipId===slipId)inspectionFailure(e.message||"検品結果を保存できませんでした。通信を確認してください");});
+  return inspectionScanQueue;
+}
+async function verifyOutgoingInspection(text,slipId) {
+  if(openSlipId!==slipId)throw Error("出荷伝票を開き直して読み取ってください");
+  const s=allSlips.find(s=>s.id===slipId);
+  if(!s || s.status!=="draft")throw Error("伝票は完了済みか、状態が変わっています");
+  if(s.inspectionVersion!==1)throw Error("先に「出荷指示書・検品JAN」を押して検品番号を発行してください");
+  inspectionLedger(s);
+  const raw=String(text).trim(),found=findInspectionCode(raw);
+  let scan;
+  if(found){
+    if(found.slip.id!==slipId)throw Error("別の出荷指示書の検品JANです");
+    if(found.unit.used)throw Error("この検品JANは読み取り済みです。同じ番号は使えません");
+    scan={role:"inspection",productId:found.unit.productId,code:raw};
+  } else {
+    const parsed=extractScannedId(raw);
+    if(parsed.type==="inspection")throw Error("出荷指示書に印刷した検品JANを読んでください。旧検品QRは使えません");
+    const productId=resolveScannedProductId(raw);
+    if(!productId || !s.items.some(i=>i.productId===productId))throw Error("この出荷伝票に含まれない商品です");
+    scan={role:"product",productId};
+  }
+  const first=pendingSlipScanCode;
+  if(!first){pendingSlipScanCode=scan;setSlipScanStatus(scan.role==="product"?"現品を確認しました。対応する検品JANを読んでください":"検品JANを確認しました。現品の商品JANを読んでください",false);playTone(660,60,"sine");return;}
+  pendingSlipScanCode=null;
+  if(first.role===scan.role)throw Error("現品の商品JANと検品JANを、1回ずつ読み取ってください");
+  if(first.productId!==scan.productId)throw Error("現品と検品JANの商品が一致しません");
+  const unit=scan.role==="inspection"?scan:first;
+  const saved=await consumeInspectionUnit(slipId,unit.code,scan.productId);
+  const counts=inspectionCounts(saved),match=saved.inspectionUnits.find(u=>u.code===unit.code),item=saved.items[match.itemIndex];
+  playSuccessBeep();
+  if(openSlipId===slipId)setSlipScanStatus(`✅ ${item.productName}：${counts[match.itemIndex]}/${item.plannedQty}${item.unit||""} 検品済み。次の現品を読んでください`,false);
+}
+function makeInspectionSvg(code) {
+  const bits=ean13Bits(code),ns="http://www.w3.org/2000/svg";
+  const svg=document.createElementNS(ns,"svg");
+  for(const [key,value] of Object.entries({viewBox:"0 0 117 60",width:"35.1mm",height:"18mm",role:"img","aria-label":"検品専用バーコード "+code,"shape-rendering":"crispEdges"}))svg.setAttribute(key,value);
+  const white=document.createElementNS(ns,"rect");
+  for(const [k,v] of Object.entries({width:"117",height:"60",fill:"white"}))white.setAttribute(k,v);svg.appendChild(white);
+  [...bits].forEach((bit,i)=>{if(bit!=="1")return;const bar=document.createElementNS(ns,"rect");
+    for(const [k,v] of Object.entries({x:String(i+11),y:"0",width:"1",height:(i<3 || i>=45&&i<50 || i>=92)?"47":"43",fill:"black"}))bar.setAttribute(k,v);svg.appendChild(bar);
+  });
+  const number=document.createElementNS(ns,"text");
+  for(const [k,v] of Object.entries({x:"58.5",y:"56","text-anchor":"middle","font-size":"8","font-family":"Arial, sans-serif",fill:"black"}))number.setAttribute(k,v);
+  number.textContent=code;svg.appendChild(number);return svg;
+}
+function clearInspectionPaperSize(){document.getElementById("activeInspectionPaperStyle")?.remove();}
+function applyInspectionPaperSize(){
+  clearInspectionPaperSize();
+  if(!document.body.classList.contains("slip-print") || document.getElementById("slipPrintSheet").dataset.inspection!=="1")return;
+  const style=document.createElement("style");style.id="activeInspectionPaperStyle";
+  style.textContent="@page {size:A4 portrait;margin:10mm;} @media print {html, body.slip-print, body.slip-print * {page:auto !important;}}";
+  document.head.appendChild(style);
+}
+window.addEventListener("beforeprint",applyInspectionPaperSize);
+window.addEventListener("afterprint",clearInspectionPaperSize);
+function appendInspectionCard(host,s,u) {
+  const item=s.items[u.itemIndex],card=document.createElement("div");card.className="inspection-jan-card";
+  const heading=document.createElement("div");heading.className="inspection-jan-heading";
+  heading.textContent=`${item.code||""} ${item.productName}　${u.unitIndex}/${item.plannedQty}（1個分）${u.used?"【検品済み】":""}`;
+  card.appendChild(heading);card.appendChild(makeInspectionSvg(u.code));
+  const note=document.createElement("div");note.className="inspection-jan-note";note.textContent="検品専用・販売不可 ／ 商品JANと組み合わせて1回だけ使用";card.appendChild(note);host.appendChild(card);
+}
+async function printOutgoingInspectionSheet(slipId) {
+  const s=await ensureSlipInspection(slipId);
+  if(openSlipId!==slipId)return;
+  const sheet=document.getElementById("slipPrintSheet");
+  sheet.dataset.inspection="1";sheet.innerHTML=buildCheckSheetHtml(s).replace("検品表（出荷）","出荷指示書・個数検品");
+  const instruction=document.createElement("p");instruction.textContent="現品の商品JAN → この指示書の検品JANで1個確認。数量分すべての番号を読み取ってください。同じ番号は再使用できません。再印刷しても使用状況は変わりません。";sheet.appendChild(instruction);
+  const cards=document.createElement("div");cards.className="inspection-jan-cards";
+  inspectionLedger(s).forEach(u=>appendInspectionCard(cards,s,u));sheet.appendChild(cards);
+  const qrHost=document.getElementById("printSheetQr");
+  if(qrHost)new QRCode(qrHost,{text:buildSlipUrl(s.id),width:64,height:64,correctLevel:QRCode.CorrectLevel.M});
+  clearLabelPaperSize();document.body.classList.remove("label-print","work-print","order-print","prepared-print");document.body.classList.add("slip-print");
+  applyInspectionPaperSize();setTimeout(()=>window.print(),150);
+}
+async function printOutgoingInspectionLabels(slipId) {
+  const s=await ensureSlipInspection(slipId),grid=document.getElementById("qrBulkGrid");grid.className="brother-label-list";grid.replaceChildren();
+  for(const u of inspectionLedger(s)){
+    const item=s.items[u.itemIndex],cell=document.createElement("div");cell.className="brother-pick-label inspection-jan-label";
+    const title=document.createElement("div");title.textContent=`${item.productName}　${u.unitIndex}/${item.plannedQty}${u.used?" 検品済み":""}`;
+    cell.appendChild(title);cell.appendChild(makeInspectionSvg(u.code));
+    const note=document.createElement("div");note.textContent=`検品専用・販売不可　${s.slipNumber||""}`;cell.appendChild(note);grid.appendChild(cell);
+  }
+  finishBrotherLabels(grid,"pick","出荷検品JANシール（62×29mm）",s.inspectionUnits.length);
+  if([...grid.children].some(c=>c.scrollHeight>c.clientHeight || c.scrollWidth>c.clientWidth)) {
+    document.getElementById("qrBulkPrintOkBtn").disabled=true;
+    document.getElementById("qrBulkHint").textContent="文字が検品シールに収まりません。A4の出荷指示書をご利用ください。";
+  }
+}
+
+window.KOBUNSHA_APP_VERSION = "2026-11-10-inspection-jan-v34";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
@@ -3611,6 +3846,7 @@ async function ensureProductBarcode(id, requested, changes, transfer) {
     }
     if (!validEan13(code)) throw Error("バーコードは検査数字を含む正しい13桁で入力してください");
     const allocated = await tx.get(registry.doc(code));
+    if(allocated.exists && allocated.data().kind==="inspection")throw Error("この番号は検品専用です。商品用バーコードには設定できません");
     if (allocated.exists && allocated.data().productId !== id) {
       const ownerId = allocated.data().productId;
       if (typeof ownerId !== "string" || !ownerId || ownerId.includes("/")) throw Error("番号台帳の使用先を確認できません。管理者に確認してください");
