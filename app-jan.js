@@ -3657,7 +3657,7 @@ function barcodeError(err) {
 // 印字だけで商品名の末尾にある色を分離。商品マスタは変更しない。
 function productLabelTextParts(rawName) {
   const full = String(rawName || "商品名未登録").normalize("NFKC").trim();
-  const colors = ["シルバーグレー", "シルバーグレイ", "シルバー", "ゴールド", "アイボリー", "ベージュ", "オレンジ", "イエロー", "パープル", "グリーン", "ネイビー", "ブラウン", "ブラック", "ホワイト", "ピンク", "ブルー", "レッド", "翡翠", "葵", "白", "黒", "赤", "青", "緑", "紫", "黄", "金", "銀", "Pink", "Red", "Blue", "Green", "Yellow", "Purple", "White", "Black", "Silver", "Gold"];
+  const colors = ["ブロンズ", "シルバーグレー", "シルバーグレイ", "シルバー", "ゴールド", "アイボリー", "ベージュ", "オレンジ", "イエロー", "パープル", "グリーン", "ネイビー", "ブラウン", "ブラック", "ホワイト", "ピンク", "ブルー", "レッド", "翡翠", "葵", "白", "黒", "赤", "青", "緑", "紫", "黄", "金", "銀", "Pink", "Red", "Blue", "Green", "Yellow", "Purple", "White", "Black", "Silver", "Gold"];
   for (const color of colors) {
     const pattern = [...color].join("\\s*");
     const match = full.match(new RegExp("[\\s　:：/／・_-]*[（(]?" + pattern + "[）)]?\\s*$", "i"));
