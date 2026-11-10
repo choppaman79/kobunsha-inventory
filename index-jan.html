@@ -962,6 +962,9 @@
   .inspection-jan-label { display:flex; flex-direction:column; gap:.3mm; justify-content:center; text-align:center; font-size:6.5pt; line-height:1.1; padding:1mm 2mm; }
   .inspection-jan-label svg { width:35.1mm; height:18mm; flex:0 0 18mm; }
   .inspection-jan-label > div { max-width:58mm; overflow-wrap:anywhere; }
+  .s1-import-group { margin:12px 0; overflow-x:auto; }
+  .s1-import-group h4 { margin:8px 0; }
+  .s1-import-warning { color:#a3392b; overflow-wrap:anywhere; }
 </style>
 </head>
 <body>
@@ -1132,6 +1135,17 @@
         <button class="btn-add btn-add-in" id="slipCreateInBtn">＋ 入荷伝票を作成</button>
       </div>
       <div class="toolbar"><button class="btn-secondary-inline" id="slipSelectAllBtn">表示中をすべて選択</button><button class="btn-danger" id="slipDeleteBtn">選択した伝票を削除（0件）</button></div>
+      <details class="pilot-panel" id="s1ImportPanel">
+        <summary>Excelの出荷指示依頼書を取り込む（0020・0160・0050・社内）</summary>
+        <p>「出荷指示依頼書」シートの数量欄を読み、出荷先ごとに未検品伝票を作成します。空欄・0は対象外です。在庫は検品完了時に反映します。</p>
+        <label for="s1ImportFile">出荷依頼Excel</label><input id="s1ImportFile" type="file" accept=".xlsx,.xls">
+        <label for="s1ImportDate">出荷日（Excelの日付欄が空欄の場合）</label><input id="s1ImportDate" type="date">
+        <label for="s1ImportReference">依頼番号（同じ依頼は同じ番号、新しい依頼は別番号）</label><input id="s1ImportReference" type="text" maxlength="100" placeholder="例：S1-20261110-01">
+        <button type="button" class="btn-secondary-inline" id="s1ImportPreviewBtn">内容を確認</button>
+        <p id="s1ImportStatus" role="status" aria-live="polite" style="white-space:pre-line;"></p>
+        <div id="s1ImportPreview"></div>
+        <button type="button" class="btn-primary" id="s1ImportApplyBtn" disabled>確認した内容で出荷伝票を作成</button>
+      </details>
       <div class="slip-list" id="slipList"></div>
       <div class="empty-state" id="slipEmptyState" style="display:none;">伝票がありません</div>
     </section>
@@ -1631,9 +1645,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261110-inspection-jan-v34"></script>
+<script src="app-jan.js?v=20261110-s1-import-jan-v35"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-10-inspection-jan-v34") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-10-s1-import-jan-v35") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
