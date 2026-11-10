@@ -954,6 +954,14 @@
   .printer-guide-note { font-size:12px; color:#685f52; margin:8px 0 0; }
   @media (max-width:480px) { .label-printer-settings dl { grid-template-columns:95px minmax(0,1fr); gap:5px 8px; } }
 
+  .inspection-jan-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5mm; margin-top:5mm; }
+  .inspection-jan-card { border:1px solid #777; padding:2mm; break-inside:avoid; page-break-inside:avoid; text-align:center; }
+  .inspection-jan-heading { font-size:10pt; line-height:1.3; font-weight:700; overflow-wrap:anywhere; }
+  .inspection-jan-card svg { display:block; width:35.1mm; height:18mm; margin:1mm auto; }
+  .inspection-jan-note { font-size:8pt; line-height:1.3; }
+  .inspection-jan-label { display:flex; flex-direction:column; gap:.3mm; justify-content:center; text-align:center; font-size:6.5pt; line-height:1.1; padding:1mm 2mm; }
+  .inspection-jan-label svg { width:35.1mm; height:18mm; flex:0 0 18mm; }
+  .inspection-jan-label > div { max-width:58mm; overflow-wrap:anywhere; }
 </style>
 </head>
 <body>
@@ -1623,9 +1631,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261109-text-padding-jan-v33"></script>
+<script src="app-jan.js?v=20261110-inspection-jan-v34"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-09-text-padding-jan-v33") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-10-inspection-jan-v34") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
