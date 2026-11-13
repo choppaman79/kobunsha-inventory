@@ -71,6 +71,7 @@ function init() {
   initPilotTools();
   initOpeningStockTools();
   initS1ShippingImport();
+  initInvoicePdfImport();
   initProductLabelSizes();
   initLabelPrinterGuide();
   initBarcodeTransferTools();
@@ -980,7 +981,7 @@ function renderSlipList(filter) {
           <span class="slip-number">${escapeHtml((s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}</span>
           <span class="slip-status ${s.status === "done" ? "done" : ""}">${statusLabel}</span>
         </div>
-        <div class="history-meta">${escapeHtml(s.partner || "取引先未設定")}　/　${dt}　/　品目数：${(s.items || []).length}</div>
+        <div class="history-meta">${escapeHtml(s.partner || "取扱先未設定")}　/　${dt}　/　品目数：${(s.items || []).length}</div>
       </div>
     `;
     row.addEventListener("click", e => { if (!e.target.closest(".slip-check-select")) openSlipDetailModal(s.id); });
@@ -1001,7 +1002,7 @@ function openSlipCreateModal(type) {
   const badge = document.getElementById("slipCreateTypeBadge");
   badge.textContent = type === "in" ? "入荷伝票" : "出荷伝票";
   badge.className = "slip-type-badge " + type;
-  document.getElementById("slipPartnerLabel").textContent = type === "in" ? "仕入先（任意）" : "取引先／納品先（任意）";
+  document.getElementById("slipPartnerLabel").textContent = type === "in" ? "仕入先（任意）" : "取扱先（任意）";
   document.getElementById("slipShipToLabel").textContent = type === "in" ? "入荷元（任意）" : "出荷先（任意）";
   document.getElementById("slipPartner").value = "";
   document.getElementById("slipPartnerAddress").value = "";
@@ -1012,6 +1013,7 @@ function openSlipCreateModal(type) {
   document.getElementById("slipWarehouse").value = "";
   document.getElementById("slipOrderNo").value = "";
   document.getElementById("slipMemo").value = "";
+  for(const id of ["slipSourceNumber","slipHandlingCode","slipTransactionName"])document.getElementById(id).value="";
   document.getElementById("slipItemCodeInput").value = "";
   document.getElementById("slipItemCodeError").textContent = "";
   const productSelect = document.getElementById("slipItemProduct");
@@ -1176,6 +1178,10 @@ async function handleSlipCreateSave() {
       type, slipNumber:generateSlipNumber(type), ...fields,
       postingDate:document.getElementById("slipPostingDate").value,
       transactionType:document.getElementById("slipTransactionType").value.trim(),
+      transactionTypeName:document.getElementById("slipTransactionName").value.trim(),
+      sourceSlipNumber:document.getElementById("slipSourceNumber").value.trim(),
+      handlingCode:document.getElementById("slipHandlingCode").value.trim(),
+      customerOrderNo:document.getElementById("slipOrderNo").value.trim(),
       warehouse:document.getElementById("slipWarehouse").value.trim(),
       orderNo:document.getElementById("slipOrderNo").value.trim(),
       memo:document.getElementById("slipMemo").value.trim(),
@@ -1200,17 +1206,17 @@ function openSlipDetailModal(id) {
   inspectedLabelTokens.clear();
   const typeLabel = s.type === "in" ? "入荷伝票" : "出荷伝票";
   document.getElementById("slipDetailTitle").textContent = typeLabel;
-  document.getElementById("slipDetailNumber").textContent = (s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : "");
-  document.getElementById("slipDetailPartner").textContent = s.partner || "取引先未設定";
+  document.getElementById("slipDetailNumber").textContent = (s.sourceSlipNumber ? s.sourceSlipNumber+" ／ 管理番号 "+(s.slipNumber||"") : s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : "");
+  document.getElementById("slipDetailPartner").textContent = invoiceHandlingText(s) || "取扱先未設定";
   document.getElementById("slipDetailPartnerAddress").textContent = s.partnerAddress || "";
   document.getElementById("slipDetailPartnerTel").textContent = s.partnerTel || "";
   document.getElementById("slipDetailShipToLabel").textContent = s.type === "in" ? "入荷元" : "出荷先";
   document.getElementById("slipDetailShipTo").textContent = s.shipTo || s.partner || "";
   document.getElementById("slipDetailIssueDate").textContent = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
   document.getElementById("slipDetailPostingDate").textContent = formatPostingDate(s.postingDate);
-  document.getElementById("slipDetailTransactionType").textContent = s.transactionType || "";
+  document.getElementById("slipDetailTransactionType").textContent = invoiceTradeText(s);
   document.getElementById("slipDetailWarehouse").textContent = s.warehouse || "";
-  document.getElementById("slipDetailOrderNo").textContent = s.orderNo || "";
+  document.getElementById("slipDetailOrderNo").textContent = invoiceOrderNumber(s);
   document.getElementById("slipDetailStaff").textContent = s.staff ? `作成：${s.staff}` : "";
   document.getElementById("slipDetailMemo").textContent = s.memo || "";
 
@@ -1347,9 +1353,13 @@ function buildCheckSheetHtml(s) {
       </div>
       ${companyLetterheadHtml()}
     </div>
-    <table class="slip-formal-table">
-      <tr><th>伝票番号</th><td>${escapeHtml((s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}</td><th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td></tr>
-      <tr><th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td><th>作成日</th><td>${issueDate}</td></tr>
+    <table class="slip-formal-table invoice-instruction-meta">
+      <tr><th>伝票番号</th><td>${escapeHtml(s.sourceSlipNumber || s.slipNumber || "")}</td><th>受注№</th><td>${escapeHtml(invoiceOrderNumber(s))}</td></tr>
+      <tr><th>取引区分</th><td>${escapeHtml(invoiceTradeText(s))}</td><th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td></tr>
+      <tr><th>${shipToLabel}</th><td colspan="3">${escapeHtml(invoiceShipText(s))}</td></tr>
+      <tr><th>${s.type === "in" ? "仕入先" : "取扱先"}</th><td colspan="3">${escapeHtml(invoiceHandlingText(s))}</td></tr>
+      <tr><th>管理番号</th><td>${escapeHtml(s.slipNumber || "")}</td><th>計上日</th><td>${escapeHtml(s.postingDate || issueDate)}</td></tr>
+      ${s.sourceImport?.format === "S1-v1" ? `<tr><th>依頼番号</th><td colspan="3">${escapeHtml(s.sourceImport.reference || "")}</td></tr>` : ""}
     </table>
     <table class="slip-detail-table">
       <thead><tr><th>商品コード</th><th>商品名</th><th>数量（予定）</th><th>確認数</th><th>検品済</th></tr></thead>
@@ -1383,7 +1393,7 @@ function buildDeliverySheetHtml(s) {
       <h2 style="margin:0;">${typeLabel}</h2>
       <div class="slip-formal-header-qr">
         <div id="printSheetQr"></div>
-        <span class="slip-formal-header-qr-label">${escapeHtml((s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}</span>
+        <span class="slip-formal-header-qr-label">${escapeHtml((s.sourceSlipNumber || s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}</span>
       </div>
       ${companyLetterheadHtml()}
     </div>
@@ -1393,23 +1403,23 @@ function buildDeliverySheetHtml(s) {
         <th>計上日</th><td>${formatPostingDate(s.postingDate)}</td>
       </tr>
       <tr>
-        <th>伝票番号</th><td>${escapeHtml((s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}</td>
+        <th>伝票番号</th><td>${escapeHtml((s.sourceSlipNumber || s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : ""))}</td>
         <th>${shipToLabel}</th><td>${escapeHtml(s.shipTo || s.partner || "")}</td>
       </tr>
       <tr>
-        <th>取引先</th>
+        <th>取扱先</th>
         <td colspan="3">
-          名称：${escapeHtml(s.partner || "")}　
+          名称：${escapeHtml(invoiceHandlingText(s))}　
           住所：${escapeHtml(s.partnerAddress || "")}　
           TEL：${escapeHtml(s.partnerTel || "")}
         </td>
       </tr>
       <tr>
-        <th>取引区分</th><td>${escapeHtml(s.transactionType || "")}</td>
+        <th>取引区分</th><td>${escapeHtml(invoiceTradeText(s))}</td>
         <th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td>
       </tr>
       <tr>
-        <th>発注№</th><td colspan="3">${escapeHtml(s.orderNo || "")}</td>
+        <th>受注№</th><td colspan="3">${escapeHtml(invoiceOrderNumber(s))}</td>
       </tr>
     </table>
     <table class="slip-detail-table">
@@ -3910,7 +3920,180 @@ function initS1ShippingImport(){
   auth.onAuthStateChanged(()=>{clearS1ImportPreview();});
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-10-s1-import-jan-v35";
+// 納品書PDF読取。PDF本体は送信せず、端末内でページを描画・OCRする。
+let invoicePdfBusy=false,invoicePdfGeneration=0,invoicePdfSource=null,invoicePdfPlan=null,invoiceLibraryPromise=null;
+function invoiceText(v){return String(v??"").normalize("NFKC").trim();}
+function invoiceDigits(v){return invoiceText(v).replace(/\s+/g,"").match(/^\d+$/)?.[0]||"";}
+function invoiceOrderNumber(s){return s.customerOrderNo??(s.sourceImport?.format==="S1-v1"?"":s.orderNo||"");}
+function invoiceTradeText(s){return [s.transactionType,s.transactionTypeName].filter(Boolean).join(" ／ ");}
+function invoiceHandlingText(s){return [s.handlingCode,s.partner].filter(Boolean).join(" ／ ");}
+function invoiceShipText(s){return [s.destinationCode,s.shipTo||s.partner].filter(Boolean).join(" ／ ");}
+function parseInvoiceParty(text,label){
+  let value=invoiceText(text).replace(new RegExp("^.*?"+label+"\\s*[:：]?\\s*"),"").replace(/[|｜]/g," ").trim();
+  const end=value.match(/(?:様\s*)?(\d{3,12})\s*$/);
+  return {code:end?end[1]:"",name:(end?value.slice(0,end.index):value).replace(/様\s*$/,"").replace(/\s+/g," ").trim()};
+}
+function parseInvoiceDate(text){
+  const m=invoiceText(text).match(/\b(\d{2}|\d{4})\s*[\/.-]\s*(\d{1,2})\s*[\/.-]\s*(\d{1,2})\b/);
+  if(!m)return "";let year=Number(m[1]);if(year<100)year+=2000;
+  const value=year+"-"+m[2].padStart(2,"0")+"-"+m[3].padStart(2,"0");return s1ValidDate(value)?value:"";
+}
+function parseInvoiceTsv(tsv,width,height){
+  const rows=String(tsv||"").trim().split(/\r?\n/),head=(rows.shift()||"").split("\t"),idx=Object.fromEntries(head.map((k,i)=>[k,i]));
+  if(!["text","level","left","top","width","height"].every(k=>k in idx))return [];
+  return rows.flatMap(line=>{const a=line.split("\t"),text=a.slice(idx.text).join("\t").trim();
+    if(Number(a[idx.level])!==5||!text)return[];
+    const x=Number(a[idx.left])/width,y=Number(a[idx.top])/height,w=Number(a[idx.width])/width,h=Number(a[idx.height])/height;
+    return [x,y,w,h].every(Number.isFinite)?[{text,x,y,w,h}]:[];
+  });
+}
+function invoiceRegionText(words,[x,y,w,h]){
+  return words.filter(a=>a.x+a.w/2>=x&&a.x+a.w/2<=x+w&&a.y+a.h/2>=y&&a.y+a.h/2<=y+h).sort((a,b)=>Math.abs(a.y-b.y)>.015?a.y-b.y:a.x-b.x).map(a=>a.text).join(" ");
+}
+function invoiceItemsFromWords(words){
+  const candidates=words.filter(w=>w.x>=.105&&w.x<.179&&w.y>=.39&&w.y<.79&&/^\d{2,12}$/.test(invoiceText(w.text))).sort((a,b)=>a.y-b.y||a.x-b.x),anchors=[];
+  for(const w of candidates){const center=w.y+w.h/2;let row=anchors.find(r=>Math.abs(r.y-center)<.012);if(!row){row={y:center,parts:[]};anchors.push(row);}row.parts.push(w);}
+  return anchors.map(row=>{
+    const at=(left,right)=>words.filter(w=>Math.abs(w.y+w.h/2-row.y)<.016&&w.x+w.w/2>=left&&w.x+w.w/2<right).sort((a,b)=>a.x-b.x).map(w=>w.text).join("");
+    const price=invoiceText(at(.521,.607)).replace(/[,，¥￥\s]/g,"");
+    return {code:row.parts.sort((a,b)=>a.x-b.x).map(w=>w.text).join(""),name:at(.18,.521),qty:invoiceDigits(at(.607,.681)),price:/^\d+(\.\d+)?$/.test(price)?price:""};
+  }).slice(0,50);
+}
+const INVOICE_REGIONS={sourceNo:[.881,.128,.065,.021],transactionCode:[.116,.317,.037,.025],transactionName:[.179,.316,.136,.029],orderNo:[.398,.317,.035,.027],warehouse:[.317,.316,.029,.029],ship:[.111,.141,.482,.024],handling:[.111,.188,.482,.024]};
+function invoiceExtractFields(words,text,regions={}){
+  const r=key=>regions[key]??invoiceRegionText(words,INVOICE_REGIONS[key]);
+  const ship=parseInvoiceParty(r("ship"),"出荷先"),handling=parseInvoiceParty(r("handling"),"取扱先");
+  return {sourceNo:invoiceDigits(r("sourceNo")),transactionCode:invoiceDigits(r("transactionCode")),transactionName:invoiceText(r("transactionName")).replace(/[|｜]/g,"").trim(),orderNo:invoiceDigits(r("orderNo")),warehouse:invoiceDigits(r("warehouse")),shipCode:ship.code,shipName:ship.name,handlingCode:handling.code,handlingName:handling.name,postingDate:parseInvoiceDate(text),partnerAddress:"",partnerTel:""};
+}
+async function loadInvoiceLibraries(){
+  if(invoiceLibraryPromise)return invoiceLibraryPromise;
+  invoiceLibraryPromise=(async()=>{
+    const pdfjs=await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
+    return pdfjs;
+  })().catch(e=>{invoiceLibraryPromise=null;throw e;});return invoiceLibraryPromise;
+}
+async function loadInvoiceOcr(){
+  if(window.Tesseract)return window.Tesseract;
+  await new Promise((resolve,reject)=>{const script=document.createElement("script");script.src="https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js";script.async=true;const timer=setTimeout(()=>{script.remove();reject(Error("OCR機能の読込がタイムアウトしました"));},60000);script.onload=()=>{clearTimeout(timer);resolve();};script.onerror=()=>{clearTimeout(timer);script.remove();reject(Error("OCR機能を読み込めませんでした。通信を確認してください"));};document.head.appendChild(script);});
+  if(!window.Tesseract)throw Error("OCR機能を初期化できませんでした");return window.Tesseract;
+}
+function invoiceCrop(canvas,[x,y,w,h]){
+  const out=document.createElement("canvas"),padding=20;
+  const width=Math.max(1,Math.round(w*canvas.width)),height=Math.max(1,Math.round(h*canvas.height));out.width=width+padding*2;out.height=height+padding*2;
+  const ctx=out.getContext("2d");ctx.fillStyle="white";ctx.fillRect(0,0,out.width,out.height);ctx.drawImage(canvas,Math.round(x*canvas.width),Math.round(y*canvas.height),width,height,padding,padding,width,height);return out;
+}
+function invoiceFieldIds(){return {sourceNo:"pdfInvoiceSourceNo",transactionCode:"pdfInvoiceTransactionCode",transactionName:"pdfInvoiceTransactionName",orderNo:"pdfInvoiceOrderNo",shipCode:"pdfInvoiceShipCode",shipName:"pdfInvoiceShipName",handlingCode:"pdfInvoiceHandlingCode",handlingName:"pdfInvoiceHandlingName",postingDate:"pdfInvoicePostingDate",warehouse:"pdfInvoiceWarehouse",partnerAddress:"pdfInvoiceAddress",partnerTel:"pdfInvoiceTel"};}
+function invalidateInvoicePlan(){invoicePdfPlan=null;document.getElementById("pdfInvoiceSaveBtn").disabled=true;document.getElementById("pdfInvoiceConfirmed").checked=false;document.getElementById("pdfInvoicePreview").textContent="";}
+function clearInvoicePdf(){invoicePdfGeneration++;invoicePdfSource=null;invalidateInvoicePlan();document.getElementById("pdfInvoiceForm").hidden=true;document.getElementById("pdfInvoiceItems").replaceChildren();for(const id of Object.values(invoiceFieldIds()))document.getElementById(id).value="";document.getElementById("pdfInvoiceRawText").value="";document.getElementById("pdfInvoiceStatus").textContent="";}
+function setInvoiceBusy(busy){invoicePdfBusy=busy;for(const id of ["pdfInvoiceFile","pdfInvoicePage","pdfInvoiceReadBtn","pdfInvoiceValidateBtn","pdfInvoiceAddItemBtn"])document.getElementById(id).disabled=busy;document.getElementById("pdfInvoiceForm").disabled=busy;document.getElementById("pdfInvoiceSaveBtn").disabled=busy||!invoicePdfPlan;}
+function appendInvoiceItem(row={}){
+  const tr=document.createElement("tr");tr.className="pdf-invoice-item";
+  for(const [key,label] of [["code","商品コード"],["name","商品名"],["qty","数量"],["price","単価"]]){const td=document.createElement("td"),input=document.createElement("input");input.type="text";input.dataset.field=key;input.value=String(row[key]??"");input.setAttribute("aria-label",label);input.addEventListener("input",invalidateInvoicePlan);td.appendChild(input);tr.appendChild(td);}
+  const td=document.createElement("td"),remove=document.createElement("button");remove.type="button";remove.textContent="削除";remove.addEventListener("click",()=>{tr.remove();invalidateInvoicePlan();});td.appendChild(remove);tr.appendChild(td);document.getElementById("pdfInvoiceItems").appendChild(tr);
+}
+async function readInvoicePdf(){
+  if(invoicePdfBusy)return;clearInvoicePdf();const generation=invoicePdfGeneration;
+  const file=document.getElementById("pdfInvoiceFile").files[0],pageNumber=Number(document.getElementById("pdfInvoicePage").value);
+  if(!file)return showToast("納品書PDFを選択してください");
+  if(file.size>20*1024*1024)return showToast("PDFは20MB以下にしてください");
+  if(!Number.isSafeInteger(pageNumber)||pageNumber<1)return showToast("ページ番号を1以上の整数で入力してください");
+  setInvoiceBusy(true);const status=document.getElementById("pdfInvoiceStatus");let pdf=null,worker=null;
+  try{
+    status.textContent="PDFを読み込んでいます…";
+    const buffer=await file.arrayBuffer(),digest=[...new Uint8Array(await crypto.subtle.digest("SHA-256",buffer))].map(x=>x.toString(16).padStart(2,"0")).join("");
+    const pdfjs=await loadInvoiceLibraries();pdf=await pdfjs.getDocument({data:new Uint8Array(buffer)}).promise;
+    if(pageNumber>pdf.numPages)throw Error("このPDFは"+pdf.numPages+"ページです。ページ番号を確認してください");
+    const page=await pdf.getPage(pageNumber),base=page.getViewport({scale:1}),scale=3200/Math.max(base.width,base.height),viewport=page.getViewport({scale});
+    const canvas=document.getElementById("pdfInvoiceCanvas");canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+    await page.render({canvasContext:canvas.getContext("2d"),viewport}).promise;
+    if(generation!==invoicePdfGeneration)return;
+    document.getElementById("pdfInvoiceForm").hidden=false;
+    const content=await page.getTextContent();let words=(content.items||[]).filter(i=>i.str?.trim()).map(i=>{const [x,y]=viewport.convertToViewportPoint(i.transform[4],i.transform[5]);return {text:i.str,x:x/canvas.width,y:(y-i.height*scale)/canvas.height,w:i.width*scale/canvas.width,h:i.height*scale/canvas.height};});
+    let text=words.map(w=>w.text).join("\n"),regions={};
+    if(text.replace(/\s/g,"").length<80){
+      status.textContent="スキャン画像を読み取っています。初回は日本語データの準備に時間がかかります…";
+      const T=await loadInvoiceOcr();
+      worker=await T.createWorker("jpn+eng",1,{workerPath:"https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/worker.min.js",langPath:"https://tessdata.projectnaptha.com/4.0.0",logger:m=>{if(generation===invoicePdfGeneration&&m.status==="recognizing text")status.textContent="画像の文字を読取中… "+Math.round(m.progress*100)+"％";}});
+      await worker.setParameters({tessedit_pageseg_mode:"11"});
+      const result=await worker.recognize(canvas,{}, {text:true,tsv:true});text=result.data.text||"";words=parseInvoiceTsv(result.data.tsv,canvas.width,canvas.height);
+      for(const key of ["sourceNo","transactionCode","orderNo","warehouse","transactionName","ship","handling"]){
+        const digits=["sourceNo","transactionCode","orderNo","warehouse"].includes(key);
+        await worker.setParameters({tessedit_pageseg_mode:"7",tessedit_char_whitelist:digits?"0123456789":""});
+        const r=await worker.recognize(invoiceCrop(canvas,INVOICE_REGIONS[key]));regions[key]=r.data.text||"";
+      }
+    }
+    if(generation!==invoicePdfGeneration)return;
+    const fields=invoiceExtractFields(words,text,regions);
+    for(const [key,id] of Object.entries(invoiceFieldIds()))document.getElementById(id).value=fields[key]||"";
+    const rows=invoiceItemsFromWords(words);(rows.length?rows:[{}]).forEach(appendInvoiceItem);
+    document.getElementById("pdfInvoiceRawText").value=text;
+    invoicePdfSource={digest,fileName:file.name,page:pageNumber};
+    status.textContent=`${pageNumber}/${pdf.numPages}ページを読み取りました。原本と照合し、番号・コード・名称・数量を修正してください。太枠や薄い文字は誤読することがあります。`;
+  }catch(e){status.textContent=(e.message||"PDFを読み取れませんでした")+"。通信・PDF形式を確認して再実行してください。";}
+  finally{if(worker)await worker.terminate().catch(()=>{});if(pdf)await pdf.destroy().catch(()=>{});setInvoiceBusy(false);}
+}
+function collectInvoiceForm(){
+  const fields=Object.fromEntries(Object.entries(invoiceFieldIds()).map(([key,id])=>[key,invoiceText(document.getElementById(id).value)]));
+  const rows=[...document.getElementById("pdfInvoiceItems").querySelectorAll(".pdf-invoice-item")].map(tr=>Object.fromEntries([...tr.querySelectorAll("input[data-field]")].map(i=>[i.dataset.field,invoiceText(i.value)])));
+  return {fields,rows};
+}
+function invoiceFormSignature(){return JSON.stringify(collectInvoiceForm());}
+function validateInvoiceData(input){
+  const f=input.fields;
+  if(!/^[A-Za-z0-9_-]{1,40}$/.test(f.sourceNo))throw Error("納品書の伝票番号を確認してください");
+  if(!/^\d{3}$/.test(f.transactionCode))throw Error("取引区分は050など3桁の数字で入力してください");
+  if(!s1ValidDate(f.postingDate))throw Error("計上日を確認してください");
+  const destinationCode=normalizeDestinationCode(f.shipCode),handlingCode=normalizeDestinationCode(f.handlingCode);
+  if(!f.shipName||!f.handlingName)throw Error("出荷先名と取扱先名を入力してください");
+  if(!input.rows.length)throw Error("商品明細を追加してください");
+  const rows=input.rows.map((r,index)=>{const qty=inventoryQuantity(r.qty,"明細"+(index+1)+"の数量");if(!qty||!r.code)throw Error("各明細の商品コードと1以上の数量を入力してください");const raw=r.price.replace(/[,，¥￥\s]/g,"");if(!/^\d+(\.\d+)?$/.test(raw)||!Number.isFinite(Number(raw)))throw Error("各明細の単価を確認してください");return {...r,qty,price:Number(raw)};});
+  if(rows.reduce((n,r)=>n+r.qty,0)>INSPECTION_UNIT_LIMIT)throw Error("検品できる数量は1伝票300個までです");
+  return {fields:{...f,shipCode:destinationCode,handlingCode},rows};
+}
+async function prepareInvoiceImport(input,source){
+  if(!source)throw Error("先にPDFを読み取ってください");const checked=validateInvoiceData(input);
+  const docs=await db.collection(COLLECTION).get({source:"server"}),products=docs.docs.map(d=>({id:d.id,...d.data()})),states={},seen=new Set();
+  const items=checked.rows.map(r=>{const matches=products.filter(p=>invoiceText(p.code)===r.code);if(matches.length!==1)throw Error("商品コード「"+r.code+"」が未登録か重複しています。登録済みのコードへ修正してください");const p=matches[0];if(seen.has(p.id))throw Error("同じ商品が複数行あります。数量を1行にまとめてください");seen.add(p.id);states[p.id]=s1ProductState(p);return {productId:p.id,productName:p.name,code:String(p.code),unit:p.unit||"個",plannedQty:r.qty,checkedQty:0,checked:false,unitPrice:r.price,remark:"",sourceProductName:r.name};});
+  const f=checked.fields,key=await s1Digest(JSON.stringify(["invoice-pdf-v1",f.postingDate.slice(0,4),f.sourceNo])),id="pdf-"+key;
+  const existing=await db.collection(SLIPS_COLLECTION).doc(id).get({source:"server"});if(existing.exists)throw Error("同じ年・伝票番号の納品書は登録済みです。既存の出荷伝票を確認してください");
+  return {id,fields:f,items,states,source:{...source},slipNumber:"SYK-PDF-"+f.postingDate.replace(/-/g,"")+"-"+key.slice(0,8)};
+}
+async function confirmInvoiceRead(){
+  if(invoicePdfBusy)return;invalidateInvoicePlan();setInvoiceBusy(true);
+  try{const signature=invoiceFormSignature(),plan=await prepareInvoiceImport(collectInvoiceForm(),invoicePdfSource);if(signature!==invoiceFormSignature())throw Error("入力内容が変わりました。もう一度確認してください");plan.formSignature=signature;invoicePdfPlan=plan;const f=plan.fields;document.getElementById("pdfInvoicePreview").textContent=`伝票番号：${f.sourceNo}\n取引区分：${f.transactionCode} ${f.transactionName}\n受注№：${f.orderNo||"未記入"}\n出荷先：${f.shipCode} ${f.shipName}\n取扱先：${f.handlingCode} ${f.handlingName}\n計上日：${f.postingDate}\n`+plan.items.map(i=>`${i.code} ${i.productName}　${i.plannedQty}${i.unit}　単価¥${i.unitPrice.toLocaleString()}`).join("\n");document.getElementById("pdfInvoiceStatus").textContent="登録商品の名称で照合しました。上の原本と下の登録予定内容を確認し、確認チェックを入れて作成してください。";}
+  catch(e){document.getElementById("pdfInvoiceStatus").textContent=e.message||"照合できませんでした";}
+  finally{setInvoiceBusy(false);}
+}
+async function commitInvoiceImport(plan){
+  if(!inventoryWritesAllowed())throw Error("現在は登録できません");const ref=db.collection(SLIPS_COLLECTION).doc(plan.id);
+  await db.runTransaction(async tx=>{
+    await requireNoActiveReset(tx);const existing=await tx.get(ref);if(existing.exists)throw Error("この納品書は既に登録されています");
+    for(const [id,state] of Object.entries(plan.states)){const doc=await tx.get(db.collection(COLLECTION).doc(id));if(!doc.exists||s1ProductState(doc.data())!==state)throw Error("商品情報が変わりました。もう一度登録内容を確認してください");}
+    const f=plan.fields;
+    tx.set(ref,{type:"out",status:"draft",slipNumber:plan.slipNumber,sourceSlipNumber:f.sourceNo,transactionType:f.transactionCode,transactionTypeName:f.transactionName,orderNo:f.orderNo,customerOrderNo:f.orderNo,destinationCode:f.shipCode,shipTo:f.shipName,handlingCode:f.handlingCode,partner:f.handlingName,partnerAddress:f.partnerAddress,partnerTel:f.partnerTel,postingDate:f.postingDate,warehouse:f.warehouse,memo:"納品書PDFから読取・確認して作成",items:plan.items,staff:currentStaffName,createdAt:firebase.firestore.FieldValue.serverTimestamp(),sourceImport:{format:"invoice-pdf-v1",fileName:plan.source.fileName,digest:plan.source.digest,page:plan.source.page}});
+  });return ref.id;
+}
+async function saveInvoiceImport(){
+  if(invoicePdfBusy||!invoicePdfPlan)return;
+  if(!document.getElementById("pdfInvoiceConfirmed").checked)return showToast("原本との確認チェックを入れてください");
+  const plan=invoicePdfPlan;if(plan.formSignature!==invoiceFormSignature()){invalidateInvoicePlan();return showToast("入力内容が変わりました。もう一度登録内容を確認してください");}
+  setInvoiceBusy(true);
+  try{await commitInvoiceImport(plan);invoicePdfPlan=null;document.getElementById("pdfInvoiceConfirmed").checked=false;document.getElementById("pdfInvoiceStatus").textContent="出荷伝票を作成しました。一覧から開くと、出荷指示書に納品書の5項目が表示されます。在庫は検品完了時に反映します。";showToast("納品書から出荷伝票を作成しました");}
+  catch(e){invalidateInvoicePlan();document.getElementById("pdfInvoiceStatus").textContent=(e.message||"登録結果を確認できませんでした")+"。再実行前に伝票一覧を確認してください。";}
+  finally{setInvoiceBusy(false);}
+}
+function initInvoicePdfImport(){
+  document.getElementById("pdfInvoiceReadBtn").addEventListener("click",readInvoicePdf);
+  for(const id of ["pdfInvoiceFile","pdfInvoicePage"])document.getElementById(id).addEventListener("change",clearInvoicePdf);
+  for(const id of Object.values(invoiceFieldIds()))document.getElementById(id).addEventListener("input",invalidateInvoicePlan);
+  document.getElementById("pdfInvoiceAddItemBtn").addEventListener("click",()=>{appendInvoiceItem();invalidateInvoicePlan();});
+  document.getElementById("pdfInvoiceValidateBtn").addEventListener("click",confirmInvoiceRead);
+  document.getElementById("pdfInvoiceSaveBtn").addEventListener("click",saveInvoiceImport);
+  auth.onAuthStateChanged(()=>clearInvoicePdf());
+}
+
+window.KOBUNSHA_APP_VERSION = "2026-11-12-invoice-pdf-jan-v36";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
