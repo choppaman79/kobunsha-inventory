@@ -323,6 +323,7 @@ function switchTab(tab) {
 function subscribeProducts() {
   db.collection(COLLECTION).orderBy("name").onSnapshot(snapshot => {
     allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    refreshInvoiceProductNames();
     renderCategoryChips();
     refreshOrderSupplierOptions();
     renderSummary();
@@ -1213,6 +1214,8 @@ function openSlipDetailModal(id) {
   document.getElementById("slipDetailShipToLabel").textContent = s.type === "in" ? "入荷元" : "出荷先";
   document.getElementById("slipDetailShipTo").textContent = s.shipTo || s.partner || "";
   document.getElementById("slipDetailIssueDate").textContent = s.createdAt && s.createdAt.toDate ? formatDateOnly(s.createdAt.toDate()) : "";
+  document.getElementById("slipDetailDeliveryDate").textContent = s.deliveryDate || "指定なし";
+  document.getElementById("slipDetailDeliveryTime").textContent = s.deliveryTime || "指定なし";
   document.getElementById("slipDetailPostingDate").textContent = formatPostingDate(s.postingDate);
   document.getElementById("slipDetailTransactionType").textContent = invoiceTradeText(s);
   document.getElementById("slipDetailWarehouse").textContent = s.warehouse || "";
@@ -1340,6 +1343,7 @@ function buildCheckSheetHtml(s) {
       <td>${escapeHtml(item.code || "")}</td>
       <td>${escapeHtml(item.productName)}</td>
       <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
+      <td>${escapeHtml(item.remark || "")}</td>
       <td><span class="fill-blank"></span></td>
       <td class="checkbox-glyph">☐</td>
     </tr>
@@ -1354,6 +1358,7 @@ function buildCheckSheetHtml(s) {
       ${companyLetterheadHtml()}
     </div>
     <table class="slip-formal-table invoice-instruction-meta">
+      <tr><th>配達指定日</th><td>${escapeHtml(s.deliveryDate || "指定なし")}</td><th>指定時間</th><td>${escapeHtml(s.deliveryTime || "指定なし")}</td></tr>
       <tr><th>伝票番号</th><td>${escapeHtml(s.sourceSlipNumber || s.slipNumber || "")}</td><th>受注№</th><td>${escapeHtml(invoiceOrderNumber(s))}</td></tr>
       <tr><th>取引区分</th><td>${escapeHtml(invoiceTradeText(s))}</td><th>倉庫</th><td>${escapeHtml(s.warehouse || "")}</td></tr>
       <tr><th>${shipToLabel}</th><td colspan="3">${escapeHtml(invoiceShipText(s))}</td></tr>
@@ -1362,7 +1367,7 @@ function buildCheckSheetHtml(s) {
       ${s.sourceImport?.format === "S1-v1" ? `<tr><th>依頼番号</th><td colspan="3">${escapeHtml(s.sourceImport.reference || "")}</td></tr>` : ""}
     </table>
     <table class="slip-detail-table">
-      <thead><tr><th>商品コード</th><th>商品名</th><th>数量（予定）</th><th>確認数</th><th>検品済</th></tr></thead>
+      <thead><tr><th>商品コード</th><th>商品名</th><th>数量（予定）</th><th>指定</th><th>確認数</th><th>検品済</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
@@ -1398,6 +1403,7 @@ function buildDeliverySheetHtml(s) {
       ${companyLetterheadHtml()}
     </div>
     <table class="slip-formal-table">
+      <tr><th>配達指定日</th><td>${escapeHtml(s.deliveryDate || "指定なし")}</td><th>指定時間</th><td>${escapeHtml(s.deliveryTime || "指定なし")}</td></tr>
       <tr>
         <th>発行日</th><td>${issueDate}</td>
         <th>計上日</th><td>${formatPostingDate(s.postingDate)}</td>
@@ -3741,7 +3747,7 @@ function appendInspectionCard(host,s,u) {
   const item=s.items[u.itemIndex],card=document.createElement("div");card.className="inspection-jan-card";
   const heading=document.createElement("div");heading.className="inspection-jan-heading";
   heading.textContent=`${item.code||""} ${item.productName}　${u.unitIndex}/${item.plannedQty}（1個分）${u.used?"【検品済み】":""}`;
-  card.appendChild(heading);card.appendChild(makeInspectionSvg(u.code));
+  card.appendChild(heading);if(item.remark){const instruction=document.createElement("div");instruction.className="inspection-jan-note";instruction.textContent="指定："+item.remark;card.appendChild(instruction);}card.appendChild(makeInspectionSvg(u.code));
   const note=document.createElement("div");note.className="inspection-jan-note";note.textContent="検品専用・販売不可 ／ 商品JANと組み合わせて1回だけ使用";card.appendChild(note);host.appendChild(card);
 }
 async function printOutgoingInspectionSheet(slipId) {
@@ -3761,7 +3767,7 @@ async function printOutgoingInspectionLabels(slipId) {
   const s=await ensureSlipInspection(slipId),grid=document.getElementById("qrBulkGrid");grid.className="brother-label-list";grid.replaceChildren();
   for(const u of inspectionLedger(s)){
     const item=s.items[u.itemIndex],cell=document.createElement("div");cell.className="brother-pick-label inspection-jan-label";
-    const title=document.createElement("div");title.textContent=`${item.productName}　${u.unitIndex}/${item.plannedQty}${u.used?" 検品済み":""}`;
+    const title=document.createElement("div");title.textContent=`${item.productName}　${u.unitIndex}/${item.plannedQty}${item.remark?"　指定："+item.remark:""}${u.used?" 検品済み":""}`;
     cell.appendChild(title);cell.appendChild(makeInspectionSvg(u.code));
     const note=document.createElement("div");note.textContent=`検品専用・販売不可　${s.slipNumber||""}`;cell.appendChild(note);grid.appendChild(cell);
   }
@@ -3983,14 +3989,47 @@ function invoiceCrop(canvas,[x,y,w,h]){
   const width=Math.max(1,Math.round(w*canvas.width)),height=Math.max(1,Math.round(h*canvas.height));out.width=width+padding*2;out.height=height+padding*2;
   const ctx=out.getContext("2d");ctx.fillStyle="white";ctx.fillRect(0,0,out.width,out.height);ctx.drawImage(canvas,Math.round(x*canvas.width),Math.round(y*canvas.height),width,height,padding,padding,width,height);return out;
 }
-function invoiceFieldIds(){return {sourceNo:"pdfInvoiceSourceNo",transactionCode:"pdfInvoiceTransactionCode",transactionName:"pdfInvoiceTransactionName",orderNo:"pdfInvoiceOrderNo",shipCode:"pdfInvoiceShipCode",shipName:"pdfInvoiceShipName",handlingCode:"pdfInvoiceHandlingCode",handlingName:"pdfInvoiceHandlingName",postingDate:"pdfInvoicePostingDate",warehouse:"pdfInvoiceWarehouse",partnerAddress:"pdfInvoiceAddress",partnerTel:"pdfInvoiceTel"};}
-function invalidateInvoicePlan(){invoicePdfPlan=null;document.getElementById("pdfInvoiceSaveBtn").disabled=true;document.getElementById("pdfInvoiceConfirmed").checked=false;document.getElementById("pdfInvoicePreview").textContent="";}
+function invoiceFieldIds(){return {sourceNo:"pdfInvoiceSourceNo",transactionCode:"pdfInvoiceTransactionCode",transactionName:"pdfInvoiceTransactionName",orderNo:"pdfInvoiceOrderNo",shipCode:"pdfInvoiceShipCode",shipName:"pdfInvoiceShipName",handlingCode:"pdfInvoiceHandlingCode",handlingName:"pdfInvoiceHandlingName",deliveryDate:"pdfInvoiceDeliveryDate",deliveryTime:"pdfInvoiceDeliveryTime",postingDate:"pdfInvoicePostingDate",warehouse:"pdfInvoiceWarehouse",partnerAddress:"pdfInvoiceAddress",partnerTel:"pdfInvoiceTel"};}
+function invoiceActionMessage(message,error=false,scroll=false){
+  document.getElementById("pdfInvoiceStatus").textContent=message;
+  const status=document.getElementById("pdfInvoiceActionStatus");
+  status.textContent=message;status.hidden=!message;
+  status.className=error?"invoice-action-error":"invoice-action-info";
+  if(scroll)status.scrollIntoView?.({block:"nearest",behavior:"smooth"});
+}
+function invalidateInvoicePlan(){invoicePdfPlan=null;document.getElementById("pdfInvoiceSaveBtn").disabled=invoicePdfBusy;document.getElementById("pdfInvoiceActionStatus").textContent="";document.getElementById("pdfInvoiceActionStatus").hidden=true;document.getElementById("pdfInvoiceConfirmed").checked=false;document.getElementById("pdfInvoicePreview").textContent="";}
 function clearInvoicePdf(){invoicePdfGeneration++;invoicePdfSource=null;invalidateInvoicePlan();document.getElementById("pdfInvoiceForm").hidden=true;document.getElementById("pdfInvoiceItems").replaceChildren();for(const id of Object.values(invoiceFieldIds()))document.getElementById(id).value="";document.getElementById("pdfInvoiceRawText").value="";document.getElementById("pdfInvoiceStatus").textContent="";}
-function setInvoiceBusy(busy){invoicePdfBusy=busy;for(const id of ["pdfInvoiceFile","pdfInvoicePage","pdfInvoiceReadBtn","pdfInvoiceValidateBtn","pdfInvoiceAddItemBtn"])document.getElementById(id).disabled=busy;document.getElementById("pdfInvoiceForm").disabled=busy;document.getElementById("pdfInvoiceSaveBtn").disabled=busy||!invoicePdfPlan;}
+function setInvoiceBusy(busy){invoicePdfBusy=busy;for(const id of ["pdfInvoiceFile","pdfInvoicePage","pdfInvoiceReadBtn","pdfInvoiceValidateBtn","pdfInvoiceAddItemBtn"])document.getElementById(id).disabled=busy;document.getElementById("pdfInvoiceForm").disabled=busy;const save=document.getElementById("pdfInvoiceSaveBtn");save.disabled=busy;save.textContent=busy?"処理中…":"確認した内容で出荷伝票を作成";}
+function syncInvoiceItemName(tr){
+  const fields=Object.fromEntries([...tr.querySelectorAll("input[data-field]")].map(input=>[input.dataset.field,input]));
+  const status=tr.querySelector(".invoice-code-status");
+  if(!fields.code||!fields.name||!status)return false;
+  const code=invoiceText(fields.code.value).toUpperCase();
+  const products=typeof allProducts!=="undefined"?allProducts:[];
+  const matches=code?products.filter(p=>invoiceText(p.code).toUpperCase()===code):[];
+  const name=matches.length===1?String(matches[0].name||""):"";
+  const id=matches.length===1?matches[0].id:"";
+  const changed=fields.name.value!==name || (tr.dataset.productId||"")!==id;
+  fields.name.value=name;tr.dataset.productId=id;
+  status.textContent=!code?"商品コードを入力してください":matches.length===1?"商品一覧と一致しました":matches.length>1?"同じ商品コードが複数登録されています":"商品一覧に一致するコードがありません";
+  status.className="invoice-code-status "+(matches.length===1?"invoice-code-found":"invoice-code-missing");
+  return changed;
+}
+function refreshInvoiceProductNames(){
+  const host=document.getElementById("pdfInvoiceItems");if(!host)return;
+  let changed=false;host.querySelectorAll(".pdf-invoice-item").forEach(tr=>{if(syncInvoiceItemName(tr))changed=true;});
+  if(changed)invalidateInvoicePlan();
+}
 function appendInvoiceItem(row={}){
   const tr=document.createElement("tr");tr.className="pdf-invoice-item";
-  for(const [key,label] of [["code","商品コード"],["name","商品名"],["qty","数量"],["price","単価"]]){const td=document.createElement("td"),input=document.createElement("input");input.type="text";input.dataset.field=key;input.value=String(row[key]??"");input.setAttribute("aria-label",label);input.addEventListener("input",invalidateInvoicePlan);td.appendChild(input);tr.appendChild(td);}
+  for(const [key,label] of [["code","商品コード"],["name","商品名"],["qty","数量"],["price","単価"],["remark","指定"]]){const td=document.createElement("td"),input=document.createElement("input");input.type="text";input.dataset.field=key;input.value=String(row[key]??"");input.setAttribute("aria-label",label);input.placeholder=label;input.addEventListener("input",()=>{invalidateInvoicePlan();if(key==="code")syncInvoiceItemName(tr);});
+    if(key==="code")input.addEventListener("change",()=>{invalidateInvoicePlan();syncInvoiceItemName(tr);});
+    if(key==="name"){input.placeholder="商品コードから自動表示";input.title=row.name?"PDF読取商品名："+row.name:"商品一覧から自動表示します";}
+    td.appendChild(input);
+    if(key==="code"){const status=document.createElement("small");status.className="invoice-code-status";status.setAttribute("role","status");status.setAttribute("aria-live","polite");td.appendChild(status);}
+    tr.appendChild(td);}
   const td=document.createElement("td"),remove=document.createElement("button");remove.type="button";remove.textContent="削除";remove.addEventListener("click",()=>{tr.remove();invalidateInvoicePlan();});td.appendChild(remove);tr.appendChild(td);document.getElementById("pdfInvoiceItems").appendChild(tr);
+  syncInvoiceItemName(tr);
 }
 async function readInvoicePdf(){
   if(invoicePdfBusy)return;clearInvoicePdf();const generation=invoicePdfGeneration;
@@ -4040,13 +4079,17 @@ function collectInvoiceForm(){
 }
 function invoiceFormSignature(){return JSON.stringify(collectInvoiceForm());}
 function validateInvoiceData(input){
-  const f=input.fields;
+  const f={...input.fields,deliveryDate:invoiceText(input.fields.deliveryDate),deliveryTime:invoiceText(input.fields.deliveryTime)};
+  if(f.deliveryDate&&!s1ValidDate(f.deliveryDate))throw Error("配達指定日を確認してください");
+  if(f.deliveryTime.length>80)throw Error("指定時間は80文字以内で入力してください");
   if(!/^[A-Za-z0-9_-]{1,40}$/.test(f.sourceNo))throw Error("納品書の伝票番号を確認してください");
   if(!/^\d{3}$/.test(f.transactionCode))throw Error("取引区分は050など3桁の数字で入力してください");
   if(!s1ValidDate(f.postingDate))throw Error("計上日を確認してください");
   const destinationCode=normalizeDestinationCode(f.shipCode),handlingCode=normalizeDestinationCode(f.handlingCode);
   if(!f.shipName||!f.handlingName)throw Error("出荷先名と取扱先名を入力してください");
   if(!input.rows.length)throw Error("商品明細を追加してください");
+  const missing=[];input.rows.forEach((r,i)=>{for(const [field,label] of [["code","商品コード"],["qty","数量"],["price","単価"]])if(!invoiceText(r[field]))missing.push("明細"+(i+1)+"の"+label);});
+  if(missing.length)throw Error("未入力の項目があります：\n"+missing.join("、")+"\n入力後、もう一度照合してください。");
   const rows=input.rows.map((r,index)=>{const qty=inventoryQuantity(r.qty,"明細"+(index+1)+"の数量");if(!qty||!r.code)throw Error("各明細の商品コードと1以上の数量を入力してください");const raw=r.price.replace(/[,，¥￥\s]/g,"");if(!/^\d+(\.\d+)?$/.test(raw)||!Number.isFinite(Number(raw)))throw Error("各明細の単価を確認してください");return {...r,qty,price:Number(raw)};});
   if(rows.reduce((n,r)=>n+r.qty,0)>INSPECTION_UNIT_LIMIT)throw Error("検品できる数量は1伝票300個までです");
   return {fields:{...f,shipCode:destinationCode,handlingCode},rows};
@@ -4054,15 +4097,15 @@ function validateInvoiceData(input){
 async function prepareInvoiceImport(input,source){
   if(!source)throw Error("先にPDFを読み取ってください");const checked=validateInvoiceData(input);
   const docs=await db.collection(COLLECTION).get({source:"server"}),products=docs.docs.map(d=>({id:d.id,...d.data()})),states={},seen=new Set();
-  const items=checked.rows.map(r=>{const matches=products.filter(p=>invoiceText(p.code)===r.code);if(matches.length!==1)throw Error("商品コード「"+r.code+"」が未登録か重複しています。登録済みのコードへ修正してください");const p=matches[0];if(seen.has(p.id))throw Error("同じ商品が複数行あります。数量を1行にまとめてください");seen.add(p.id);states[p.id]=s1ProductState(p);return {productId:p.id,productName:p.name,code:String(p.code),unit:p.unit||"個",plannedQty:r.qty,checkedQty:0,checked:false,unitPrice:r.price,remark:"",sourceProductName:r.name};});
+  const items=checked.rows.map(r=>{const matches=products.filter(p=>invoiceText(p.code).toUpperCase()===invoiceText(r.code).toUpperCase());if(matches.length!==1)throw Error("商品コード「"+r.code+"」が未登録か重複しています。登録済みのコードへ修正してください");const p=matches[0];const rowKey=JSON.stringify([p.id,invoiceText(r.remark)]);if(seen.has(rowKey))throw Error("同じ商品・指定が複数行あります。数量を1行にまとめてください");seen.add(rowKey);states[p.id]=s1ProductState(p);return {productId:p.id,productName:p.name,code:String(p.code),unit:p.unit||"個",plannedQty:r.qty,checkedQty:0,checked:false,unitPrice:r.price,remark:invoiceText(r.remark),sourceProductName:r.name};});
   const f=checked.fields,key=await s1Digest(JSON.stringify(["invoice-pdf-v1",f.postingDate.slice(0,4),f.sourceNo])),id="pdf-"+key;
   const existing=await db.collection(SLIPS_COLLECTION).doc(id).get({source:"server"});if(existing.exists)throw Error("同じ年・伝票番号の納品書は登録済みです。既存の出荷伝票を確認してください");
   return {id,fields:f,items,states,source:{...source},slipNumber:"SYK-PDF-"+f.postingDate.replace(/-/g,"")+"-"+key.slice(0,8)};
 }
 async function confirmInvoiceRead(){
   if(invoicePdfBusy)return;invalidateInvoicePlan();setInvoiceBusy(true);
-  try{const signature=invoiceFormSignature(),plan=await prepareInvoiceImport(collectInvoiceForm(),invoicePdfSource);if(signature!==invoiceFormSignature())throw Error("入力内容が変わりました。もう一度確認してください");plan.formSignature=signature;invoicePdfPlan=plan;const f=plan.fields;document.getElementById("pdfInvoicePreview").textContent=`伝票番号：${f.sourceNo}\n取引区分：${f.transactionCode} ${f.transactionName}\n受注№：${f.orderNo||"未記入"}\n出荷先：${f.shipCode} ${f.shipName}\n取扱先：${f.handlingCode} ${f.handlingName}\n計上日：${f.postingDate}\n`+plan.items.map(i=>`${i.code} ${i.productName}　${i.plannedQty}${i.unit}　単価¥${i.unitPrice.toLocaleString()}`).join("\n");document.getElementById("pdfInvoiceStatus").textContent="登録商品の名称で照合しました。上の原本と下の登録予定内容を確認し、確認チェックを入れて作成してください。";}
-  catch(e){document.getElementById("pdfInvoiceStatus").textContent=e.message||"照合できませんでした";}
+  try{const signature=invoiceFormSignature(),plan=await prepareInvoiceImport(collectInvoiceForm(),invoicePdfSource);if(signature!==invoiceFormSignature())throw Error("入力内容が変わりました。もう一度確認してください");plan.formSignature=signature;invoicePdfPlan=plan;const f=plan.fields;document.getElementById("pdfInvoicePreview").textContent=`伝票番号：${f.sourceNo}\n取引区分：${f.transactionCode} ${f.transactionName}\n受注№：${f.orderNo||"未記入"}\n出荷先：${f.shipCode} ${f.shipName}\n取扱先：${f.handlingCode} ${f.handlingName}\n計上日：${f.postingDate}\n配達指定日：${f.deliveryDate||"指定なし"}\n指定時間：${f.deliveryTime||"指定なし"}\n`+plan.items.map(i=>`${i.code} ${i.productName}　${i.plannedQty}${i.unit}　単価¥${i.unitPrice.toLocaleString()}${i.remark?"　指定："+i.remark:""}`).join("\n");invoiceActionMessage("登録商品の名称で照合しました。原本と登録予定内容を確認し、確認チェックを入れて作成してください。",false,true);}
+  catch(e){invoiceActionMessage(e.message||"照合できませんでした",true,true);}
   finally{setInvoiceBusy(false);}
 }
 async function commitInvoiceImport(plan){
@@ -4071,16 +4114,26 @@ async function commitInvoiceImport(plan){
     await requireNoActiveReset(tx);const existing=await tx.get(ref);if(existing.exists)throw Error("この納品書は既に登録されています");
     for(const [id,state] of Object.entries(plan.states)){const doc=await tx.get(db.collection(COLLECTION).doc(id));if(!doc.exists||s1ProductState(doc.data())!==state)throw Error("商品情報が変わりました。もう一度登録内容を確認してください");}
     const f=plan.fields;
-    tx.set(ref,{type:"out",status:"draft",slipNumber:plan.slipNumber,sourceSlipNumber:f.sourceNo,transactionType:f.transactionCode,transactionTypeName:f.transactionName,orderNo:f.orderNo,customerOrderNo:f.orderNo,destinationCode:f.shipCode,shipTo:f.shipName,handlingCode:f.handlingCode,partner:f.handlingName,partnerAddress:f.partnerAddress,partnerTel:f.partnerTel,postingDate:f.postingDate,warehouse:f.warehouse,memo:"納品書PDFから読取・確認して作成",items:plan.items,staff:currentStaffName,createdAt:firebase.firestore.FieldValue.serverTimestamp(),sourceImport:{format:"invoice-pdf-v1",fileName:plan.source.fileName,digest:plan.source.digest,page:plan.source.page}});
+    tx.set(ref,{type:"out",status:"draft",slipNumber:plan.slipNumber,sourceSlipNumber:f.sourceNo,transactionType:f.transactionCode,transactionTypeName:f.transactionName,orderNo:f.orderNo,customerOrderNo:f.orderNo,destinationCode:f.shipCode,shipTo:f.shipName,handlingCode:f.handlingCode,partner:f.handlingName,partnerAddress:f.partnerAddress,partnerTel:f.partnerTel,postingDate:f.postingDate,warehouse:f.warehouse,deliveryDate:f.deliveryDate,deliveryTime:f.deliveryTime,memo:"納品書PDFから読取・確認して作成",items:plan.items,staff:currentStaffName,createdAt:firebase.firestore.FieldValue.serverTimestamp(),sourceImport:{format:"invoice-pdf-v1",fileName:plan.source.fileName,digest:plan.source.digest,page:plan.source.page}});
   });return ref.id;
 }
 async function saveInvoiceImport(){
-  if(invoicePdfBusy||!invoicePdfPlan)return;
-  if(!document.getElementById("pdfInvoiceConfirmed").checked)return showToast("原本との確認チェックを入れてください");
-  const plan=invoicePdfPlan;if(plan.formSignature!==invoiceFormSignature()){invalidateInvoicePlan();return showToast("入力内容が変わりました。もう一度登録内容を確認してください");}
-  setInvoiceBusy(true);
-  try{await commitInvoiceImport(plan);invoicePdfPlan=null;document.getElementById("pdfInvoiceConfirmed").checked=false;document.getElementById("pdfInvoiceStatus").textContent="出荷伝票を作成しました。一覧から開くと、出荷指示書に納品書の5項目が表示されます。在庫は検品完了時に反映します。";showToast("納品書から出荷伝票を作成しました");}
-  catch(e){invalidateInvoicePlan();document.getElementById("pdfInvoiceStatus").textContent=(e.message||"登録結果を確認できませんでした")+"。再実行前に伝票一覧を確認してください。";}
+  if(invoicePdfBusy)return;
+  if(!invoicePdfPlan){
+    await confirmInvoiceRead();
+    if(invoicePdfPlan)invoiceActionMessage("商品マスタとの照合が完了しました。登録予定内容を確認し、確認チェックを入れて、もう一度作成ボタンを押してください。",false,true);
+    return;
+  }
+  const plan=invoicePdfPlan;
+  if(plan.formSignature!==invoiceFormSignature()){
+    invalidateInvoicePlan();invoiceActionMessage("入力内容が変わりました。もう一度「修正内容を商品マスタと照合」を押してください。",true,true);return;
+  }
+  if(!document.getElementById("pdfInvoiceConfirmed").checked){
+    invoiceActionMessage("原本との確認チェックを入れてください。",true,true);return;
+  }
+  setInvoiceBusy(true);invoiceActionMessage("出荷伝票を保存しています…");
+  try{await commitInvoiceImport(plan);invoicePdfPlan=null;document.getElementById("pdfInvoiceConfirmed").checked=false;invoiceActionMessage("出荷伝票を作成しました。一覧から開いて出荷指示書を印刷できます。在庫は検品完了時に反映します。",false,true);showToast("納品書から出荷伝票を作成しました");}
+  catch(e){invalidateInvoicePlan();invoiceActionMessage((e.message||"登録結果を確認できませんでした")+"。再実行前に伝票一覧を確認してください。",true,true);}
   finally{setInvoiceBusy(false);}
 }
 function initInvoicePdfImport(){
@@ -4093,7 +4146,7 @@ function initInvoicePdfImport(){
   auth.onAuthStateChanged(()=>clearInvoicePdf());
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-12-invoice-pdf-jan-v36";
+window.KOBUNSHA_APP_VERSION = "2026-11-13-delivery-time-jan-v39";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
