@@ -559,7 +559,7 @@
   .slip-item-price { font-size: 12px; color: #6b6357; margin-top: 2px; }
   .slip-item-remark { font-size: 12px; color: #6b6357; font-style: italic; }
 
-  /* ---------- 伝票フォーマル表示（発行日・取引先・自社情報など） ---------- */
+  /* ---------- 伝票フォーマル表示（発行日・取扱先・自社情報など） ---------- */
   .slip-formal-header {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
@@ -965,6 +965,13 @@
   .s1-import-group { margin:12px 0; overflow-x:auto; }
   .s1-import-group h4 { margin:8px 0; }
   .s1-import-warning { color:#a3392b; overflow-wrap:anywhere; }
+  #pdfInvoiceCanvas { display:block; width:100%; height:auto; background:white; margin-bottom:12px; }
+  #pdfInvoiceForm { min-width:0; border:1px solid #b8c7db; padding:12px; margin-top:12px; }
+  .invoice-pdf-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
+  .pdf-invoice-item input { min-width:65px; width:100%; margin:0; }
+  .pdf-invoice-item td:nth-child(2) { min-width:160px; }
+  .invoice-instruction-meta td { overflow-wrap:anywhere; white-space:normal; }
+  @media(max-width:500px) { .invoice-pdf-fields { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
@@ -1145,6 +1152,27 @@
         <p id="s1ImportStatus" role="status" aria-live="polite" style="white-space:pre-line;"></p>
         <div id="s1ImportPreview"></div>
         <button type="button" class="btn-primary" id="s1ImportApplyBtn" disabled>確認した内容で出荷伝票を作成</button>
+      </details>
+      <details class="pilot-panel" id="pdfInvoicePanel">
+        <summary>納品書PDFから出荷伝票を作成（自動読取・確認修正）</summary>
+        <p>弘文社の横向き納品書に対応します。1ページずつ読み取ります。スキャン画像も端末内で文字認識します。原本と照合してから作成してください。</p>
+        <label for="pdfInvoiceFile">納品書PDF（20MB以下）</label><input type="file" id="pdfInvoiceFile" accept="application/pdf,.pdf">
+        <label for="pdfInvoicePage">読み取るページ番号</label><input type="number" id="pdfInvoicePage" min="1" step="1" value="1">
+        <button type="button" class="btn-secondary-inline" id="pdfInvoiceReadBtn">PDFを読み取る</button>
+        <p id="pdfInvoiceStatus" role="status" aria-live="polite" style="white-space:pre-line;"></p>
+        <fieldset id="pdfInvoiceForm" hidden>
+          <legend>原本との照合・修正</legend>
+          <canvas id="pdfInvoiceCanvas" aria-label="読み取り対象の納品書原本"></canvas>
+          <div class="invoice-pdf-fields"><div><label for="pdfInvoiceSourceNo">納品書の伝票番号</label><input id="pdfInvoiceSourceNo" type="text" autocomplete="off"></div><div><label for="pdfInvoiceTransactionCode">取引区分コード（3桁）</label><input id="pdfInvoiceTransactionCode" type="text" autocomplete="off"></div><div><label for="pdfInvoiceTransactionName">取引区分名</label><input id="pdfInvoiceTransactionName" type="text" autocomplete="off"></div><div><label for="pdfInvoiceOrderNo">受注№</label><input id="pdfInvoiceOrderNo" type="text" autocomplete="off"></div><div><label for="pdfInvoiceShipCode">出荷先コード</label><input id="pdfInvoiceShipCode" type="text" autocomplete="off"></div><div><label for="pdfInvoiceShipName">出荷先名</label><input id="pdfInvoiceShipName" type="text" autocomplete="off"></div><div><label for="pdfInvoiceHandlingCode">取扱先コード</label><input id="pdfInvoiceHandlingCode" type="text" autocomplete="off"></div><div><label for="pdfInvoiceHandlingName">取扱先名</label><input id="pdfInvoiceHandlingName" type="text" autocomplete="off"></div><div><label for="pdfInvoicePostingDate">計上日</label><input id="pdfInvoicePostingDate" type="date" autocomplete="off"></div><div><label for="pdfInvoiceWarehouse">倉庫</label><input id="pdfInvoiceWarehouse" type="text" autocomplete="off"></div><div><label for="pdfInvoiceAddress">取扱先住所（任意）</label><input id="pdfInvoiceAddress" type="text" autocomplete="off"></div><div><label for="pdfInvoiceTel">取扱先TEL（任意）</label><input id="pdfInvoiceTel" type="text" autocomplete="off"></div></div>
+          <p>商品コードは在庫の商品マスタと照合します。未登録の商品は自動登録しません。数量・単価も原本と確認してください。</p>
+          <div style="overflow-x:auto;"><table class="slip-detail-table"><thead><tr><th>商品コード</th><th>読取商品名</th><th>数量</th><th>単価</th><th>操作</th></tr></thead><tbody id="pdfInvoiceItems"></tbody></table></div>
+          <button type="button" class="btn-secondary-inline" id="pdfInvoiceAddItemBtn">明細を追加</button>
+          <details><summary>読み取った原文</summary><textarea id="pdfInvoiceRawText" readonly rows="8"></textarea></details>
+          <button type="button" class="btn-secondary-inline" id="pdfInvoiceValidateBtn">修正内容を商品マスタと照合</button>
+          <pre id="pdfInvoicePreview" style="white-space:pre-wrap;"></pre>
+          <label><input type="checkbox" id="pdfInvoiceConfirmed" style="width:auto;"> 原本と伝票番号・取引区分・受注№・出荷先・取扱先・商品と数量を確認しました</label>
+          <button type="button" class="btn-primary" id="pdfInvoiceSaveBtn" disabled>確認した内容で出荷伝票を作成</button>
+        </fieldset>
       </details>
       <div class="slip-list" id="slipList"></div>
       <div class="empty-state" id="slipEmptyState" style="display:none;">伝票がありません</div>
@@ -1370,14 +1398,16 @@
       <p style="font-size:12px;">新しいコードは伝票保存と同時に台帳へ登録します。既存の住所等を今回だけ変える場合はチェックを外してください。</p>
     </div>
 
-    <label id="slipPartnerLabel">取引先／納品先（任意）</label>
+    <label for="slipSourceNumber">納品書の伝票番号（任意・管理番号とは別）</label><input type="text" id="slipSourceNumber" autocomplete="off">
+    <label for="slipHandlingCode">取扱先コード（任意）</label><input type="text" id="slipHandlingCode" autocomplete="off">
+    <label id="slipPartnerLabel">取扱先（任意）</label>
     <input type="text" id="slipPartner" placeholder="例：〇〇神社様">
-    <label>取引先住所（任意）</label>
+    <label>取扱先住所（任意）</label>
     <input type="text" id="slipPartnerAddress" placeholder="例：東京都〇〇区……">
-    <label>取引先TEL（任意）</label>
+    <label>取扱先TEL（任意）</label>
     <input type="text" id="slipPartnerTel" placeholder="例：03-1234-5678">
     <label id="slipShipToLabel">出荷先（任意）</label>
-    <input type="text" id="slipShipTo" placeholder="取引先と異なる場合のみ入力">
+    <input type="text" id="slipShipTo" placeholder="取扱先と異なる場合のみ入力">
 
     <div style="display:flex;gap:10px;">
       <div style="flex:1;">
@@ -1395,11 +1425,12 @@
         <input type="text" id="slipWarehouse" placeholder="例：本社倉庫">
       </div>
       <div style="flex:1;">
-        <label>発注№（任意）</label>
-        <input type="text" id="slipOrderNo" placeholder="先方発注番号など">
+        <label>受注№（任意）</label>
+        <input type="text" id="slipOrderNo" placeholder="納品書に記載された受注番号">
       </div>
     </div>
 
+    <label for="slipTransactionName">取引区分名（任意）</label><input type="text" id="slipTransactionName" placeholder="例：未決済取扱">
     <label>備考（任意）</label>
     <input type="text" id="slipMemo" placeholder="納品場所や便名など">
 
@@ -1469,7 +1500,7 @@
           <th id="slipDetailShipToLabel">出荷先</th><td id="slipDetailShipTo"></td>
         </tr>
         <tr>
-          <th>取引先</th>
+          <th>取扱先</th>
           <td colspan="3">
             名称：<span id="slipDetailPartner"></span>　
             住所：<span id="slipDetailPartnerAddress"></span>　
@@ -1481,7 +1512,7 @@
           <th>倉庫</th><td id="slipDetailWarehouse"></td>
         </tr>
         <tr>
-          <th>発注№</th><td colspan="3" id="slipDetailOrderNo"></td>
+          <th>受注№</th><td colspan="3" id="slipDetailOrderNo"></td>
         </tr>
       </table>
 
@@ -1645,9 +1676,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261110-s1-import-jan-v35"></script>
+<script src="app-jan.js?v=20261112-invoice-pdf-jan-v36"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-10-s1-import-jan-v35") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-12-invoice-pdf-jan-v36") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
