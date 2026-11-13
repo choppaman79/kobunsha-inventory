@@ -1172,7 +1172,7 @@
           <canvas id="pdfInvoiceCanvas" aria-label="読み取り対象の納品書原本"></canvas>
           <div class="invoice-pdf-fields"><div><label for="pdfInvoiceSourceNo">納品書の伝票番号</label><input id="pdfInvoiceSourceNo" type="text" autocomplete="off"></div><div><label for="pdfInvoiceTransactionCode">取引区分コード（3桁）</label><input id="pdfInvoiceTransactionCode" type="text" autocomplete="off"></div><div><label for="pdfInvoiceTransactionName">取引区分名</label><input id="pdfInvoiceTransactionName" type="text" autocomplete="off"></div><div><label for="pdfInvoiceOrderNo">受注№</label><input id="pdfInvoiceOrderNo" type="text" autocomplete="off"></div><div><label for="pdfInvoiceShipCode">出荷先コード</label><input id="pdfInvoiceShipCode" type="text" autocomplete="off"></div><div><label for="pdfInvoiceShipName">出荷先名</label><input id="pdfInvoiceShipName" type="text" autocomplete="off"></div><div><label for="pdfInvoiceHandlingCode">取扱先コード</label><input id="pdfInvoiceHandlingCode" type="text" autocomplete="off"></div><div><label for="pdfInvoiceHandlingName">取扱先名</label><input id="pdfInvoiceHandlingName" type="text" autocomplete="off"></div><div><label for="pdfInvoicePostingDate">計上日</label><input id="pdfInvoicePostingDate" type="date" autocomplete="off"></div><div><label for="pdfInvoiceWarehouse">倉庫</label><input id="pdfInvoiceWarehouse" type="text" autocomplete="off"></div><div><label for="pdfInvoiceDeliveryDate">配達指定日（任意）</label><input id="pdfInvoiceDeliveryDate" type="date"></div><div><label for="pdfInvoiceDeliveryTime">指定時間（任意）</label><input id="pdfInvoiceDeliveryTime" type="text" maxlength="80" placeholder="例：午前中／14～16時"></div><div><label for="pdfInvoiceAddress">取扱先住所（任意）</label><input id="pdfInvoiceAddress" type="text" autocomplete="off"></div><div><label for="pdfInvoiceTel">取扱先TEL（任意）</label><input id="pdfInvoiceTel" type="text" autocomplete="off"></div></div>
           <p>商品コードを入力すると、商品一覧の一致する商品名を自動表示します。未登録・重複のコードは表示でお知らせします。数量・単価は原本と確認してください。包装などの指定は、各商品の「指定」欄へ入力できます。</p>
-          <div style="overflow-x:auto;"><table class="slip-detail-table"><thead><tr><th>商品コード</th><th>商品名（コードから自動表示）</th><th>数量</th><th>単価</th><th>指定</th><th>操作</th></tr></thead><tbody id="pdfInvoiceItems"></tbody></table></div>
+          <div style="overflow-x:auto;"><table class="slip-detail-table"><thead><tr><th>商品コード</th><th>商品名（コードから自動表示）</th><th>数量</th><th>単価（コードから自動入力）</th><th>指定</th><th>操作</th></tr></thead><tbody id="pdfInvoiceItems"></tbody></table></div>
           <button type="button" class="btn-secondary-inline" id="pdfInvoiceAddItemBtn">明細を追加</button>
           <details><summary>読み取った原文</summary><textarea id="pdfInvoiceRawText" readonly rows="8"></textarea></details>
           <button type="button" class="btn-secondary-inline" id="pdfInvoiceValidateBtn">修正内容を商品マスタと照合</button>
@@ -1686,9 +1686,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261113-delivery-time-jan-v39"></script>
+<script src="app-jan.js?v=20261113-unit-price-jan-v40"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-13-delivery-time-jan-v39") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-13-unit-price-jan-v40") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
