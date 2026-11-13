@@ -4000,7 +4000,7 @@ function invoiceActionMessage(message,error=false,scroll=false){
 function invalidateInvoicePlan(){invoicePdfPlan=null;document.getElementById("pdfInvoiceSaveBtn").disabled=invoicePdfBusy;document.getElementById("pdfInvoiceActionStatus").textContent="";document.getElementById("pdfInvoiceActionStatus").hidden=true;document.getElementById("pdfInvoiceConfirmed").checked=false;document.getElementById("pdfInvoicePreview").textContent="";}
 function clearInvoicePdf(){invoicePdfGeneration++;invoicePdfSource=null;invalidateInvoicePlan();document.getElementById("pdfInvoiceForm").hidden=true;document.getElementById("pdfInvoiceItems").replaceChildren();for(const id of Object.values(invoiceFieldIds()))document.getElementById(id).value="";document.getElementById("pdfInvoiceRawText").value="";document.getElementById("pdfInvoiceStatus").textContent="";}
 function setInvoiceBusy(busy){invoicePdfBusy=busy;for(const id of ["pdfInvoiceFile","pdfInvoicePage","pdfInvoiceReadBtn","pdfInvoiceValidateBtn","pdfInvoiceAddItemBtn"])document.getElementById(id).disabled=busy;document.getElementById("pdfInvoiceForm").disabled=busy;const save=document.getElementById("pdfInvoiceSaveBtn");save.disabled=busy;save.textContent=busy?"処理中…":"確認した内容で出荷伝票を作成";}
-function syncInvoiceItemName(tr){
+function syncInvoiceItemName(tr,forcePrice=false){
   const fields=Object.fromEntries([...tr.querySelectorAll("input[data-field]")].map(input=>[input.dataset.field,input]));
   const status=tr.querySelector(".invoice-code-status");
   if(!fields.code||!fields.name||!status)return false;
@@ -4009,7 +4009,18 @@ function syncInvoiceItemName(tr){
   const matches=code?products.filter(p=>invoiceText(p.code).toUpperCase()===code):[];
   const name=matches.length===1?String(matches[0].name||""):"";
   const id=matches.length===1?matches[0].id:"";
-  const changed=fields.name.value!==name || (tr.dataset.productId||"")!==id;
+  let priceChanged=false;
+  if(fields.price){
+    const before=fields.price.value;
+    const price=matches.length===1?matches[0].price:null;
+    const valid=price!==null&&price!==undefined&&String(price).trim()!==""&&Number.isFinite(Number(price))&&Number(price)>=0;
+    if(forcePrice||!before||before===tr.dataset.autoPrice){
+      fields.price.value=valid?String(Number(price)):"";
+      tr.dataset.autoPrice=fields.price.value;
+    }
+    priceChanged=before!==fields.price.value;
+  }
+  const changed=priceChanged || fields.name.value!==name || (tr.dataset.productId||"")!==id;
   fields.name.value=name;tr.dataset.productId=id;
   status.textContent=!code?"商品コードを入力してください":matches.length===1?"商品一覧と一致しました":matches.length>1?"同じ商品コードが複数登録されています":"商品一覧に一致するコードがありません";
   status.className="invoice-code-status "+(matches.length===1?"invoice-code-found":"invoice-code-missing");
@@ -4022,8 +4033,9 @@ function refreshInvoiceProductNames(){
 }
 function appendInvoiceItem(row={}){
   const tr=document.createElement("tr");tr.className="pdf-invoice-item";
-  for(const [key,label] of [["code","商品コード"],["name","商品名"],["qty","数量"],["price","単価"],["remark","指定"]]){const td=document.createElement("td"),input=document.createElement("input");input.type="text";input.dataset.field=key;input.value=String(row[key]??"");input.setAttribute("aria-label",label);input.placeholder=label;input.addEventListener("input",()=>{invalidateInvoicePlan();if(key==="code")syncInvoiceItemName(tr);});
-    if(key==="code")input.addEventListener("change",()=>{invalidateInvoicePlan();syncInvoiceItemName(tr);});
+  for(const [key,label] of [["code","商品コード"],["name","商品名"],["qty","数量"],["price","単価"],["remark","指定"]]){const td=document.createElement("td"),input=document.createElement("input");input.type="text";input.dataset.field=key;input.value=String(row[key]??"");input.setAttribute("aria-label",label);input.placeholder=label;input.addEventListener("input",()=>{invalidateInvoicePlan();if(key==="code")syncInvoiceItemName(tr,true);});
+    if(key==="code")input.addEventListener("change",()=>{invalidateInvoicePlan();syncInvoiceItemName(tr,true);});
+    if(key==="price"){input.placeholder="商品コードから自動入力";input.title="商品一覧の単価を自動入力します。手動修正もできます。PDF読取済みの単価は、コードを変更するまでは保持します。";}
     if(key==="name"){input.placeholder="商品コードから自動表示";input.title=row.name?"PDF読取商品名："+row.name:"商品一覧から自動表示します";}
     td.appendChild(input);
     if(key==="code"){const status=document.createElement("small");status.className="invoice-code-status";status.setAttribute("role","status");status.setAttribute("aria-live","polite");td.appendChild(status);}
@@ -4146,7 +4158,7 @@ function initInvoicePdfImport(){
   auth.onAuthStateChanged(()=>clearInvoicePdf());
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-13-delivery-time-jan-v39";
+window.KOBUNSHA_APP_VERSION = "2026-11-13-unit-price-jan-v40";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
