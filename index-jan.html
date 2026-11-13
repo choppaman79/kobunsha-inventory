@@ -978,7 +978,22 @@
   .invoice-code-status { display:block; margin-top:4px; font-size:12px; white-space:normal; }
   .invoice-code-found { color:#236342; }
   .invoice-code-missing { color:#a3392b; }
-  .pdf-invoice-item td:nth-child(5) { min-width:180px; }
+  .pdf-invoice-item td:nth-child(3) { min-width:100px; }
+  .pdf-invoice-item td:nth-child(4) { min-width:85px; }
+
+  .manual-invoice-fields { display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:14px 20px; }
+  .manual-code-pair { display:grid;grid-template-columns:100px minmax(0,1fr);gap:8px; }
+  .manual-trade-warehouse { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
+  .manual-full { grid-column:1/-1; }
+  .manual-code-actions { display:flex;gap:8px;flex-wrap:wrap; }
+  .manual-code-status { margin:4px 0;font-size:12px;white-space:pre-line; }
+  .manual-extra-fields { margin:14px 0; }
+  #pdfInvoiceCanvas[hidden] { display:none; }
+  #pdfInvoiceForm { min-width:0; }
+  .invoice-instruction-meta th,.invoice-instruction-meta td { overflow-wrap:anywhere; }
+  .instruction-delivery { margin:8px 0 14px; }
+  @media(max-width:600px) { .manual-invoice-fields { grid-template-columns:1fr; } }
+
 </style>
 </head>
 <body>
@@ -1149,6 +1164,44 @@
         <button class="btn-add btn-add-in" id="slipCreateInBtn">＋ 入荷伝票を作成</button>
       </div>
       <div class="toolbar"><button class="btn-secondary-inline" id="slipSelectAllBtn">表示中をすべて選択</button><button class="btn-danger" id="slipDeleteBtn">選択した伝票を削除（0件）</button></div>
+      <details class="pilot-panel" id="pdfInvoicePanel" open>
+        <summary>手入力で出荷指示書を作成</summary>
+        <p>初回はコードと名称を入力します。登録後は同じコードで検索できます。未登録のコードは「追加」、または伝票作成時に登録します。</p>
+        <button type="button" class="btn-secondary-inline" id="manualNewBtn">新しい伝票を入力</button>
+        <details class="manual-extra-fields"><summary>PDFから読み取る（補助機能）</summary>
+          <label for="pdfInvoiceFile">納品書PDF（20MB以下）</label><input type="file" id="pdfInvoiceFile" accept="application/pdf,.pdf">
+          <label for="pdfInvoicePage">読み取るページ番号</label><input type="number" id="pdfInvoicePage" min="1" step="1" value="1">
+          <button type="button" class="btn-secondary-inline" id="pdfInvoiceReadBtn">PDFを読み取る</button>
+        </details>
+        <p id="pdfInvoiceStatus" role="status" aria-live="polite" style="white-space:pre-line;"></p>
+        <fieldset id="pdfInvoiceForm">
+          <legend>出荷指示書の入力</legend>
+          <canvas hidden id="pdfInvoiceCanvas" aria-label="読み取り対象の納品書原本"></canvas>
+          <div class="manual-invoice-fields">
+            <div><label for="pdfInvoiceShipCode">出荷先</label><div class="manual-code-pair"><input id="pdfInvoiceShipCode" type="text" list="manual-ship-list" placeholder="コード" aria-label="出荷先コード" autocomplete="off"><input id="pdfInvoiceShipName" type="text" placeholder="出荷先名（初回は手入力）" aria-label="出荷先名"></div><datalist id="manual-ship-list"></datalist><div class="manual-code-actions"><button type="button" class="btn-secondary-inline" id="manual-ship-lookup">検索</button><button type="button" class="btn-secondary-inline" id="manual-ship-add">出荷先を追加</button></div><p id="manual-ship-status" class="manual-code-status" role="status" aria-live="polite"></p></div>
+            <div><label for="pdfInvoicePostingDate">計上日</label><input id="pdfInvoicePostingDate" type="date"></div>
+            <div><label for="pdfInvoiceHandlingCode">取扱先</label><div class="manual-code-pair"><input id="pdfInvoiceHandlingCode" type="text" list="manual-handling-list" placeholder="コード" aria-label="取扱先コード" autocomplete="off"><input id="pdfInvoiceHandlingName" type="text" placeholder="取扱先名（初回は手入力）" aria-label="取扱先名"></div><datalist id="manual-handling-list"></datalist><div class="manual-code-actions"><button type="button" class="btn-secondary-inline" id="manual-handling-lookup">検索</button><button type="button" class="btn-secondary-inline" id="manual-handling-add">取扱先を追加</button></div><p id="manual-handling-status" class="manual-code-status" role="status" aria-live="polite"></p></div>
+            <div><label for="pdfInvoiceSourceNo">伝票番号</label><input id="pdfInvoiceSourceNo" type="text" autocomplete="off" maxlength="40"></div>
+            <div><div class="manual-trade-warehouse"><div><label for="pdfInvoiceTransactionCode">取引区分コード（3桁）</label><input id="pdfInvoiceTransactionCode" type="text" maxlength="3" list="manual-trade-list" placeholder="例：020" autocomplete="off"><datalist id="manual-trade-list"></datalist></div><div><label for="pdfInvoiceWarehouse">倉庫</label><input id="pdfInvoiceWarehouse" type="text" list="manual-warehouse-list" placeholder="選択・入力"><datalist id="manual-warehouse-list"></datalist></div></div><label for="pdfInvoiceTransactionName">取引区分名</label><input id="pdfInvoiceTransactionName" type="text" placeholder="未登録の場合は名称を入力"><div class="manual-code-actions"><button type="button" class="btn-secondary-inline" id="manual-trade-lookup">検索</button><button type="button" class="btn-secondary-inline" id="manual-trade-add">取引区分を追加</button></div><p id="manual-trade-status" class="manual-code-status" role="status" aria-live="polite"></p></div>
+            <div><label for="pdfInvoiceOrderNo">受注番号</label><input id="pdfInvoiceOrderNo" type="text" autocomplete="off"></div>
+            <div class="manual-full"><label for="manualManagementNumber">管理番号（伝票番号と同じ表示）</label><input id="manualManagementNumber" type="text" readonly></div>
+          </div>
+          <details class="manual-extra-fields"><summary>配達指定・取扱先住所／TEL（任意）</summary><div class="invoice-pdf-fields">
+            <div><label for="pdfInvoiceDeliveryDate">配達指定日</label><input id="pdfInvoiceDeliveryDate" type="date"></div><div><label for="pdfInvoiceDeliveryTime">指定時間</label><input id="pdfInvoiceDeliveryTime" type="text" maxlength="80" placeholder="例：午前中／14～16時"></div>
+            <div><label for="pdfInvoiceAddress">取扱先住所</label><input id="pdfInvoiceAddress" type="text"></div><div><label for="pdfInvoiceTel">取扱先TEL</label><input id="pdfInvoiceTel" type="text"></div>
+          </div></details>
+          <p>商品コードを入力すると、商品一覧の一致する商品名を自動表示します。未登録・重複のコードは表示でお知らせします。単価も自動入力されます。数量を入力してください。単価は手動修正できます。商品コードでEnter → 数量でEnterを押すと次の明細へ進めます。</p>
+          <div style="overflow-x:auto;"><table class="slip-detail-table"><thead><tr><th>商品コード</th><th>商品名（コードから自動表示）</th><th>単価（コードから自動入力）</th><th>数量</th><th>操作</th></tr></thead><tbody id="pdfInvoiceItems"></tbody></table></div>
+          <button type="button" class="btn-secondary-inline" id="pdfInvoiceAddItemBtn">明細を追加</button>
+          <details><summary>読み取った原文</summary><textarea id="pdfInvoiceRawText" readonly rows="8"></textarea></details>
+          <button type="button" class="btn-secondary-inline" id="pdfInvoiceValidateBtn">入力内容を照合</button>
+          <pre id="pdfInvoicePreview" style="white-space:pre-wrap;"></pre>
+          <label><input type="checkbox" id="pdfInvoiceConfirmed" style="width:auto;"> 登録予定の伝票番号・取引区分・受注番号・出荷先・取扱先・商品・単価・数量を確認しました</label>
+          <p class="invoice-action-info">手順：コード・伝票情報を入力 → 数量を入力 → 入力内容を照合 → 確認チェック → 出荷伝票を作成</p>
+          <p id="pdfInvoiceActionStatus" role="alert" aria-live="polite" style="white-space:pre-line;" hidden></p>
+          <button type="button" class="btn-primary" id="pdfInvoiceSaveBtn" aria-describedby="pdfInvoiceActionStatus">確認した内容で出荷伝票を作成</button>
+        </fieldset>
+      </details>
       <details class="pilot-panel" id="s1ImportPanel">
         <summary>Excelの出荷指示依頼書を取り込む（0020・0160・0050・社内）</summary>
         <p>「出荷指示依頼書」シートの数量欄を読み、出荷先ごとに未検品伝票を作成します。空欄・0は対象外です。在庫は検品完了時に反映します。</p>
@@ -1159,29 +1212,6 @@
         <p id="s1ImportStatus" role="status" aria-live="polite" style="white-space:pre-line;"></p>
         <div id="s1ImportPreview"></div>
         <button type="button" class="btn-primary" id="s1ImportApplyBtn" disabled>確認した内容で出荷伝票を作成</button>
-      </details>
-      <details class="pilot-panel" id="pdfInvoicePanel">
-        <summary>納品書PDFから出荷伝票を作成（自動読取・確認修正）</summary>
-        <p>弘文社の横向き納品書に対応します。1ページずつ読み取ります。スキャン画像も端末内で文字認識します。原本と照合してから作成してください。</p>
-        <label for="pdfInvoiceFile">納品書PDF（20MB以下）</label><input type="file" id="pdfInvoiceFile" accept="application/pdf,.pdf">
-        <label for="pdfInvoicePage">読み取るページ番号</label><input type="number" id="pdfInvoicePage" min="1" step="1" value="1">
-        <button type="button" class="btn-secondary-inline" id="pdfInvoiceReadBtn">PDFを読み取る</button>
-        <p id="pdfInvoiceStatus" role="status" aria-live="polite" style="white-space:pre-line;"></p>
-        <fieldset id="pdfInvoiceForm" hidden>
-          <legend>原本との照合・修正</legend>
-          <canvas id="pdfInvoiceCanvas" aria-label="読み取り対象の納品書原本"></canvas>
-          <div class="invoice-pdf-fields"><div><label for="pdfInvoiceSourceNo">納品書の伝票番号</label><input id="pdfInvoiceSourceNo" type="text" autocomplete="off"></div><div><label for="pdfInvoiceTransactionCode">取引区分コード（3桁）</label><input id="pdfInvoiceTransactionCode" type="text" autocomplete="off"></div><div><label for="pdfInvoiceTransactionName">取引区分名</label><input id="pdfInvoiceTransactionName" type="text" autocomplete="off"></div><div><label for="pdfInvoiceOrderNo">受注№</label><input id="pdfInvoiceOrderNo" type="text" autocomplete="off"></div><div><label for="pdfInvoiceShipCode">出荷先コード</label><input id="pdfInvoiceShipCode" type="text" autocomplete="off"></div><div><label for="pdfInvoiceShipName">出荷先名</label><input id="pdfInvoiceShipName" type="text" autocomplete="off"></div><div><label for="pdfInvoiceHandlingCode">取扱先コード</label><input id="pdfInvoiceHandlingCode" type="text" autocomplete="off"></div><div><label for="pdfInvoiceHandlingName">取扱先名</label><input id="pdfInvoiceHandlingName" type="text" autocomplete="off"></div><div><label for="pdfInvoicePostingDate">計上日</label><input id="pdfInvoicePostingDate" type="date" autocomplete="off"></div><div><label for="pdfInvoiceWarehouse">倉庫</label><input id="pdfInvoiceWarehouse" type="text" autocomplete="off"></div><div><label for="pdfInvoiceDeliveryDate">配達指定日（任意）</label><input id="pdfInvoiceDeliveryDate" type="date"></div><div><label for="pdfInvoiceDeliveryTime">指定時間（任意）</label><input id="pdfInvoiceDeliveryTime" type="text" maxlength="80" placeholder="例：午前中／14～16時"></div><div><label for="pdfInvoiceAddress">取扱先住所（任意）</label><input id="pdfInvoiceAddress" type="text" autocomplete="off"></div><div><label for="pdfInvoiceTel">取扱先TEL（任意）</label><input id="pdfInvoiceTel" type="text" autocomplete="off"></div></div>
-          <p>商品コードを入力すると、商品一覧の一致する商品名を自動表示します。未登録・重複のコードは表示でお知らせします。数量・単価は原本と確認してください。包装などの指定は、各商品の「指定」欄へ入力できます。</p>
-          <div style="overflow-x:auto;"><table class="slip-detail-table"><thead><tr><th>商品コード</th><th>商品名（コードから自動表示）</th><th>数量</th><th>単価（コードから自動入力）</th><th>指定</th><th>操作</th></tr></thead><tbody id="pdfInvoiceItems"></tbody></table></div>
-          <button type="button" class="btn-secondary-inline" id="pdfInvoiceAddItemBtn">明細を追加</button>
-          <details><summary>読み取った原文</summary><textarea id="pdfInvoiceRawText" readonly rows="8"></textarea></details>
-          <button type="button" class="btn-secondary-inline" id="pdfInvoiceValidateBtn">修正内容を商品マスタと照合</button>
-          <pre id="pdfInvoicePreview" style="white-space:pre-wrap;"></pre>
-          <label><input type="checkbox" id="pdfInvoiceConfirmed" style="width:auto;"> 原本と伝票番号・取引区分・受注№・出荷先・取扱先・商品と数量を確認しました</label>
-          <p class="invoice-action-info">手順：明細の数量・単価を入力 → 商品マスタと照合 → 登録予定内容を確認 → 確認チェック → 出荷伝票を作成</p>
-          <p id="pdfInvoiceActionStatus" role="alert" aria-live="polite" style="white-space:pre-line;" hidden></p>
-          <button type="button" class="btn-primary" id="pdfInvoiceSaveBtn" aria-describedby="pdfInvoiceActionStatus">確認した内容で出荷伝票を作成</button>
-        </fieldset>
       </details>
       <div class="slip-list" id="slipList"></div>
       <div class="empty-state" id="slipEmptyState" style="display:none;">伝票がありません</div>
@@ -1686,9 +1716,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261113-unit-price-jan-v40"></script>
+<script src="app-jan.js?v=20261113-manual-shipping-jan-v41"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-13-unit-price-jan-v40") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-13-manual-shipping-jan-v41") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
