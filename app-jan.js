@@ -75,6 +75,7 @@ function init() {
   initProductLabelSizes();
   initLabelPrinterGuide();
   initBarcodeTransferTools();
+  initPhoneReception();
 
   document.getElementById("loginBtn").addEventListener("click", handleLogin);
   document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
@@ -295,6 +296,7 @@ function showApp(user) {
   subscribeSlips();
   subscribeOrders();
   subscribeDisaster();
+  subscribePhoneReceipts();
   browserNotifyEnabled = (typeof Notification !== "undefined" && Notification.permission === "granted");
   updateNotifyBtnLabel();
 }
@@ -307,7 +309,7 @@ function switchTab(tab) {
   document.getElementById("tabHistory").style.display = tab === "history" ? "block" : "none";
   document.getElementById("tabSlips").style.display = tab === "slips" ? "block" : "none";
   document.getElementById("tabOrders").style.display = tab === "orders" ? "block" : "none";
-  ["stocktake","festival","disaster"].forEach(t => { const panel = document.getElementById("tab" + t[0].toUpperCase() + t.slice(1)); if (panel) panel.style.display = tab === t ? "block" : "none"; });
+  ["stocktake","festival","disaster","phone"].forEach(t => { const panel = document.getElementById("tab" + t[0].toUpperCase() + t.slice(1)); if (panel) panel.style.display = tab === t ? "block" : "none"; });
   document.querySelectorAll("main > section").forEach(el => el.classList.toggle("print-target", el.style.display !== "none"));
   if (tab === "stocktake" && $w("stocktakeDate")) loadStocktake();
   if (tab === "festival" && $w("festivalMonth")) loadFestival();
@@ -325,6 +327,7 @@ function subscribeProducts() {
     allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     refreshInvoiceProductNames();
     renderDisaster();
+    phoneRenderProducts();
     renderCategoryChips();
     refreshOrderSupplierOptions();
     renderSummary();
@@ -945,6 +948,7 @@ function subscribeSlips() {
   db.collection(SLIPS_COLLECTION).orderBy("createdAt", "desc").onSnapshot(snapshot => {
     allSlips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderManualCodeLists();
+    phoneRefreshAvailability();
     [...slipSelected].forEach(id => { if (!allSlips.some(s => s.id === id)) slipSelected.delete(id); });
     if (document.getElementById("tabSlips").style.display !== "none") {
       renderSlipList(getActiveSlipFilter());
@@ -1553,8 +1557,8 @@ function openSupplierOrder() {
 
 // ===================== Phase4: 発注（購入発注）管理 =====================
 function subscribeOrders() {
-  db.collection(ORDERS_COLLECTION).orderBy("createdAt", "desc").limit(200).onSnapshot(snapshot => {
-    allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  db.collection(ORDERS_COLLECTION).orderBy("createdAt", "desc").onSnapshot(snapshot => {
+    allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(o=>o.kind!==PHONE_KIND&&o.type!=="phone-reception").slice(0,200);
     if (document.getElementById("tabOrders").style.display !== "none") {
       renderLowStockAlert();
       renderOrderList(getActiveOrderFilter());
@@ -4319,7 +4323,7 @@ function renderDisaster(){
 }
 function subscribeDisaster(){
   if(disasterUnsubscribe)disasterUnsubscribe();disasterRecords=[];renderDisaster();
-  disasterUnsubscribe=db.collection(DISASTER_MOVEMENTS).onSnapshot(snapshot=>{disasterRecords=snapshot.docs.map(d=>({id:d.id,...d.data()})).filter(d=>['disaster-sale-v1','disaster-purchase-v1'].includes(d.kind)).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));renderDisaster();},e=>{console.error(e);disasterStatus('防災斡旋データを取得できません。通信状態・権限を確認してください。',true);});
+  disasterUnsubscribe=db.collection(DISASTER_MOVEMENTS).onSnapshot(snapshot=>{disasterRecords=snapshot.docs.map(d=>({id:d.id,...d.data()})).filter(d=>['disaster-sale-v1','disaster-purchase-v1'].includes(d.kind)).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));renderDisaster();phoneRefreshAvailability();},e=>{console.error(e);disasterStatus('防災斡旋データを取得できません。通信状態・権限を確認してください。',true);});
 }
 function disasterCsv(){const rows=[['商品コード','商品名','現在庫','月始祭等確保数','利用可能数','未出荷注文数','必要数','入荷予定数','過不足','不足数','入荷予定反映後過不足'],...disasterStockSummary(allProducts.filter(disasterEligible),disasterRecords).map(p=>[p.code,p.name,p.stock,p.reserved,p.available,p.sales,p.required,p.incoming,p.balance,p.shortage,p.afterBalance])];const blob=new Blob(['\uFEFF'+rows.map(r=>r.map(v=>csvCell(typeof v==="string"&&/^[=+@\-\t\r]/.test(String(v??''))?"'"+String(v??''):String(v??''))).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='防災用品_在庫集計.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function initDisasterOps(){
@@ -4403,7 +4407,128 @@ function editDisasterCartQuantity(index){
   try{const q=disasterQuantity(boxes,loose,item.packSize);disasterCart[index]={...item,...q,amount:q.boxQty*item.boxPrice+q.looseQty*item.unitPrice};renderDisasterCart();}catch(e){disasterStatus(e.message,true);}
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-14-inventory-pack-jan-v43";
+// 電話受注は受付記録のみ。在庫・引当・出荷伝票を変更しない。
+const PHONE_KIND='phone-reception-v1';
+const phoneFieldIds={customerType:'phoneCustomerType',customerCode:'phoneCustomerCode',customerName:'phoneCustomerName',contactName:'phoneContactName',tel:'phoneTel',postalCode:'phonePostal',address:'phoneAddress',shipName:'phoneShipName',shipAddress:'phoneShipAddress',deliveryDate:'phoneDeliveryDate',deliveryTime:'phoneDeliveryTime',paymentMemo:'phonePayment',memo:'phoneMemo'};
+let phoneSubscriptionEpoch=0;
+let phoneReceipts=[],phoneItems=[],phoneBusy=false,phoneUnsubscribe=null,phoneLoaded=false,phoneEditingId='',phoneRevision=0,phoneCreatedNumber='',phoneReviewState='',phoneLookupGeneration=0;
+const pt=id=>document.getElementById(id);
+function phoneText(v){return String(v??'').normalize('NFKC').trim();}
+function phoneKey(v){return phoneText(v).replace(/\D/g,'');}
+function phoneMessage(message,error=false){pt('phoneStatus').textContent=message;pt('phoneStatus').className=error?'invoice-action-error':'invoice-action-info';}
+function phoneInvalidateReview(){phoneReviewState='';pt('phoneConfirmed').checked=false;pt('phoneReview').textContent='';}
+function phoneSetBusy(busy){phoneBusy=busy;pt('phoneForm').disabled=busy;pt('phoneNewBtn').disabled=busy;pt('phoneLedger').querySelectorAll('button').forEach(b=>b.disabled=busy);}
+function phoneClearEntry(){pt('phoneProduct').value='';pt('phoneProductSearch').value='';pt('phonePack').value='1';pt('phoneBoxes').value='0';pt('phoneLoose').value='1';pt('phoneUnitPrice').value='';pt('phoneBoxPrice').value='';pt('phoneItemAvailability').textContent='';}
+function phoneNewRecord(){
+  phoneEditingId='phone-'+crypto.randomUUID();phoneRevision=0;phoneCreatedNumber='';phoneItems=[];phoneLookupGeneration++;
+  for(const id of Object.values(phoneFieldIds))pt(id).value='';pt('phoneCustomerType').value='dojo';pt('phonePayment').value='未確認';pt('phoneCandidates').replaceChildren();phoneClearEntry();phoneInvalidateReview();phoneRenderItems();phoneRenderProducts();phoneMessage('新しい電話受付です。電話の途中でも「一時保存」できます。');
+}
+function phoneFields(){return Object.fromEntries(Object.entries(phoneFieldIds).map(([key,id])=>[key,phoneText(pt(id).value)]));}
+function phonePendingEntry(){return {search:pt('phoneProductSearch').value,productId:pt('phoneProduct').value,pack:pt('phonePack').value,boxes:pt('phoneBoxes').value,loose:pt('phoneLoose').value,unitPrice:pt('phoneUnitPrice').value,boxPrice:pt('phoneBoxPrice').value};}
+function phoneFormState(){return JSON.stringify({fields:phoneFields(),items:phoneItems,pending:phonePendingEntry()});}
+function phoneStockInfo(productId,products=allProducts,slips=allSlips,disaster=disasterRecords){
+  const p=products.find(p=>p.id===productId);if(!p)return null;
+  const stock=Number(p.currentStock||0),reserved=Number(p.reservedStock||0);
+  const out=slips.filter(s=>s.type==='out'&&s.status==='draft').flatMap(s=>s.items||[]).filter(i=>i.productId===productId).reduce((n,i)=>n+Number(i.plannedQty||0),0);
+  const sales=disaster.filter(r=>r.kind==='disaster-sale-v1'&&r.status==='ordered').flatMap(r=>r.items||[]).filter(i=>i.productId===productId).reduce((n,i)=>n+Number(i.qty||0),0);
+  return {stock,reserved,pending:out+sales,available:stock-reserved-out-sales,unit:p.unit||'個'};
+}
+function phoneRefreshAvailability(){
+  const p=allProducts.find(p=>p.id===pt('phoneProduct').value),s=p?phoneStockInfo(p.id):null;
+  pt('phoneItemAvailability').textContent=s?`現在庫 ${s.stock}${s.unit} ／ 月始祭等確保 ${s.reserved} ／ 他の未出荷 ${s.pending} ／ 差引見込 ${s.available}${s.unit}。電話受付分は引当・減算しません。`:'';
+}
+function phoneProductChanged(){const p=allProducts.find(p=>p.id===pt('phoneProduct').value);pt('phonePack').value=String(p?.disasterPackSize||1);pt('phoneUnitPrice').value=p?String(p.price??0):'';pt('phoneBoxPrice').value=p?String(p.disasterBoxPrice??Number(p.price||0)*Number(p.disasterPackSize||1)):'';phoneRefreshAvailability();phoneInvalidateReview();}
+function phoneRenderProducts(){
+  const node=pt('phoneProduct');if(!node)return;const selected=node.value,query=phoneText(pt('phoneProductSearch').value).toLowerCase();
+  const matches=allProducts.filter(p=>!query||[p.code,p.name,p.barcode].some(v=>phoneText(v).toLowerCase().includes(query)));
+  node.innerHTML='<option value="">商品を選択</option>'+matches.map(p=>`<option value="${safe(p.id)}">${safe(p.code||'')} ${safe(p.name)}</option>`).join('');
+  node.value=matches.some(p=>p.id===selected)?selected:'';phoneRefreshAvailability();
+}
+function phoneSearchProduct(){
+  phoneInvalidateReview();phoneRenderProducts();const term=phoneText(pt('phoneProductSearch').value).toUpperCase();
+  const exact=allProducts.filter(p=>[p.code,p.barcode].some(v=>phoneText(v).toUpperCase()===term));
+  if(term&&exact.length===1){pt('phoneProduct').value=exact[0].id;phoneProductChanged();}else if(!pt('phoneProduct').value){pt('phoneUnitPrice').value='';pt('phoneBoxPrice').value='';}
+}
+function phoneAddItem(){
+  try{const p=allProducts.find(p=>p.id===pt('phoneProduct').value);if(!p)throw Error('商品を選択してください');if(phoneItems.length>=100)throw Error('1件100商品までです');if(phoneItems.some(i=>i.productId===p.id))throw Error('同じ商品は1行にまとめてください。「数量変更」で変更できます');const q=disasterQuantity(pt('phoneBoxes').value,pt('phoneLoose').value,pt('phonePack').value),unitPrice=disasterMoney(pt('phoneUnitPrice').value===''&&!q.looseQty?0:pt('phoneUnitPrice').value,'ばら単価'),boxPrice=disasterMoney(pt('phoneBoxPrice').value===''&&!q.boxQty?0:pt('phoneBoxPrice').value,'箱単価');
+    phoneItems.push({productId:p.id,code:String(p.code||''),productName:p.name,unit:p.unit||'個',...q,unitPrice,boxPrice,amount:q.boxQty*boxPrice+q.looseQty*unitPrice});phoneClearEntry();phoneRenderProducts();phoneRenderItems();phoneInvalidateReview();phoneMessage('商品を追加しました。在庫は変わりません。');
+  }catch(e){phoneMessage(e.message,true);}
+}
+function phoneRenderItems(){
+  pt('phoneItems').innerHTML=phoneItems.map((i,n)=>`<tr><td>${safe(i.code)}</td><td>${safe(i.productName)}</td><td>${i.boxQty}箱＋${i.looseQty}${safe(i.unit)}<br>1箱${i.packSize}${safe(i.unit)}／合計${i.qty}${safe(i.unit)}</td><td>ばら ¥${i.unitPrice.toLocaleString()}<br>箱 ¥${i.boxPrice.toLocaleString()}</td><td>¥${i.amount.toLocaleString()}</td><td><button type="button" class="btn-secondary-inline phone-qty" data-index="${n}">数量変更</button><button type="button" class="btn-secondary-inline phone-remove" data-index="${n}">削除</button></td></tr>`).join('');
+  pt('phoneItems').querySelectorAll('.phone-remove').forEach(b=>b.onclick=()=>{phoneItems.splice(Number(b.dataset.index),1);phoneRenderItems();phoneInvalidateReview();});
+  pt('phoneItems').querySelectorAll('.phone-qty').forEach(b=>b.onclick=()=>{const i=phoneItems[Number(b.dataset.index)],boxes=prompt('箱数',String(i.boxQty));if(boxes===null)return;const loose=prompt('ばら数量（1箱'+i.packSize+i.unit+'）',String(i.looseQty));if(loose===null)return;try{Object.assign(i,disasterQuantity(boxes,loose,i.packSize));i.amount=i.boxQty*i.boxPrice+i.looseQty*i.unitPrice;phoneRenderItems();phoneInvalidateReview();}catch(e){phoneMessage(e.message,true);}});
+  pt('phoneTotal').textContent='商品金額合計：¥'+phoneItems.reduce((n,i)=>n+i.amount,0).toLocaleString()+'（送料等は含みません）';
+}
+function validatePhoneReceipt(input,status){
+  if(!['draft','received'].includes(status))throw Error('受付状態が不正です');const f=input.fields;
+  if(!['dojo','individual'].includes(f.customerType))throw Error('お客様区分を選択してください');
+  if(f.customerCode)normalizeDestinationCode(f.customerCode);
+  if(f.deliveryDate&&!s1ValidDate(f.deliveryDate))throw Error('配達指定日を確認してください');
+  if(Object.values(f).some(v=>typeof v!=='string'||v.length>2000))throw Error('入力が長すぎます。備考等は2000文字以内です');
+  if(status==='received'&&(!f.customerName||phoneKey(f.tel).length<6||phoneKey(f.tel).length>15||!input.items.length))throw Error('お客様名・電話番号・商品明細を確認してください');
+  if(status==='received'&&(input.pending.productId||phoneText(input.pending.search)))throw Error('選択中の商品を「明細を追加」するか、商品選択を空にしてください');
+  if(status==='draft'&&!Object.entries(f).some(([key,value])=>key!=='customerType'&&(key!=='paymentMemo'||value!=='未確認')&&phoneText(value))&&!input.items.length&&!input.pending.productId&&!input.pending.search)throw Error('受付内容を何か入力してください');
+  if(input.items.length>100)throw Error('明細は100商品までです');const ids=new Set();for(const i of input.items){if(ids.has(i.productId))throw Error('商品が重複しています');ids.add(i.productId);const q=disasterQuantity(i.boxQty,i.looseQty,i.packSize);if(q.qty!==i.qty)throw Error('合計数量が一致しません');disasterMoney(i.unitPrice,'ばら単価');disasterMoney(i.boxPrice,'箱単価');if(i.amount!==q.boxQty*i.boxPrice+q.looseQty*i.unitPrice)throw Error('商品金額が一致しません');}
+  return {...f,customerCode:f.customerCode?normalizeDestinationCode(f.customerCode):''};
+}
+function phoneReviewText(fields,items){return `お客様：${fields.customerType==='dojo'?'道場':'個人'} ${fields.customerName}\nコード：${fields.customerCode||'なし'} ／ ご担当：${fields.contactName||'未記入'}\n電話：${fields.tel}\n住所：${fields.postalCode} ${fields.address}\nお届け先：${fields.shipName||fields.customerName}\nお届け先住所：${fields.shipAddress||fields.address||'未確認'}\n指定：${fields.deliveryDate||'指定なし'} ${fields.deliveryTime||''}\n支払方法メモ：${fields.paymentMemo}\n\n`+items.map(i=>`${i.code} ${i.productName}\n${i.boxQty}箱＋${i.looseQty}${i.unit}（1箱${i.packSize}${i.unit}）＝${i.qty}${i.unit}　¥${i.amount.toLocaleString()}`).join('\n')+`\n\n商品金額合計：¥${items.reduce((n,i)=>n+i.amount,0).toLocaleString()}（送料等は含みません）\n備考：${fields.memo||'なし'}`;}
+function phoneReview(){try{const input={fields:phoneFields(),items:phoneItems,pending:phonePendingEntry()};validatePhoneReceipt(input,'received');phoneReviewState=phoneFormState();pt('phoneReview').textContent=phoneReviewText(input.fields,input.items);pt('phoneConfirmed').checked=false;phoneMessage('内容を復唱し、確認チェックを入れて「受付済みとして保存」を押してください。');}catch(e){phoneInvalidateReview();phoneMessage(e.message,true);}}
+async function commitPhoneReceipt(input,status){
+  if(!inventoryWritesAllowed())throw Error('現在は保存できません');const fields=validatePhoneReceipt(input,status),ref=db.collection(ORDERS_COLLECTION).doc(input.id);
+  if(!/^phone-[a-zA-Z0-9-]{8,80}$/.test(input.id)||!Number.isSafeInteger(input.revision)||input.revision<0)throw Error('受付ID・更新回数を確認してください');
+  let revision=0,number='';await db.runTransaction(async tx=>{await requireNoActiveReset(tx);const prior=await tx.get(ref);if(input.revision===0&&prior.exists)throw Error('既に保存されています。一覧を確認してください');if(input.revision>0&&(!prior.exists||prior.data().kind!==PHONE_KIND||prior.data().status==='cancelled'||Number(prior.data().revision||0)!==input.revision))throw Error('別の操作で変更・取消されています。開き直してください');
+    const stocks=[];for(const i of input.items){const p=await tx.get(db.collection(COLLECTION).doc(i.productId));if(status==='received'&&(!p.exists||String(p.data().code||'')!==i.code||(p.data().unit||'個')!==i.unit))throw Error('商品が削除・変更されています。明細を確認してください');stocks.push(p.exists?Number(p.data().currentStock||0):null);}
+    revision=input.revision+1;number=prior.exists?prior.data().receiptNumber:'TEL-'+todayDateInputValue().replace(/-/g,'')+'-'+input.id.slice(-8).toUpperCase();
+    tx.set(ref,{kind:PHONE_KIND,type:'phone-reception',receiptNumber:number,status,revision,...fields,phoneKey:phoneKey(fields.tel),items:input.items.map((i,n)=>({...i,stockAtReception:stocks[n]})),pending:input.pending,amount:input.items.reduce((n,i)=>n+i.amount,0),createdAt:prior.exists?prior.data().createdAt:stamp(),createdBy:prior.exists?prior.data().createdBy:currentStaffName,updatedAt:stamp(),updatedBy:currentStaffName});
+  });return {revision,receiptNumber:number};
+}
+async function phoneSave(status){
+  if(phoneBusy)return;if(status==='received'&&(!pt('phoneConfirmed').checked||phoneReviewState!==phoneFormState()))return phoneMessage('最新の内容で復唱確認を行い、確認チェックを入れてください。',true);
+  const input={id:phoneEditingId,revision:phoneRevision,fields:phoneFields(),items:structuredClone(phoneItems),pending:phonePendingEntry()};phoneSetBusy(true);
+  try{const result=await commitPhoneReceipt(input,status);if(phoneEditingId!==input.id)return;phoneRevision=result.revision;phoneCreatedNumber=result.receiptNumber;phoneInvalidateReview();phoneMessage(`${result.receiptNumber}：${status==='draft'?'一時保存':'受付済みとして保存'}しました。在庫・出荷伝票は変更していません。`);}catch(e){phoneMessage((e.message||'保存できませんでした')+'。再実行前に一覧を確認してください。',true);}finally{phoneSetBusy(false);}
+}
+function phoneOpen(id){
+  if(phoneBusy)return;const r=phoneReceipts.find(r=>r.id===id);if(!r)return;
+  if(!confirm('入力中の内容を閉じて、この受付記録を開きますか？'))return;
+  if(r.status==='cancelled')return phoneMessage('取消済みです。詳細欄から受付内容を確認できます。');
+  phoneLookupGeneration++;phoneEditingId=r.id;phoneRevision=Number(r.revision||0);phoneCreatedNumber=r.receiptNumber;phoneItems=r.items.map(({stockAtReception,...i})=>i);
+  for(const [key,field]of Object.entries(phoneFieldIds))pt(field).value=r[key]||'';
+  const pending=r.pending||{};pt('phoneProductSearch').value=pending.search||'';phoneRenderProducts();pt('phoneProduct').value=pending.productId||'';for(const [key,id]of [['pack','phonePack'],['boxes','phoneBoxes'],['loose','phoneLoose'],['unitPrice','phoneUnitPrice'],['boxPrice','phoneBoxPrice']])pt(id).value=pending[key]??(key==='pack'||key==='loose'?'1':key==='boxes'?'0':'');
+  phoneRenderItems();phoneRefreshAvailability();phoneInvalidateReview();phoneMessage(r.receiptNumber+'を開きました。修正後に保存してください。');pt('phoneForm').scrollIntoView?.({block:'start',behavior:'smooth'});
+}
+async function cancelPhoneReceipt(id,expectedRevision){
+  if(!inventoryWritesAllowed())throw Error('取消できません');const ref=db.collection(ORDERS_COLLECTION).doc(id);
+  await db.runTransaction(async tx=>{await requireNoActiveReset(tx);const d=await tx.get(ref);if(!d.exists||d.data().kind!==PHONE_KIND||d.data().status==='cancelled'||Number(d.data().revision||0)!==expectedRevision)throw Error('受付状態が変わっています。一覧を確認してください');tx.update(ref,{status:'cancelled',revision:expectedRevision+1,cancelledAt:stamp(),cancelledBy:currentStaffName});});
+}
+function phoneRenderLedger(){
+  if(!pt('phoneLedger'))return;const q=phoneText(pt('phoneSearch').value).toLowerCase(),filter=pt('phoneStatusFilter').value;
+  const rows=phoneReceipts.filter(r=>(!filter||r.status===filter)&&(!q||[r.receiptNumber,r.customerName,r.customerCode,r.tel,r.contactName,...(r.items||[]).map(i=>i.productName+' '+i.code)].some(v=>phoneText(v).toLowerCase().includes(q))));
+  pt('phoneLedger').innerHTML=rows.map(r=>`<tr><td>${safe(r.receiptNumber)}<br>${safe(dateLabel(r.updatedAt))}</td><td>${r.customerType==='dojo'?'道場':'個人'} ${safe(r.customerName||'未入力')}<br>${safe(r.customerCode||'')} ${safe(r.tel||'')}</td><td>${(r.items||[]).map(i=>`${safe(i.code)} ${safe(i.productName)}：${i.qty}${safe(i.unit)}`).join('<br>')||'明細未入力'}<br>¥${Number(r.amount||0).toLocaleString()}<details><summary>受付内容</summary><pre class="phone-recap">${safe(phoneReviewText(r,r.items||[]))}</pre></details></td><td>${safe(({draft:'一時保存',received:'受付済み',cancelled:'取消済み'})[r.status]||r.status)}<br>${safe(r.createdBy||'')}</td><td>${r.status!=='cancelled'?`<button type="button" class="btn-secondary-inline phone-open" data-id="${safe(r.id)}">開く・変更</button><button type="button" class="btn-secondary-inline phone-cancel" data-id="${safe(r.id)}">取消</button>`:''}</td></tr>`).join('')||'<tr><td colspan="5">受付記録はありません</td></tr>';
+  pt('phoneLedger').querySelectorAll('.phone-open').forEach(b=>b.onclick=()=>phoneOpen(b.dataset.id));pt('phoneLedger').querySelectorAll('.phone-cancel').forEach(b=>b.onclick=async()=>{if(phoneBusy||!confirm('この受付を取り消しますか？ 履歴は残り、在庫は変わりません。'))return;const r=phoneReceipts.find(r=>r.id===b.dataset.id);phoneSetBusy(true);try{await cancelPhoneReceipt(r.id,Number(r.revision||0));if(phoneEditingId===r.id)phoneNewRecord();phoneMessage('受付を取り消しました。');}catch(e){phoneMessage(e.message,true);}finally{phoneSetBusy(false);}});if(phoneBusy)pt('phoneLedger').querySelectorAll('button').forEach(b=>b.disabled=true);
+}
+async function phoneFindCustomer(){
+  if(phoneBusy)return;const generation=++phoneLookupGeneration,type=pt('phoneCustomerType').value,code=phoneText(pt('phoneCustomerCode').value),tel=phoneKey(pt('phoneTel').value);pt('phoneCandidates').replaceChildren();
+  try{let master=null,snapshot;if(code){const normalized=normalizeDestinationCode(code);const doc=await db.collection(DESTINATIONS_COLLECTION).doc(normalized).get({source:'server'});if(doc.exists&&type==='dojo')master={customerType:'dojo',customerCode:normalized,customerName:doc.data().shipTo||doc.data().partner||'',tel:doc.data().partnerTel||'',address:doc.data().partnerAddress||''};snapshot=await db.collection(ORDERS_COLLECTION).where('kind','==',PHONE_KIND).where('customerCode','==',normalized).get({source:'server'});}else{if(tel.length<6||tel.length>15)throw Error('お客様コード、または電話番号を入力してください');snapshot=await db.collection(ORDERS_COLLECTION).where('kind','==',PHONE_KIND).where('phoneKey','==',tel).get({source:'server'});}
+    if(generation!==phoneLookupGeneration)return;const prior=snapshot.docs.map(d=>d.data()).filter(r=>r.customerType===type&&r.status!=='cancelled').sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0)||(b.updatedAt?.nanoseconds||0)-(a.updatedAt?.nanoseconds||0)),unique=new Map();for(const r of [master,...prior].filter(Boolean)){const key=JSON.stringify([r.customerType,r.customerCode,r.customerName,r.contactName,r.tel,r.postalCode,r.address,r.shipName,r.shipAddress]);if(!unique.has(key))unique.set(key,r);}
+    if(!unique.size)return phoneMessage('一致する登録・受付履歴がありません。初回は手入力してください。');
+    for(const r of [...unique.values()].slice(0,20)){const b=document.createElement('button');b.type='button';b.className='btn-secondary-inline';b.textContent=`${r.customerCode||'コードなし'} ${r.customerName||'名称未入力'} ／ ${r.tel||'電話未入力'} ／ ${r.address||'住所未入力'} を使う`;b.onclick=()=>{for(const key of ['customerType','customerCode','customerName','contactName','tel','postalCode','address','shipName','shipAddress'])pt(phoneFieldIds[key]).value=r[key]||'';phoneLookupGeneration++;pt('phoneCandidates').replaceChildren();phoneInvalidateReview();phoneMessage('選んだお客様情報を表示しました。今回のお届け先を確認してください。');};pt('phoneCandidates').appendChild(b);}phoneMessage('候補を選択してください。注文内容・配達指定は引き継ぎません。');
+  }catch(e){if(generation===phoneLookupGeneration)phoneMessage(e.message||'検索できませんでした。通信状態を確認してください。',true);}
+}
+function subscribePhoneReceipts(){
+  if(phoneUnsubscribe)phoneUnsubscribe();const epoch=++phoneSubscriptionEpoch;phoneReceipts=[];phoneLoaded=false;phoneRenderLedger();phoneUnsubscribe=db.collection(ORDERS_COLLECTION).where('kind','==',PHONE_KIND).onSnapshot(s=>{if(epoch!==phoneSubscriptionEpoch)return;phoneReceipts=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0)||(b.updatedAt?.nanoseconds||0)-(a.updatedAt?.nanoseconds||0));phoneLoaded=true;phoneRenderLedger();},e=>{console.error(e);phoneMessage('受付記録を取得できません。通信状態・権限を確認してください。',true);});
+}
+function initPhoneReception(){
+  pt('phoneNewBtn').onclick=()=>{if(!phoneBusy&&confirm('入力中の内容を閉じ、新しい電話受付を始めますか？'))phoneNewRecord();};
+  pt('phoneProductSearch').oninput=phoneSearchProduct;pt('phoneProduct').onchange=phoneProductChanged;pt('phoneAddItem').onclick=phoneAddItem;pt('phoneLookupCustomer').onclick=phoneFindCustomer;
+  pt('phoneDraftBtn').onclick=()=>phoneSave('draft');pt('phoneReviewBtn').onclick=phoneReview;pt('phoneSaveBtn').onclick=()=>phoneSave('received');pt('phoneSearch').oninput=pt('phoneStatusFilter').onchange=phoneRenderLedger;
+  for(const id of Object.values(phoneFieldIds))pt(id).addEventListener('input',()=>{phoneLookupGeneration++;if(['phoneCustomerType','phoneCustomerCode','phoneTel'].includes(id))pt('phoneCandidates').replaceChildren();phoneInvalidateReview();});
+  for(const id of ['phonePack','phoneBoxes','phoneLoose','phoneUnitPrice','phoneBoxPrice'])pt(id).addEventListener('input',phoneInvalidateReview);
+  pt('phoneProductSearch').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();phoneSearchProduct();pt('phoneBoxes').focus();}});
+  auth.onAuthStateChanged(user=>{if(!user){phoneSubscriptionEpoch++;if(phoneUnsubscribe)phoneUnsubscribe();phoneUnsubscribe=null;phoneReceipts=[];phoneNewRecord();phoneRenderLedger();}});phoneNewRecord();
+}
+
+window.KOBUNSHA_APP_VERSION = "2026-11-14-phone-reception-jan-v44";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
