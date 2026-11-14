@@ -518,7 +518,7 @@ function handleMoveSave() {
       if (!doc.exists) throw new Error("商品が見つかりません");
       const latestStock = Number(doc.data().currentStock || 0);
       const latestNewStock = type === "in" ? latestStock + qty : latestStock - qty;
-      if (latestNewStock < Number(doc.data().reservedStock||0)) throw new Error("在庫不足");
+      if (type === "out" && latestNewStock < Number(doc.data().reservedStock||0)) throw new Error("在庫不足");
       tx.update(productRef, { currentStock: latestNewStock });
       tx.set(movementRef, {
         productId: movingProductId,
@@ -1959,7 +1959,7 @@ async function completeInventoryRecord(ref, displayed, enteredItems, isOrder, st
       const stock = inventoryQuantity(product.currentStock ?? 0, product.name + "の在庫");
       const reserved = inventoryQuantity(product.reservedStock ?? 0, product.name + "の準備分");
       const next = stock + (type === "in" ? qty : -qty);
-      if (next < reserved) throw Error("準備分を除く在庫が不足しています：" + product.name);
+      if (type === "out" && next < reserved) throw Error("準備分を除く在庫が不足しています：" + product.name);
       inventoryQuantity(next, product.name + "の反映後在庫");
       return { productRef, next };
     }));
@@ -2489,7 +2489,7 @@ function handleEditSave() {
     note: document.getElementById("editNote").value.trim()
   };
   const existing = allProducts.find(p => p.id === editingId);
-  if (data.currentStock < Number(existing?.reservedStock || 0)) {
+  if (data.currentStock < Number(existing?.reservedStock || 0) && data.currentStock < Number(existing?.currentStock || 0)) {
     showToast("月始祭準備分を下回る在庫数にはできません");
     return;
   }
@@ -2798,6 +2798,26 @@ function renderFestivalPrepared() {
   $w("festivalPreparedCount").textContent=`準備数のある商品：${prepared.length}件（上のジャンル・検索条件を反映）`;
   $w("festivalPreparedPrintBtn").disabled=prepared.length===0;
 }
+function renderFestivalStockNotice() {
+  const notice=$w("festivalStockNotice"),body=$w("festivalRows");
+  if(!notice||!body)return;
+  const status=festivalRecord?.status||"draft";
+  if(status==="settled"){notice.textContent="";return;}
+  const shortages=[];
+  for(const row of body.querySelectorAll("tr")){
+    const p=allProducts.find(p=>p.id===row.dataset.id);
+    if(!p)continue;
+    const qty=Number(row.querySelector(".qty")?.value||0);
+    if(!Number.isSafeInteger(qty)||qty<=0)continue;
+    const reserved=Number(p.reservedStock||0),stock=Number(p.currentStock||0);
+    const needed=reserved+(status==="draft"?qty:0);
+    const shortage=Math.max(0,needed-stock);
+    if(shortage>0)shortages.push(`${p.code||""} ${p.name}：不足 ${shortage}${p.unit||"個"}（現在庫 ${stock}／準備確保合計 ${needed}）`);
+  }
+  notice.textContent=shortages.length
+    ? `在庫不足 ${shortages.length}商品。在庫数に関係なく準備を確定できます。実際の出荷・頒布精算までに在庫を確認してください。\n`+shortages.join("\n")
+    : "在庫数に関係なく準備数を入力・確定できます。準備確定では現在庫は増減しません。";
+}
 function renderFestival() {
   const body=$w("festivalRows");if(!body)return;
   const saved=new Map((festivalRecord?.items||[]).map(i=>[i.productId,i]));
@@ -2810,13 +2830,14 @@ function renderFestival() {
     return `<tr data-id="${safe(i.productId)}" data-category="${safe(categoryLabel(p?.category||i.category)||"未分類")}" data-name="${safe(i.name)}" data-code="${safe(i.code)}" data-stock="${total}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${p?total:"―"}</td><td>${field("qty",n.qty,true)}</td><td>${field("extraQty",n.extra)}</td><td>${field("directQty",n.direct)}</td><td>${field("returnedQty",n.returned)}</td><td>${field("damagedQty",n.damaged)}</td><td>${field("sampleQty",n.sample)}</td><td class="soldQty">${n.sold}</td><td><input class="price" type="number" min="0" value="${price}" ${disabled}></td><td class="salesAmount">${(n.sold*price).toLocaleString()}</td></tr>`;
   }).join("");
   labelTableCells(body);
-  body.querySelectorAll("input").forEach(input=>input.oninput=()=>{const r=input.closest("tr"),i={qty:r.querySelector(".qty").value};festivalFields.forEach(f=>i[f]=r.querySelector(`.${f}`).value);const n=festivalNumbers(i);r.querySelector(".soldQty").textContent=n.sold;r.querySelector(".salesAmount").textContent=(n.sold*Number(r.querySelector(".price").value||0)).toLocaleString();renderFestivalPrepared();});
+  body.querySelectorAll("input").forEach(input=>input.oninput=()=>{const r=input.closest("tr"),i={qty:r.querySelector(".qty").value};festivalFields.forEach(f=>i[f]=r.querySelector(`.${f}`).value);const n=festivalNumbers(i);r.querySelector(".soldQty").textContent=n.sold;r.querySelector(".salesAmount").textContent=(n.sold*Number(r.querySelector(".price").value||0)).toLocaleString();renderFestivalPrepared();renderFestivalStockNotice();});
   $w("festivalStatus").textContent=festivalRecord?.status==="settled"?"頒布精算済み（在庫反映済み）":status==="prepared"?"準備済み：総在庫に準備分を含む":"準備リスト入力中";
   $w("festivalCommitBtn").disabled=status!=="draft";
   $w("festivalReturnBtn").disabled=status!=="prepared";
   $w("festivalSettleBtn").disabled=status!=="prepared";
   $w("festivalSaveBtn").disabled=status==="settled";
   applyWorkTableView("festival");
+  renderFestivalStockNotice();
 }
 async function loadFestival() {
   const key=festivalKey();if(!/^\d{4}-\d{2}$/.test(key))return showToast("対象月を選択してください");
@@ -2855,7 +2876,7 @@ async function changeFestival(prepare) {
   let items;try{items=prepare?collectFestival():festivalRecord?.items;}catch(err){return showToast(err.message);}
   if(!items?.some(i=>i.qty))return showToast("準備数量を入力してください");
   if(items.length>245)return showToast("一度に確定できる商品は245件までです");
-  if(!confirm(prepare?`${month}の準備分を確定します。総在庫は減りません。よろしいですか？`:`${month}の準備を取り消します。よろしいですか？`))return;
+  if(!confirm(prepare?`${month}の準備分を確定します。在庫不足でも確定でき、総在庫は減りません。よろしいですか？`:`${month}の準備を取り消します。よろしいですか？`))return;
   const ref=db.collection(FESTIVALS).doc(month),btn=prepare?$w("festivalCommitBtn"):$w("festivalReturnBtn");btn.disabled=true;
   try{
     let mode="included";
@@ -2866,7 +2887,7 @@ async function changeFestival(prepare) {
       mode=prepare?"included":plan.data().stockMode||"deducted";
       const actual=prepare?items:plan.data().items;
       const docs=await Promise.all(actual.map(i=>tx.get(db.collection(COLLECTION).doc(i.productId))));
-      docs.forEach((doc,n)=>{if(!doc.exists||prepare&&Number(doc.data().currentStock||0)-Number(doc.data().reservedStock||0)<actual[n].qty)throw Error(`準備可能数が不足：${actual[n].name}`);});
+      docs.forEach((doc,n)=>{if(!doc.exists)throw Error(`商品が削除されています：${actual[n].name}`);});
       if(prepare)actual.forEach((i,n)=>tx.update(docs[n].ref,{reservedStock:Number(docs[n].data().reservedStock||0)+i.qty}));
       if(!prepare&&mode==="included")actual.forEach((i,n)=>tx.update(docs[n].ref,{reservedStock:Math.max(0,Number(docs[n].data().reservedStock||0)-i.qty)}));
       if(!prepare&&mode==="deducted")actual.forEach((i,n)=>{tx.update(docs[n].ref,{currentStock:Number(docs[n].data().currentStock||0)+i.qty});tx.set(db.collection(MOVEMENTS_COLLECTION).doc(),{productId:i.productId,productName:i.name,unit:i.unit,type:"in",qty:i.qty,note:`月始祭 ${month} 旧準備取消`,staff:currentStaffName,createdAt:stamp()});});
@@ -4528,7 +4549,7 @@ function initPhoneReception(){
   auth.onAuthStateChanged(user=>{if(!user){phoneSubscriptionEpoch++;if(phoneUnsubscribe)phoneUnsubscribe();phoneUnsubscribe=null;phoneReceipts=[];phoneNewRecord();phoneRenderLedger();}});phoneNewRecord();
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-14-phone-reception-jan-v44";
+window.KOBUNSHA_APP_VERSION = "2026-11-14-festival-unrestricted-jan-v45";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
@@ -4639,7 +4660,7 @@ async function ensureProductBarcode(id, requested, changes, transfer) {
     if (transfer && !releaseOwner) throw Error("番号の関連付けが変わりました。保存し直して確認してください");
     if (next !== null && allocated.exists) throw Error("自動採番の番号が予約済みです。管理者に確認してください");
     const aliases = [...new Set([...(product.barcodeAliases || []), ...(product.barcode && product.barcode !== code ? [product.barcode] : [])])].filter(value=>value!==code);
-    if (changes && Number(changes.currentStock) < Number(product.reservedStock || 0)) throw Error("月始祭準備分を下回る在庫数にはできません");
+    if (changes && Number(changes.currentStock) < Number(product.reservedStock || 0) && Number(changes.currentStock) < Number(product.currentStock || 0)) throw Error("月始祭準備分を下回る在庫数にはできません");
     if (releaseOwner) tx.update(releaseOwner.ref,{barcodeAliases:releaseOwner.aliases});
     tx.set(registry.doc(code), { productId: id });
     if (next !== null) tx.set(registry.doc("_sequence"), { next: next + 1 });
