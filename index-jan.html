@@ -1000,6 +1000,13 @@
   #dsEntry { min-width:0;border:1px solid var(--line);padding:14px; }
   #dsStatus { white-space:pre-line; }
   #dsCart td,#dsLedger td { overflow-wrap:anywhere; }
+
+  #phoneForm { min-width:0;padding:16px;border:1px solid var(--line); }
+  .phone-recap { white-space:pre-wrap;overflow-wrap:anywhere;font:inherit; }
+  .phone-candidates { display:flex;flex-wrap:wrap;gap:8px;margin:10px 0; }
+  .phone-candidates button { max-width:100%;white-space:normal;overflow-wrap:anywhere; }
+  #phoneStatus { white-space:pre-line; }
+  #phoneLedger td { overflow-wrap:anywhere; }
 </style>
 </head>
 <body>
@@ -1063,6 +1070,7 @@
       <button class="tab-btn" data-tab="register">商品登録</button>
       <button class="tab-btn" data-tab="history">入出庫履歴</button>
       <button class="tab-btn" data-tab="slips">伝票・検品</button>
+      <button class="tab-btn" data-tab="phone">電話受注</button>
       <button class="tab-btn" data-tab="stocktake">棚卸し</button>
       <button class="tab-btn" data-tab="festival">月始祭準備</button>
       <button class="tab-btn" data-tab="disaster">防災斡旋</button>
@@ -1222,6 +1230,46 @@
       </details>
       <div class="slip-list" id="slipList"></div>
       <div class="empty-state" id="slipEmptyState" style="display:none;">伝票がありません</div>
+    </section>
+
+    <section id="tabPhone" class="work-panel" style="display:none;">
+      <h2>電話受注・受付記録</h2><p>道場・個人の電話注文を記録します。保存では在庫・引当・出荷伝票は変わりません。</p>
+      <button type="button" class="btn-secondary-inline" id="phoneNewBtn">新しい電話受付</button>
+      <p id="phoneStatus" role="status" aria-live="polite"></p>
+      <fieldset id="phoneForm"><legend>電話を受けながら入力</legend>
+      <div class="invoice-pdf-fields">
+        <div><label for="phoneCustomerType">お客様区分</label><select id="phoneCustomerType"><option value="dojo">道場</option><option value="individual">個人</option></select></div>
+        <div><label for="phoneCustomerCode">お客様／出荷先コード（任意）</label><input id="phoneCustomerCode" type="text" placeholder="先頭の0も入力"></div>
+        <div><label for="phoneCustomerName">道場名・お客様名</label><input id="phoneCustomerName" type="text" maxlength="200"></div>
+        <div><label for="phoneContactName">ご担当者・お電話の方（任意）</label><input id="phoneContactName" type="text" maxlength="200"></div>
+        <div><label for="phoneTel">電話番号</label><input id="phoneTel" type="tel" maxlength="80" placeholder="例：03-1234-5678"></div>
+        <div><label for="phonePostal">郵便番号（任意）</label><input id="phonePostal" type="text" maxlength="20"></div>
+      </div><button type="button" class="btn-secondary-inline" id="phoneLookupCustomer">コード／電話番号で登録・受付履歴を検索</button><div id="phoneCandidates" class="phone-candidates"></div>
+      <label for="phoneAddress">お客様住所（任意）</label><input id="phoneAddress" type="text" maxlength="500">
+      <details class="manual-extra-fields"><summary>別のお届け先・配達指定・支払方法メモ</summary><div class="invoice-pdf-fields">
+        <div><label for="phoneShipName">お届け先名（空欄ならお客様名）</label><input id="phoneShipName" type="text" maxlength="200"></div>
+        <div><label for="phoneShipAddress">お届け先住所（空欄ならお客様住所）</label><input id="phoneShipAddress" type="text" maxlength="500"></div>
+        <div><label for="phoneDeliveryDate">配達指定日（任意）</label><input id="phoneDeliveryDate" type="date"></div>
+        <div><label for="phoneDeliveryTime">指定時間（任意）</label><input id="phoneDeliveryTime" type="text" maxlength="100" placeholder="午前中／14～16時など"></div>
+        <div><label for="phonePayment">支払方法メモ</label><select id="phonePayment"><option>未確認</option><option>代引</option><option>振込</option><option>クレジット</option><option>その他</option></select></div>
+      </div></details>
+      <h3>ご注文の商品</h3><div class="invoice-pdf-fields">
+        <div><label for="phoneProductSearch">商品コード・JAN・商品名で検索</label><input id="phoneProductSearch" type="search" placeholder="商品コードを入力してEnter"></div>
+        <div><label for="phoneProduct">商品（全カテゴリー）</label><select id="phoneProduct"><option value="">商品を選択</option></select></div>
+        <div><label for="phonePack">1箱の入数</label><input id="phonePack" type="number" min="1" step="1" value="1"></div>
+        <div><label for="phoneBoxes">箱数</label><input id="phoneBoxes" type="number" min="0" step="1" value="0"></div>
+        <div><label for="phoneLoose">ばら数量（在庫一覧の単位）</label><input id="phoneLoose" type="number" min="0" step="1" value="1"></div>
+        <div><label for="phoneUnitPrice">ばら単価（円）</label><input id="phoneUnitPrice" type="number" min="0" step="1"></div>
+        <div><label for="phoneBoxPrice">箱単価（円）</label><input id="phoneBoxPrice" type="number" min="0" step="1"></div>
+      </div><p id="phoneItemAvailability" class="invoice-action-info" aria-live="polite"></p><button type="button" class="btn-secondary-inline" id="phoneAddItem">明細を追加</button>
+      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>数量・入数</th><th>単価</th><th>商品金額</th><th>操作</th></tr></thead><tbody id="phoneItems"></tbody></table></div>
+      <p id="phoneTotal">商品金額合計：¥0（送料等は含みません）</p><p class="manual-code-status">単価は商品一覧をもとに表示します。税・送料等の追加計算は行いません。在庫表示は参考情報で、納期を確約するものではありません。</p>
+      <label for="phoneMemo">聞き取り内容・注意事項・送料や納期の確認メモ（任意）</label><textarea id="phoneMemo" rows="3" maxlength="2000"></textarea>
+      <div class="work-actions"><button type="button" class="btn-secondary-inline" id="phoneDraftBtn">途中で一時保存</button><button type="button" class="btn-secondary-inline" id="phoneReviewBtn">復唱用の確認内容を表示</button></div>
+      <pre id="phoneReview" class="phone-recap"></pre><label><input type="checkbox" id="phoneConfirmed" style="width:auto;"> 商品・数量・商品金額・お届け先を復唱して確認しました</label><button type="button" class="btn-primary" id="phoneSaveBtn">受付済みとして保存</button>
+      </fieldset>
+      <h3>電話受付の記録</h3><div class="toolbar"><label for="phoneStatusFilter">状態</label><select id="phoneStatusFilter"><option value="">すべて</option><option value="draft">一時保存</option><option value="received">受付済み</option><option value="cancelled">取消済み</option></select><input id="phoneSearch" type="search" placeholder="受付番号・お客様・電話・商品で検索"></div>
+      <div class="work-scroll"><table class="work-table"><thead><tr><th>受付番号・更新日時</th><th>お客様・電話</th><th>商品・金額・受付内容</th><th>状態・受付者</th><th>操作</th></tr></thead><tbody id="phoneLedger"></tbody></table></div>
     </section>
 
     <section id="tabStocktake" class="work-panel" style="display:none;">
@@ -1739,9 +1787,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261114-inventory-pack-jan-v43"></script>
+<script src="app-jan.js?v=20261114-phone-reception-jan-v44"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-14-inventory-pack-jan-v43") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-14-phone-reception-jan-v44") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
