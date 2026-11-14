@@ -1038,7 +1038,7 @@
 
   <main>
     <section class="pilot-panel no-print">
-      <strong>紙製御み霊箱から試験運用</strong>
+      <strong>在庫管理の運用設定</strong>
       <p id="pilotOperationMessage">運用設定を確認しています…</p>
       <details id="pilotResetPanel">
         <summary>開始前の初期化（履歴・伝票の削除／現在庫を0）</summary>
@@ -1164,13 +1164,14 @@
 
     <!-- ---- 伝票・検品タブ (Phase2) ---- -->
     <section id="tabSlips" style="display:none;">
+      <div class="pilot-panel"><h3>出荷・在庫連動の運用設定</h3><p id="shippingPolicyStatus" role="status" aria-live="polite">出荷運用設定を確認中です。</p><p>JAN検品は「紙製御み霊箱」の全種類・全色のみです。その他の商品はJAN検品不要です。出荷確定で在庫を減らします。</p><button type="button" class="btn-primary" id="shippingStartAllBtn" disabled>棚卸し後：全商品の出荷・在庫連動を開始</button></div>
       <div class="toolbar">
         <div class="chip-group">
           <button class="chip slip-filter-btn active" data-filter="all">すべて</button>
           <button class="chip slip-filter-btn" data-filter="out">出荷</button>
           <button class="chip slip-filter-btn" data-filter="in">入荷</button>
-          <button class="chip slip-filter-btn" data-filter="draft">未検品</button>
-          <button class="chip slip-filter-btn" data-filter="done">検品完了</button>
+          <button class="chip slip-filter-btn" data-filter="draft">未確定</button>
+          <button class="chip slip-filter-btn" data-filter="done">入出荷完了</button>
         </div>
         <div class="spacer"></div>
         <input type="text" id="scannerInputSlips" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄">
@@ -1630,7 +1631,7 @@
 
       <p id="slipDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 8px;"></p>
 
-      <div class="verify-scanner-box no-print">
+      <div class="verify-scanner-box no-print" id="slipVerifyScannerBox">
         <button type="button" class="btn-primary" id="slipBluetoothModeBtn">Bluetooth検品を開始</button>
         <p>Tera HW0010をiPadのBluetooth HIDに接続し、即時送信・読み取り後Enterに設定してください。</p>
         <input type="text" id="slipItemScannerInput" class="scanner-input" placeholder="現品QR → 検品シールQR の順に読み取り" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" disabled>
@@ -1674,6 +1675,7 @@
       <button class="btn-secondary" id="slipDetailCloseBtn">閉じる</button>
       <button class="btn-secondary" id="slipDetailPrintCheckBtn">🔍 検品表</button>
       <button class="btn-secondary" id="slipDetailPrintDeliveryBtn">📦 納品書</button>
+      <p id="shippingSlipPolicy" role="status" style="flex-basis:100%;" hidden></p>
       <button class="btn-primary" id="slipDetailCompleteBtn">検品完了として記録する</button>
     </div>
   </div>
@@ -1788,9 +1790,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261114-festival-unrestricted-jan-v45"></script>
+<script src="app-jan.js?v=20261114-shipping-policy-jan-v46"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-14-festival-unrestricted-jan-v45") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-14-shipping-policy-jan-v46") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
