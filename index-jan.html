@@ -1277,7 +1277,7 @@
       <h2>棚卸し表</h2>
       <p>帳簿合計は通常在庫から取得します。翌月の月始祭準備分を別に数え、倉庫実数と準備分実数の合計を在庫として確定します。</p>
       <div class="toolbar"><label>棚卸日 <input type="date" id="stocktakeDate"></label><div class="spacer"></div>
-        <button class="btn-secondary-inline" id="stocktakeLoadBtn">この日の表を開く</button>
+        <button class="btn-secondary-inline" id="stocktakeLoadBtn">この日の表を開く</button><button type="button" class="btn-secondary-inline" id="stocktakeRefreshBooksBtn">最新の帳簿数・準備完了数を読み直す</button>
         <button class="btn-secondary-inline" id="stocktakePrintBtn">印刷</button></div>
       <div id="stocktakeStatus" class="work-status"></div>
       <div class="work-filter">
@@ -1286,26 +1286,28 @@
         <label for="stocktakeSort">並び順</label><select id="stocktakeSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">帳簿数の多い順</option></select>
         <span id="stocktakeFilterCount" class="filter-count"></span>
       </div>
-      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>翌月準備<br>帳簿数</th><th>倉庫<br>帳簿数</th><th>帳簿合計</th><th>準備分<br>実数</th><th>倉庫実数</th><th>実数合計</th><th>差異</th><th>備考</th></tr></thead><tbody id="stocktakeRows"></tbody></table></div>
+      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>翌月準備完了<br>帳簿数</th><th>倉庫<br>帳簿数</th><th>帳簿合計</th><th>準備分<br>実数</th><th>倉庫実数</th><th>実数合計</th><th>差異</th><th>備考</th></tr></thead><tbody id="stocktakeRows"></tbody></table></div>
       <div class="work-actions"><button class="btn-secondary-inline" id="stocktakeSaveBtn">入力内容を保存</button><button class="btn-primary" id="stocktakeApplyBtn">差異を在庫に反映</button></div>
     </section>
 
     <section id="tabFestival" class="work-panel" style="display:none;">
-      <h2>月始祭準備・頒布集計</h2><p>翌月分を事前に準備します。在庫数に関係なく準備数を入力・確定できます。準備確定後も準備分は総在庫に含まれます。み祭り後に戻り数などを入力して売上数を確定します。</p>
+      <h2>月始祭準備・頒布集計</h2><p>「準備（S1出）」は予定数です。「実際月始祭準備完了数」を確定すると在庫から減らします。終了後は再販売可能な良品戻りだけを在庫へ戻し、月始祭戻りNG品は戻しません。入力保存・Excel取込だけでは在庫は変わりません。</p>
       <div class="toolbar"><label>対象月 <input type="month" id="festivalMonth"></label><div class="spacer"></div>
         <button class="btn-secondary-inline" id="festivalLoadBtn">この月を開く</button><button class="btn-secondary-inline" id="festivalPrintBtn">印刷</button></div>
       <details class="pilot-panel"><summary>月始祭Excelを取り込む（全商品・S1出）</summary><p>「頒布詳細」のA列コードとC列「S1出」を照合します。追加・直送・戻り・売上数は取り込みません。対象月を選んでください。</p><label for="festivalExcelFile">み祭り頒布集計表</label><input id="festivalExcelFile" type="file" accept=".xlsx,.xlsm"><button type="button" class="btn-secondary-inline" id="festivalExcelPreviewBtn">取込内容を確認</button><pre id="festivalExcelPreview" style="white-space:pre-wrap;max-height:400px;overflow:auto;" role="status" aria-live="polite"></pre><button type="button" class="btn-primary" id="festivalExcelApplyBtn" disabled>確認した内容を準備案へ保存</button></details>
+      <button type="button" class="btn-secondary-inline" id="festivalCopyPlanBtn">予定数を実際準備完了数へコピー（在庫未反映）</button>
+      <details id="festivalLegacyRecord" hidden></details>
       <div id="festivalStatus" class="work-status"></div>
       <p id="festivalStockNotice" role="status" aria-live="polite" style="white-space:pre-line;"></p>
       <div class="work-filter">
         <label for="festivalCategory">ジャンル</label><select id="festivalCategory"><option value="">すべて</option></select>
         <input type="text" id="festivalSearch" placeholder="商品名・コードで検索" aria-label="月始祭の商品検索">
-        <label for="festivalSort">並び順</label><select id="festivalSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">総在庫の多い順</option></select>
+        <label for="festivalSort">並び順</label><select id="festivalSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">現在庫の多い順</option></select>
         <span id="festivalFilterCount" class="filter-count"></span>
       </div>
-      <div class="work-scroll" id="festivalMainTableWrap"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>総在庫</th><th>準備（S1出）</th><th>追加</th><th>直送</th><th>戻り</th><th>乱丁</th><th>見本</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
-      <div id="festivalPreparedPanel"><h3>準備分のみの一覧表</h3><p id="festivalPreparedCount">準備数量がある商品を表示します。上のジャンル・検索条件が反映されます。</p><button type="button" class="btn-secondary-inline" id="festivalPreparedPrintBtn">準備分のみを印刷</button><div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>準備数量</th><th>単位</th></tr></thead><tbody id="festivalPreparedRows"></tbody></table></div></div>
-      <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">入力を保存</button><button class="btn-primary" id="festivalCommitBtn">準備を確定</button><button class="btn-secondary-inline" id="festivalReturnBtn">準備を取り消す</button><button class="btn-primary" id="festivalSettleBtn">頒布を精算・在庫反映</button></div>
+      <div class="work-scroll" id="festivalMainTableWrap"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>現在庫<br>（完了分減算後）</th><th>準備（S1出）<br>予定数</th><th>実際月始祭<br>準備完了数</th><th>直送<br>（在庫外）</th><th>月始祭戻り<br>（再販売可能）</th><th>月始祭戻り<br>NG品</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
+      <div id="festivalPreparedPanel"><h3>実際準備完了分の一覧表</h3><p id="festivalPreparedCount">実際準備完了数がある商品を表示します。上のジャンル・検索条件が反映されます。</p><button type="button" class="btn-secondary-inline" id="festivalPreparedPrintBtn">実際準備完了分を印刷</button><div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>実際準備完了数</th><th>単位</th></tr></thead><tbody id="festivalPreparedRows"></tbody></table></div></div>
+      <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">入力を保存</button><button class="btn-primary" id="festivalCommitBtn">実際準備完了を確定・在庫から減算</button><button class="btn-secondary-inline" id="festivalReturnBtn">準備完了を取消・在庫へ戻す</button><button class="btn-primary" id="festivalSettleBtn">月始祭を精算・良品戻りを在庫へ加算</button></div>
     </section>
 
     <section id="tabDisaster" class="work-panel" style="display:none;">
@@ -1323,7 +1325,7 @@
       <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>箱・ばら</th><th>基準数量</th><th>金額</th><th>操作</th></tr></thead><tbody id="dsCart"></tbody></table></div><button type="button" class="btn-primary" id="dsSave">注文を登録</button></fieldset>
       <h3>登録した注文・発注</h3><div class="toolbar"><label for="dsChannelFilter">区分</label><select id="dsChannelFilter"><option value="">すべて</option><option>斡旋防災</option><option>売掛</option><option>ネット</option><option>前受</option><option>代引き</option><option>お供え</option></select><input id="dsSearch" type="search" placeholder="相手先・番号・商品で検索"></div>
       <div class="work-scroll"><table class="work-table"><thead><tr><th>登録日時・番号</th><th>区分・相手先</th><th>明細・数量</th><th>金額・予定日</th><th>状態・備考</th><th>操作</th></tr></thead><tbody id="dsLedger"></tbody></table></div>
-      <h3>商品別の在庫・必要数</h3><p>現在庫には月始祭準備分を含みます。利用可能数は準備確保数を除きます。必要数＝準備数＋未出荷注文数、過不足＝現在庫－必要数（＋は余り／－は不足）です。準備案は確定するまで準備数に含めません。</p><button type="button" class="btn-secondary-inline" id="dsCsv">在庫集計CSV</button>
+      <h3>商品別の在庫・必要数</h3><p>新方式の月始祭準備完了分は現在庫から減算済みです。準備確保数は旧方式の未精算分です。利用可能数は旧確保数を除き、必要数＝旧確保数＋未出荷注文数、過不足＝現在庫－必要数（＋は余り／－は不足）です。予定数だけでは在庫は動きません。</p><button type="button" class="btn-secondary-inline" id="dsCsv">在庫集計CSV</button>
       <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>月始祭等準備数</th><th>利用可能数</th><th>未出荷注文数</th><th>必要数</th><th>入荷予定数</th><th>過不足</th><th>不足数</th><th>入荷予定反映後過不足</th></tr></thead><tbody id="dsStock"></tbody></table></div>
       <h3>区分別集計</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>区分</th><th>注文件数</th><th>未出荷件数</th><th>出荷済件数</th><th>注文金額（取消除く）</th></tr></thead><tbody id="dsSummary"></tbody></table></div>
       <p>以前の独立した防災在庫は自動合算しません。今回の注文・発注は新規入力から開始します。通常在庫の既存数量は保持します。</p>
@@ -1790,9 +1792,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261114-shipping-policy-jan-v46"></script>
+<script src="app-jan.js?v=20261114-festival-completed-jan-v47"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-14-shipping-policy-jan-v46") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-14-festival-completed-jan-v47") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
