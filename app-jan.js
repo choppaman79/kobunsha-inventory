@@ -76,6 +76,7 @@ function init() {
   initLabelPrinterGuide();
   initBarcodeTransferTools();
   initPhoneReception();
+  initShippingPolicy();
 
   document.getElementById("loginBtn").addEventListener("click", handleLogin);
   document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
@@ -328,6 +329,7 @@ function subscribeProducts() {
     refreshInvoiceProductNames();
     renderDisaster();
     phoneRenderProducts();
+    renderShippingPolicy();
     renderCategoryChips();
     refreshOrderSupplierOptions();
     renderSummary();
@@ -513,9 +515,10 @@ function handleMoveSave() {
   const movementRef = db.collection(MOVEMENTS_COLLECTION).doc();
 
   db.runTransaction(async tx => {
-    await requireNoActiveReset(tx);
+    const operation=await requireNoActiveReset(tx);
     return tx.get(productRef).then(doc => {
       if (!doc.exists) throw new Error("商品が見つかりません");
+      if(type==="out"){requireShippingActive(doc.data(),operation);if(shippingPaperBox(doc.data()))throw Error("紙製御み霊箱は出荷伝票でJAN検品後に出荷確定してください");}
       const latestStock = Number(doc.data().currentStock || 0);
       const latestNewStock = type === "in" ? latestStock + qty : latestStock - qty;
       if (type === "out" && latestNewStock < Number(doc.data().reservedStock||0)) throw new Error("在庫不足");
@@ -540,8 +543,7 @@ function handleMoveSave() {
     if (err.message === "在庫不足") {
       errorEl.textContent = "現在庫数を超える出庫はできません";
     } else {
-      errorEl.textContent = "";
-      showToast("記録に失敗しました");
+      errorEl.textContent = err.message||"記録に失敗しました";
     }
   });
 }
@@ -980,7 +982,7 @@ function renderSlipList(filter) {
     row.className = "slip-row";
     const dt = s.createdAt && s.createdAt.toDate ? formatDateTime(s.createdAt.toDate()) : "―";
     const typeLabel = s.type === "in" ? "入荷" : "出荷";
-    const statusLabel = s.status === "done" ? "検品完了" : "未検品";
+    const statusLabel = s.type==="out"?(s.status==="done"?"出荷完了":"未確定"):(s.status === "done" ? "検品完了" : "未検品");
     row.innerHTML = `
       <input type="checkbox" class="slip-check-select" data-id="${s.id}" ${slipSelected.has(s.id) ? "checked" : ""} aria-label="伝票を選択" style="width:20px;flex-shrink:0;">
       <div class="slip-main">
@@ -1212,6 +1214,7 @@ function openSlipDetailModal(id) {
   openSlipId = id;
   pendingSlipScanCode = null;
   inspectedLabelTokens.clear();
+  const scannerBox=document.getElementById("slipVerifyScannerBox");if(scannerBox)scannerBox.hidden=false;
   const typeLabel = s.type === "in" ? "入荷伝票" : "出荷伝票";
   document.getElementById("slipDetailTitle").textContent = typeLabel;
   document.getElementById("slipDetailNumber").textContent = (s.sourceSlipNumber || s.slipNumber || "") + (s.destinationCode ? " ／ 出荷先コード " + s.destinationCode : "");
@@ -1249,7 +1252,7 @@ function openSlipDetailModal(id) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(item.code || "")}</td>
-      <td>${escapeHtml(item.productName)}</td>
+      <td>${escapeHtml(item.productName)}${s.type==="out"?`<br><small>${shippingRequiresInspection(item)?"JAN検品対象":"JAN検品不要"}</small>`:""}</td>
       <td>¥${unitPrice.toLocaleString()}</td>
       <td>${item.plannedQty}${escapeHtml(item.unit || "")}</td>
       <td>¥${amount.toLocaleString()}</td>
@@ -1268,6 +1271,7 @@ function openSlipDetailModal(id) {
 
   document.getElementById("slipDetailCompleteBtn").style.display = isDone ? "none" : "block";
   document.getElementById("slipDetailDoneNote").style.display = isDone ? "block" : "none";
+  document.getElementById("slipDetailDoneNote").textContent=s.type==="out"?"この伝票は出荷完了済みです（在庫反映済み）":"この伝票は検品完了済みです（在庫反映済み）";
 
   const labelWrap = document.getElementById("slipReceivingLabelWrap");
   labelWrap.style.display = s.type === "in" ? "block" : "none";
@@ -1280,6 +1284,7 @@ function openSlipDetailModal(id) {
   document.getElementById("slipDetailPrintCheckBtn").textContent=s.type==="out"?"📋 出荷指示書・検品JAN":"🔍 検品表";
   document.getElementById("slipDetailScanBtn").disabled=s.type==="out" || isDone;
   document.getElementById("slipItemScannerInput").placeholder=s.type==="out"?"現品の商品JAN → 指示書の検品JAN":"現品QR → 検品シールQR";
+  const policy=document.getElementById("shippingSlipPolicy");if(policy)policy.hidden=s.type!=="out";
   if(s.type==="out")syncInspectionCounts();
 }
 
@@ -1321,7 +1326,7 @@ function companyLetterheadHtml() {
 }
 
 function printSlipSheet(mode) {
-  if(mode==="check" && allSlips.find(x=>x.id===openSlipId)?.type==="out" && (allSlips.find(x=>x.id===openSlipId)?.status==="draft" || allSlips.find(x=>x.id===openSlipId)?.inspectionVersion===1)) {
+  if(mode==="check" && allSlips.find(x=>x.id===openSlipId)?.type==="out" && (allSlips.find(x=>x.id===openSlipId)?.status==="draft" || [1,2].includes(allSlips.find(x=>x.id===openSlipId)?.inspectionVersion))) {
     return printOutgoingInspectionSheet(openSlipId).catch(e=>showToast(e.message||"出荷指示書を作成できませんでした"));
   }
   const s = allSlips.find(x => x.id === openSlipId);
@@ -1345,7 +1350,7 @@ function buildCheckSheetHtml(s) {
   const typeLabel=s.type==='in'?'入荷':'出荷',shipToLabel=s.type==='in'?'入荷元':'出荷先';
   const issueDate=s.createdAt&&s.createdAt.toDate?formatDateOnly(s.createdAt.toDate()):'';
   const number=s.sourceSlipNumber||s.slipNumber||'';
-  const rows=(s.items||[]).map(item=>`<tr><td>${escapeHtml(item.code||'')}</td><td>${escapeHtml(item.productName)}</td><td>¥${Number(item.unitPrice||0).toLocaleString()}</td><td>${item.plannedQty}${escapeHtml(item.unit||'')}</td><td><span class="fill-blank"></span></td></tr>`).join('');
+  const rows=(s.items||[]).map(item=>`<tr><td>${escapeHtml(item.code||'')}</td><td>${escapeHtml(item.productName)}</td><td>¥${Number(item.unitPrice||0).toLocaleString()}</td><td>${item.plannedQty}${escapeHtml(item.unit||'')}</td><td>${s.type==='out'?(shippingRequiresInspection(item)?'JAN検品':'JAN検品不要'):'<span class="fill-blank"></span>'}</td></tr>`).join('');
   return `<div class="slip-formal-header"><h2 style="margin:0;">検品表（${typeLabel}）</h2><div class="slip-formal-header-qr"><div id="printSheetQr"></div><span class="slip-formal-header-qr-label">${escapeHtml(number)}</span></div>${companyLetterheadHtml()}</div>
     <table class="slip-formal-table invoice-instruction-meta">
       <tr><th>${shipToLabel}</th><td colspan="3">${escapeHtml(invoiceShipText(s))}</td><th>計上日</th><td>${escapeHtml(s.postingDate||issueDate)}</td></tr>
@@ -1919,7 +1924,7 @@ async function completeInventoryRecord(ref, displayed, enteredItems, isOrder, st
   const quantities = enteredItems.map(item =>
     inventoryQuantity(item[quantityField], item.productName + "の数量"));
   await db.runTransaction(async tx => {
-    await requireNoActiveReset(tx);
+    const operation=await requireNoActiveReset(tx);
     const recordDoc = await tx.get(ref);
     if (!recordDoc.exists) throw Error("伝票・発注が削除されています");
     const record = recordDoc.data();
@@ -1933,7 +1938,6 @@ async function completeInventoryRecord(ref, displayed, enteredItems, isOrder, st
     }
     if (!Array.isArray(record.items) || !record.items.length ||
         record.items.length !== quantities.length) throw Error("品目を確認してください");
-    if(!isOrder && record.type==="out")assertInspectionComplete(record,enteredItems);
     const type = isOrder ? "in" : record.type;
     if (!["in", "out"].includes(type)) throw Error("入出庫区分を確認してください");
     const items = record.items.map((item, idx) => ({
@@ -1956,13 +1960,18 @@ async function completeInventoryRecord(ref, displayed, enteredItems, isOrder, st
       const doc = await tx.get(productRef);
       if (!doc.exists) throw Error("商品が削除されています：" + id);
       const product = doc.data();
+      if(type==="out")requireShippingActive(product,operation);
       const stock = inventoryQuantity(product.currentStock ?? 0, product.name + "の在庫");
       const reserved = inventoryQuantity(product.reservedStock ?? 0, product.name + "の準備分");
       const next = stock + (type === "in" ? qty : -qty);
       if (type === "out" && next < reserved) throw Error("準備分を除く在庫が不足しています：" + product.name);
       inventoryQuantity(next, product.name + "の反映後在庫");
-      return { productRef, next };
+      return { productRef, next, id, product };
     }));
+    if(type==="out"){
+      const master=new Map(products.map(p=>[p.id,p.product]));
+      assertInspectionComplete(record,enteredItems,record.items.map(i=>shippingPaperBox(master.get(i.productId))));
+    }
     products.forEach(({ productRef, next }) => tx.update(productRef, { currentStock: next }));
     items.forEach(item => tx.set(db.collection(MOVEMENTS_COLLECTION).doc(), {
       productId: item.productId,
@@ -1978,7 +1987,7 @@ async function completeInventoryRecord(ref, displayed, enteredItems, isOrder, st
       items, status: "received",
       receivedAt: firebase.firestore.FieldValue.serverTimestamp(), receivedBy: staff
     } : {
-      items, status: "done",
+      items, status: "done", ...(type==="out"?{shippingPolicyVersion:1,stockPosted:true}:{}),
       completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: staff
     });
   });
@@ -2379,19 +2388,19 @@ function handleSlipComplete() {
   if(s.type==="out") {
     try{assertInspectionComplete(s,items);}catch(e){showToast(e.message);return;}
   }
-  if (!confirm("検品を完了し、在庫に反映します。よろしいですか？")) return;
+  if (!confirm(s.type==="out"?"以下の出荷数量を確認してください。\n"+items.map(i=>`${i.code||""} ${i.productName}：${i.checkedQty}${i.unit||"個"}`).join("\n")+"\n出荷を確定し、全明細の在庫を減らします。よろしいですか？":"検品を完了し、在庫に反映します。よろしいですか？")) return;
   const slipRef = db.collection(SLIPS_COLLECTION).doc(s.id);
   btn.disabled = true;
   btn.textContent = "反映中...";
   completeInventoryRecord(slipRef, s, items, false, currentStaffName).then(() => {
-    showToast("検品を完了し、在庫に反映しました");
+    showToast(s.type==="out"?"出荷を確定し、在庫に反映しました":"検品を完了し、在庫に反映しました");
     closeSlipDetailModal();
   }).catch(err => {
     console.error(err);
     showToast(err.message || "反映に失敗しました");
   }).finally(() => {
     btn.disabled = false;
-    btn.textContent = "検品完了として記録する";
+    btn.textContent = s.type==="out"?"出荷確定・在庫に反映":"検品完了として記録する";
   });
 }
 
@@ -3034,6 +3043,7 @@ function inventoryControlRef() { return db.collection(INVENTORY_CONTROL_COLLECTI
 async function requireNoActiveReset(tx) {
   const state = await tx.get(inventoryControlRef());
   if (state.exists && state.data().state === "resetting") throw Error("初期化中のため在庫操作を停止しています");
+  return state.exists?state.data():{};
 }
 function resetStatus(message) { document.getElementById("pilotResetStatus").textContent = message; }
 async function collectInventoryResetPlan() {
@@ -3171,14 +3181,15 @@ function initPilotTools() {
   },true);
   auth.onAuthStateChanged(user=>{
     if(controlUnsubscribe)controlUnsubscribe();
-    inventoryControlReady=false;inventoryResetLocked=false;
+    inventoryControlReady=false;inventoryResetLocked=false;shippingAllEnabled=false;renderShippingPolicy();
     if(!user)return;
     controlUnsubscribe=inventoryControlRef().onSnapshot(doc=>{
       const wasLocked=inventoryResetLocked;
       inventoryControlReady=true;inventoryResetLocked=doc.exists&&doc.data().state==="resetting";
+      shippingAllEnabled=doc.exists&&doc.data().shippingAllEnabled===true;renderShippingPolicy();
       if(inventoryResetLocked&&!wasLocked)clearInventoryFormsForReset();
-      document.getElementById("pilotOperationMessage").textContent=inventoryResetLocked?"現在、在庫の初期化中です。完了するまで通常操作を停止してください。":"紙製御み霊箱から試験運用を開始します。初期検索は「紙製御み霊箱」です。";
-    },err=>{console.error(err);document.getElementById("pilotOperationMessage").textContent="運用設定を読み込めません。READMEの追加ルールを確認してください。";});
+      document.getElementById("pilotOperationMessage").textContent=inventoryResetLocked?"現在、在庫の初期化中です。完了するまで通常操作を停止してください。":"出荷の運用状態は下の「出荷・在庫連動の運用設定」を確認してください。初期検索は「紙製御み霊箱」です。";
+    },err=>{console.error(err);inventoryControlReady=false;shippingAllEnabled=false;renderShippingPolicy();document.getElementById("pilotOperationMessage").textContent="運用設定を読み込めません。READMEの追加ルールを確認してください。";});
   });
 }
 
@@ -3533,59 +3544,73 @@ window.addEventListener("afterprint", clearLabelPaperSize);
 // 個体別の検品専用EAN-13。商品用番号と独立し、再印刷しても同じ番号を使う。
 const INSPECTION_UNIT_LIMIT = 300;
 let inspectionScanQueue = Promise.resolve();
-function inspectionPlan(items) {
-  if (!Array.isArray(items) || !items.length) throw Error("出荷商品がありません");
-  let count=0;
-  const rows=items.map((item,index)=>{
-    if (!item.productId || typeof item.productId!=="string") throw Error("商品を確認してください");
-    const qty=inventoryQuantity(item.plannedQty,"出荷数量");
-    if (!qty) throw Error("出荷数量は1以上にしてください");
-    count+=qty; return [index,item.productId,qty];
+function inspectionPlan(items,required=null) {
+  if(!Array.isArray(items)||!items.length)throw Error("出荷商品がありません");
+  if(required!==null&&(!Array.isArray(required)||required.length!==items.length||required.some(v=>typeof v!=="boolean")))throw Error("検品対象の登録内容を確認してください");
+  let count=0;const rows=[],signature=[];
+  items.forEach((item,index)=>{
+    if(!item.productId||typeof item.productId!=="string")throw Error("商品を確認してください");
+    const qty=inventoryQuantity(item.plannedQty,"出荷数量");if(!qty)throw Error("出荷数量は1以上にしてください");
+    const needs=required===null||required[index];
+    signature.push(required===null?[index,item.productId,qty]:[index,item.productId,qty,needs]);
+    if(needs){count+=qty;rows.push([index,item.productId,qty]);}
   });
-  if (count>INSPECTION_UNIT_LIMIT) throw Error("検品番号は1伝票300個までです。伝票を分けてください");
-  return {signature:JSON.stringify(rows),count,rows};
+  if(count>INSPECTION_UNIT_LIMIT)throw Error("JAN検品対象は1伝票300個までです。伝票を分けてください");
+  return {signature:JSON.stringify(signature),count,rows};
 }
 function inspectionLedger(s) {
-  const plan=inspectionPlan(s.items);
-  if (s.inspectionVersion!==1 || s.inspectionPlan!==plan.signature || !Array.isArray(s.inspectionUnits) || s.inspectionUnits.length!==plan.count) throw Error("検品番号と出荷内容が一致しません。伝票を確認してください");
+  const plan=inspectionPlan(s.items,s.inspectionVersion===2?s.inspectionRequired:null);
+  if(![1,2].includes(s.inspectionVersion)||s.inspectionPlan!==plan.signature||!Array.isArray(s.inspectionUnits)||s.inspectionUnits.length!==plan.count)throw Error("検品番号と出荷内容が一致しません。伝票を確認してください");
   const codes=new Set(),positions=new Set();
-  for (const u of s.inspectionUnits) {
-    const item=s.items[u.itemIndex];
-    const pos=u.itemIndex+":"+u.unitIndex;
-    if (!validEan13(u.code) || !item || u.productId!==item.productId || !Number.isSafeInteger(u.itemIndex) || !Number.isSafeInteger(u.unitIndex) || u.unitIndex<1 || u.unitIndex>Number(item.plannedQty) || codes.has(u.code) || positions.has(pos) || typeof u.used!=="boolean") throw Error("検品番号の登録内容を確認してください");
+  for(const u of s.inspectionUnits){
+    const item=s.items[u.itemIndex],pos=u.itemIndex+":"+u.unitIndex;
+    if(!validEan13(u.code)||!item||u.productId!==item.productId||!Number.isSafeInteger(u.itemIndex)||!Number.isSafeInteger(u.unitIndex)||u.unitIndex<1||u.unitIndex>Number(item.plannedQty)||s.inspectionVersion===2&&!s.inspectionRequired[u.itemIndex]||codes.has(u.code)||positions.has(pos)||typeof u.used!=="boolean")throw Error("検品番号の登録内容を確認してください");
     codes.add(u.code);positions.add(pos);
   }
   return s.inspectionUnits;
 }
 function inspectionCounts(s) {
-  const units=inspectionLedger(s);
-  return s.items.map((_,i)=>units.filter(u=>u.itemIndex===i && u.used).length);
+  const units=inspectionLedger(s);return s.items.map((_,i)=>units.filter(u=>u.itemIndex===i&&u.used).length);
 }
-function assertInspectionComplete(s, entered) {
-  const counts=inspectionCounts(s);
-  if (counts.some((n,i)=>n!==Number(s.items[i].plannedQty) || Number(entered[i]?.checkedQty)!==n || !entered[i]?.checked)) throw Error("全ての現品と検品JANを読み取ってください。未検品の数量があります");
+function assertInspectionComplete(s,entered,required=shippingRequiredMask(s)) {
+  if(!Array.isArray(entered)||entered.length!==s.items.length||required.length!==s.items.length)throw Error("出荷明細を確認してください");
+  const counts=required.some(Boolean)?inspectionCounts(s):s.items.map(()=>0);
+  s.items.forEach((item,i)=>{
+    const planned=inventoryQuantity(item.plannedQty,"出荷数量");
+    if(required[i]&&s.inspectionVersion===2&&!s.inspectionRequired[i])throw Error("JAN検品対象が変わりました。新しい出荷伝票を作成してください");
+    if(required[i]&&counts[i]!==planned)throw Error("紙製御み霊箱の商品JANと検品JANを数量分読み取ってください。未検品の数量があります");
+    if(Number(entered[i]?.checkedQty)!==planned||!entered[i]?.checked)throw Error("出荷数量を確認してください");
+  });
 }
 function updateInspectionLocal(s) {
-  const old=allSlips.find(x=>x.id===s.id);
-  if (old) Object.assign(old,s);
-  if (openSlipId===s.id) syncInspectionCounts();
+  const old=allSlips.find(x=>x.id===s.id);if(old)Object.assign(old,s);
+  if(openSlipId===s.id)syncInspectionCounts();
 }
 function syncInspectionCounts() {
-  const s=allSlips.find(x=>x.id===openSlipId);
-  if (!s || s.type!=="out") return;
-  let counts=s.items.map(i=>s.status==="done"?Number(i.checkedQty||0):0);
-  if (s.inspectionVersion===1) {
-    try {counts=inspectionCounts(s);} catch(e) {setSlipScanStatus(e.message,true);}
-  }
+  const s=allSlips.find(x=>x.id===openSlipId);if(!s||s.type!=="out")return;
+  const required=shippingRequiredMask(s);let counts=s.items.map(i=>s.status==="done"?Number(i.checkedQty||0):0);
+  if([1,2].includes(s.inspectionVersion)){try{counts=inspectionCounts(s);}catch(e){setSlipScanStatus(e.message,true);}}
   s.items.forEach((item,i)=>{
-    const input=document.querySelector(`.slip-check-qty[data-idx="${i}"]`);
-    const check=document.querySelector(`.slip-check-box[data-idx="${i}"]`);
-    if(input){input.value=counts[i];input.readOnly=true;}
-    if(check){check.checked=counts[i]===Number(item.plannedQty);check.disabled=true;}
+    const input=document.querySelector(`.slip-check-qty[data-idx="${i}"]`),check=document.querySelector(`.slip-check-box[data-idx="${i}"]`);
+    const qty=s.status==="done"?Number(item.checkedQty||0):required[i]?counts[i]:Number(item.plannedQty);
+    if(input){input.value=qty;input.readOnly=true;input.title=required[i]?"JAN検品済み数量":"JAN検品不要・出荷予定数量";}
+    if(check){check.checked=s.status==="done"?!!item.checked:qty===Number(item.plannedQty);check.disabled=true;check.title=required[i]?"JAN検品":"JAN検品不要";}
   });
-  const button=document.getElementById("slipDetailPrintCheckBtn");
-  if(button)button.textContent=s.status==="done" && s.inspectionVersion!==1?"🔍 検品表（旧方式）":"📋 出荷指示書・検品JAN";
+  const hasJan=required.some(Boolean),button=document.getElementById("slipDetailPrintCheckBtn");
+  if(button)button.textContent=hasJan?"📋 出荷指示書・検品JAN":"📋 出荷指示書（JAN検品不要）";
+  const complete=document.getElementById("slipDetailCompleteBtn");if(complete)complete.textContent="出荷確定・在庫に反映";
+  const inactive=s.items.filter(i=>!shippingProductActive(shippingProductForItem(i),{shippingAllEnabled}));
+  const notice=document.getElementById("shippingSlipPolicy");if(notice){notice.hidden=false;notice.textContent=inactive.length
+    ?"棚卸し後の運用開始前の商品が含まれています。この伝票は出荷確定できません。防災用品だけ先に出荷する場合は伝票を分けてください。"
+    :hasJan?"紙製御み霊箱だけJAN検品を行います。その他の商品はJAN検品不要です。数量を確認し、出荷確定で全明細の在庫を減らします。"
+    :"全明細JAN検品不要です。出荷数量を確認し、出荷確定で在庫を減らします。";}
+  const done=s.status==="done";
+  for(const id of ["slipBluetoothModeBtn","slipScanFocusBtn"]) {const e=document.getElementById(id);if(e)e.disabled=done||!hasJan;}
+  const pick=document.getElementById("slipPickLabelWrap");if(pick)pick.style.display=hasJan?"flex":"none";
+  const scanner=document.getElementById("slipVerifyScannerBox");if(scanner)scanner.hidden=!hasJan;
+  if(!hasJan)setSlipScannerMode(false);
 }
+
 function findInspectionCode(code) {
   for (const s of allSlips) {
     const unit=(s.inspectionUnits||[]).find(u=>u.code===code);
@@ -3603,11 +3628,14 @@ async function ensureSlipInspection(slipId) {
     if(!doc.exists)throw Error("伝票が見つかりません");
     const s=doc.data();
     if(s.type!=="out")throw Error("出荷伝票を開いてください");
-    if(s.inspectionVersion===1){inspectionLedger(s);return {id:slipId,...s};}
+    if([1,2].includes(s.inspectionVersion)){inspectionLedger(s);return {id:slipId,...s};}
     if(s.inspectionVersion!=null)throw Error("検品方式の版が異なります。管理者に確認してください");
     if(s.status!=="draft")throw Error("完了済みの伝票には検品番号を新規発行できません");
-    if((s.items||[]).some(i=>Number(i.checkedQty||0)!==0))throw Error("確認済み数量が残っています。数量を確認して新しい出荷伝票を作成してください");
-    const plan=inspectionPlan(s.items),counter=await tx.get(counterRef);
+    const products=await Promise.all(s.items.map(i=>tx.get(db.collection(COLLECTION).doc(i.productId))));
+    if(products.some(p=>!p.exists))throw Error("商品が削除されています。出荷明細を確認してください");
+    const required=products.map(p=>shippingPaperBox(p.data()));
+    if(s.items.some((i,n)=>required[n]&&Number(i.checkedQty||0)!==0))throw Error("紙製御み霊箱に旧方式の確認数が残っています。新しい出荷伝票を作成してください");
+    const plan=inspectionPlan(s.items,required),counter=plan.count?await tx.get(counterRef):{exists:false};
     let next=counter.exists?Number(counter.data().next):1;
     if(!Number.isSafeInteger(next)||next<1)throw Error("検品番号の採番設定を確認してください");
     const reserved=[];let attempts=0;
@@ -3622,8 +3650,8 @@ async function ensureSlipInspection(slipId) {
     for(const [itemIndex,productId,qty] of plan.rows)for(let unitIndex=1;unitIndex<=qty;unitIndex++)units.push({code:reserved[units.length],itemIndex,productId,unitIndex,used:false});
     // すべての読み取りを済ませてから書く。採番台帳と伝票をまとめて確定。
     units.forEach(u=>tx.set(registry.doc(u.code),{kind:"inspection",slipId,itemIndex:u.itemIndex,unitIndex:u.unitIndex,productId:u.productId,used:false}));
-    tx.set(counterRef,{next});
-    const changes={inspectionVersion:1,inspectionPlan:plan.signature,inspectionUnits:units,inspectionUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+    if(plan.count)tx.set(counterRef,{next});
+    const changes={inspectionVersion:2,inspectionRequired:required,inspectionPlan:plan.signature,inspectionUnits:units,inspectionUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()};
     tx.update(ref,changes);
     return {id:slipId,...s,...changes};
   });
@@ -3642,6 +3670,8 @@ async function consumeInspectionUnit(slipId, code, productId) {
     const a=allocation.exists?allocation.data():null;
     if(!unit || !a || a.kind!=="inspection" || a.slipId!==slipId || a.productId!==unit.productId || a.itemIndex!==unit.itemIndex || a.unitIndex!==unit.unitIndex)throw Error("この出荷指示書の検品JANではありません");
     if(unit.productId!==productId)throw Error("現品と検品JANの商品が一致しません");
+    const product=await tx.get(db.collection(COLLECTION).doc(productId));
+    if(!product.exists||!shippingPaperBox(product.data()))throw Error("この商品はJAN検品の対象外です");
     if(unit.used || a.used)throw Error("この検品JANは読み取り済みです。同じ番号は使えません");
     const inspectionUnits=units.map(u=>u.code===code?{...u,used:true,usedAt:Date.now(),usedBy:currentStaffName||""}:u);
     const changed={...s,inspectionUnits};const counts=inspectionCounts(changed);
@@ -3664,7 +3694,7 @@ async function verifyOutgoingInspection(text,slipId) {
   if(openSlipId!==slipId)throw Error("出荷伝票を開き直して読み取ってください");
   const s=allSlips.find(s=>s.id===slipId);
   if(!s || s.status!=="draft")throw Error("伝票は完了済みか、状態が変わっています");
-  if(s.inspectionVersion!==1)throw Error("先に「出荷指示書・検品JAN」を押して検品番号を発行してください");
+  if(![1,2].includes(s.inspectionVersion))throw Error("先に「出荷指示書・検品JAN」を押して検品番号を発行してください");
   inspectionLedger(s);
   const raw=String(text).trim(),found=findInspectionCode(raw);
   let scan;
@@ -3679,6 +3709,7 @@ async function verifyOutgoingInspection(text,slipId) {
     if(!productId || !s.items.some(i=>i.productId===productId))throw Error("この出荷伝票に含まれない商品です");
     scan={role:"product",productId};
   }
+  if(!shippingRequiresInspection(s.items.find(i=>i.productId===scan.productId)))throw Error("この商品はJAN検品不要です。出荷数量を確認してください");
   const first=pendingSlipScanCode;
   if(!first){pendingSlipScanCode=scan;setSlipScanStatus(scan.role==="product"?"現品を確認しました。対応する検品JANを読んでください":"検品JANを確認しました。現品の商品JANを読んでください",false);playTone(660,60,"sine");return;}
   pendingSlipScanCode=null;
@@ -3724,10 +3755,10 @@ async function printOutgoingInspectionSheet(slipId) {
   const s=await ensureSlipInspection(slipId);
   if(openSlipId!==slipId)return;
   const sheet=document.getElementById("slipPrintSheet");
-  sheet.dataset.inspection="1";sheet.innerHTML=buildCheckSheetHtml(s).replace("検品表（出荷）","出荷指示書・個数検品");
-  const instruction=document.createElement("p");instruction.textContent="現品の商品JAN → この指示書の検品JANで1個確認。数量分すべての番号を読み取ってください。同じ番号は再使用できません。再印刷しても使用状況は変わりません。";
+  sheet.dataset.inspection="1";sheet.innerHTML=buildCheckSheetHtml(s).replace("検品表（出荷）",s.items.some(shippingRequiresInspection)?"出荷指示書・個数検品":"出荷指示書");
+  const instruction=document.createElement("p");instruction.textContent="紙製御み霊箱のみ：現品の商品JAN → この指示書の検品JANで1個確認。対象数量分を読み取ってください。同じ番号は再使用できません。その他の商品はJAN検品不要です。数量確認後、出荷確定で全明細の在庫を減らします。";
   const cards=document.createElement("div");cards.className="inspection-jan-cards";
-  inspectionLedger(s).forEach(u=>appendInspectionCard(cards,s,u));sheet.appendChild(cards);sheet.appendChild(instruction);
+  inspectionLedger(s).filter(u=>shippingRequiresInspection(s.items[u.itemIndex])).forEach(u=>appendInspectionCard(cards,s,u));sheet.appendChild(cards);sheet.appendChild(instruction);
   const qrHost=document.getElementById("printSheetQr");
   if(qrHost)new QRCode(qrHost,{text:buildSlipUrl(s.id),width:64,height:64,correctLevel:QRCode.CorrectLevel.M});
   clearLabelPaperSize();document.body.classList.remove("label-print","work-print","order-print","prepared-print");document.body.classList.add("slip-print");
@@ -3735,13 +3766,15 @@ async function printOutgoingInspectionSheet(slipId) {
 }
 async function printOutgoingInspectionLabels(slipId) {
   const s=await ensureSlipInspection(slipId),grid=document.getElementById("qrBulkGrid");grid.className="brother-label-list";grid.replaceChildren();
-  for(const u of inspectionLedger(s)){
+  const printable=inspectionLedger(s).filter(u=>shippingRequiresInspection(s.items[u.itemIndex]));
+  if(!printable.length)throw Error("JAN検品対象がありません。出荷指示書をご利用ください");
+  for(const u of printable){
     const item=s.items[u.itemIndex],cell=document.createElement("div");cell.className="brother-pick-label inspection-jan-label";
     const title=document.createElement("div");title.textContent=`${item.productName}　${u.unitIndex}/${item.plannedQty}${item.remark?"　指定："+item.remark:""}${u.used?" 検品済み":""}`;
     cell.appendChild(title);cell.appendChild(makeInspectionSvg(u.code));
     const note=document.createElement("div");note.textContent=`検品専用・販売不可　${s.slipNumber||""}`;cell.appendChild(note);grid.appendChild(cell);
   }
-  finishBrotherLabels(grid,"pick","出荷検品JANシール（62×29mm）",s.inspectionUnits.length);
+  finishBrotherLabels(grid,"pick","出荷検品JANシール（62×29mm）",printable.length);
   if([...grid.children].some(c=>c.scrollHeight>c.clientHeight || c.scrollWidth>c.clientWidth)) {
     document.getElementById("qrBulkPrintOkBtn").disabled=true;
     document.getElementById("qrBulkHint").textContent="文字が検品シールに収まりません。A4の出荷指示書をご利用ください。";
@@ -3815,7 +3848,7 @@ function matchS1Products(groups,products){
   }
   if(!mapped.length)throw Error("数量が入力されていません。D列・J列に出荷数量を入力し、Excelを保存してから選択してください（空欄・0は取り込みません）");
   const totals=new Map();mapped.forEach(g=>g.items.forEach(i=>totals.set(i.productId,(totals.get(i.productId)||0)+i.plannedQty)));
-  for(const [id,qty] of totals){const p=products.find(p=>p.id===id);if(qty>Number(p.currentStock||0)-Number(p.reservedStock||0))warnings.push(p.name+"：今回の出荷合計"+qty+"が現在の利用可能在庫を超えています。在庫の減算可否は検品完了時に再確認します。");}
+  for(const [id,qty] of totals){const p=products.find(p=>p.id===id);if(qty>Number(p.currentStock||0)-Number(p.reservedStock||0))warnings.push(p.name+"：今回の出荷合計"+qty+"が現在の利用可能在庫を超えています。在庫の減算可否は出荷確定時に再確認します。");}
   return {groups:mapped,states,warnings};
 }
 async function s1Digest(text){const bytes=new TextEncoder().encode(text);return [...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))].map(x=>x.toString(16).padStart(2,"0")).join("");}
@@ -3881,7 +3914,7 @@ async function commitS1ShippingImport(plan){
 }
 async function applyS1ShippingImport(){
   if(s1ImportBusy||!s1ImportPlan)return;
-  const plan=s1ImportPlan;if(!confirm(plan.groups.length+"件の出荷伝票を作成します。在庫は検品完了時に反映します。よろしいですか？"))return;
+  const plan=s1ImportPlan;if(!confirm(plan.groups.length+"件の出荷伝票を作成します。在庫は出荷確定時に反映します。よろしいですか？"))return;
   setS1Busy(true);
   try{await commitS1ShippingImport(plan);const count=plan.groups.length;clearS1ImportPreview();document.getElementById("s1ImportStatus").textContent=count+"件の出荷伝票を作成しました。一覧から開き、出荷指示書・検品JANを発行してください。";showToast(count+"件の出荷伝票を作成しました");}
   catch(e){clearS1ImportPreview();document.getElementById("s1ImportStatus").textContent=(e.message||"登録結果を確認できませんでした")+"\n伝票一覧を確認し、再実行する場合も同じ依頼番号を使用してください。";}
@@ -4131,7 +4164,7 @@ async function saveInvoiceImport(){
     invoiceActionMessage("登録予定内容の確認チェックを入れてください。",true,true);return;
   }
   setInvoiceBusy(true);invoiceActionMessage("出荷伝票を保存しています…");
-  try{await commitInvoiceImport(plan);invoicePdfPlan=null;document.getElementById("pdfInvoiceConfirmed").checked=false;invoiceActionMessage("出荷伝票を作成しました。一覧から開いて出荷指示書を印刷できます。在庫は検品完了時に反映します。",false,true);showToast("出荷伝票を作成しました");}
+  try{await commitInvoiceImport(plan);invoicePdfPlan=null;document.getElementById("pdfInvoiceConfirmed").checked=false;invoiceActionMessage("出荷伝票を作成しました。一覧から開いて出荷指示書を印刷できます。在庫は出荷確定時に反映します。",false,true);showToast("出荷伝票を作成しました");}
   catch(e){invalidateInvoicePlan();invoiceActionMessage((e.message||"登録結果を確認できませんでした")+"。再実行前に伝票一覧を確認してください。",true,true);}
   finally{setInvoiceBusy(false);}
 }
@@ -4315,8 +4348,8 @@ async function saveDisasterOrder(){
 function disasterItemsSignature(items){return JSON.stringify(items.map(i=>[i.productId,i.qty,i.receivedQty||0,i.unitPrice,i.boxPrice,i.amount]));}
 async function shipDisasterOrder(id,expectedSignature){
   if(!inventoryWritesAllowed())throw Error('出荷できません');const ref=db.collection(DISASTER_MOVEMENTS).doc(id);
-  await db.runTransaction(async tx=>{await requireNoActiveReset(tx);const doc=await tx.get(ref);if(!doc.exists||doc.data().kind!=='disaster-sale-v1'||doc.data().status!=='ordered')throw Error('既に出荷済み・取消済みです');const order=doc.data();if(disasterItemsSignature(order.items)!==expectedSignature)throw Error('注文内容が変わりました');const seen=new Set();order.items.forEach(i=>{if(seen.has(i.productId))throw Error('商品明細が重複しています');seen.add(i.productId);if(!disasterQ(i.qty,'出荷数'))throw Error('数量が不正です');});
-    const docs=await Promise.all(order.items.map(i=>tx.get(db.collection(COLLECTION).doc(i.productId))));docs.forEach((d,n)=>{if(!d.exists||disasterQ(d.data().currentStock||0,'現在庫')-disasterQ(d.data().reservedStock||0,'準備確保数')<order.items[n].qty)throw Error('出荷可能数が不足：'+order.items[n].productName);});
+  await db.runTransaction(async tx=>{const operation=await requireNoActiveReset(tx);const doc=await tx.get(ref);if(!doc.exists||doc.data().kind!=='disaster-sale-v1'||doc.data().status!=='ordered')throw Error('既に出荷済み・取消済みです');const order=doc.data();if(disasterItemsSignature(order.items)!==expectedSignature)throw Error('注文内容が変わりました');const seen=new Set();order.items.forEach(i=>{if(seen.has(i.productId))throw Error('商品明細が重複しています');seen.add(i.productId);if(!disasterQ(i.qty,'出荷数'))throw Error('数量が不正です');});
+    const docs=await Promise.all(order.items.map(i=>tx.get(db.collection(COLLECTION).doc(i.productId))));docs.forEach((d,n)=>{if(d.exists){requireShippingActive(d.data(),operation);if(shippingPaperBox(d.data()))throw Error("紙製御み霊箱は出荷伝票でJAN検品してください");}if(!d.exists||disasterQ(d.data().currentStock||0,'現在庫')-disasterQ(d.data().reservedStock||0,'準備確保数')<order.items[n].qty)throw Error('出荷可能数が不足：'+order.items[n].productName);});
     order.items.forEach((i,n)=>{tx.update(docs[n].ref,{currentStock:Number(docs[n].data().currentStock||0)-i.qty});tx.set(db.collection(MOVEMENTS_COLLECTION).doc('ds-out-'+id+'-'+n),{productId:i.productId,productName:i.productName,unit:i.unit,type:'out',qty:i.qty,note:'防災斡旋 '+order.channel+' '+order.party,sourceDisasterOrder:id,staff:currentStaffName,createdAt:stamp()});});tx.update(ref,{status:'shipped',shippedAt:stamp(),shippedBy:currentStaffName});
   });
 }
@@ -4549,7 +4582,49 @@ function initPhoneReception(){
   auth.onAuthStateChanged(user=>{if(!user){phoneSubscriptionEpoch++;if(phoneUnsubscribe)phoneUnsubscribe();phoneUnsubscribe=null;phoneReceipts=[];phoneNewRecord();phoneRenderLedger();}});phoneNewRecord();
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-14-festival-unrestricted-jan-v45";
+// 出荷は防災用品を先行開始。全商品は棚卸し後に明示的に開始する。
+let shippingAllEnabled=false, shippingPolicyBusy=false;
+function shippingPaperBox(product) {
+  return String(product?.name??product?.productName??"").normalize("NFKC").replace(/\s+/g,"").includes("紙製御み霊箱");
+}
+function shippingProductForItem(item) { return allProducts.find(p=>p.id===item.productId)||item; }
+function shippingRequiresInspection(item) { return shippingPaperBox(shippingProductForItem(item)); }
+function shippingProductActive(product,control) {
+  return control?.shippingAllEnabled===true || (!shippingPaperBox(product)&&categoryLabel(product?.category)==="防災用品");
+}
+function requireShippingActive(product,control) {
+  if(!shippingProductActive(product,control))throw Error(`棚卸し後の出荷運用開始前です：${product.name||product.productName||"商品"}。防災用品以外はまだ出荷確定できません`);
+}
+function shippingRequiredMask(s) { return (s.items||[]).map(shippingRequiresInspection); }
+function renderShippingPolicy() {
+  const status=document.getElementById("shippingPolicyStatus"),button=document.getElementById("shippingStartAllBtn");
+  if(status)status.textContent=!inventoryControlReady?"出荷運用設定を確認中です。":shippingAllEnabled
+    ?"全商品の出荷・在庫連動を運用中です。紙製御み霊箱だけJAN検品を行い、その他の商品は数量確認後に出荷確定します。"
+    :"防災用品だけ出荷・在庫連動を運用中です。その他の商品は棚卸し後に開始してください。伝票の下書き作成はできますが、出荷確定・在庫減算はできません。";
+  if(button){button.hidden=shippingAllEnabled;button.disabled=shippingPolicyBusy||!inventoryControlReady||inventoryResetLocked;}
+  const s=allSlips.find(s=>s.id===openSlipId);
+  if(s?.type==="out")syncInspectionCounts();
+}
+async function startAllShipping() {
+  if(shippingPolicyBusy||!inventoryWritesAllowed())return;
+  if(!confirm("棚卸し後の在庫数は確定しましたか？ 全商品の出荷・在庫連動を開始します。過去の伝票は自動処理されず、今後の出荷確定時から在庫を減らします。"))return;
+  shippingPolicyBusy=true;renderShippingPolicy();
+  try{
+    await db.runTransaction(async tx=>{
+      const control=await requireNoActiveReset(tx);
+      if(control.shippingAllEnabled===true)return;
+      tx.set(inventoryControlRef(),{shippingAllEnabled:true,shippingStartedAt:stamp(),shippingStartedBy:currentStaffName},{merge:true});
+    });
+    shippingAllEnabled=true;renderShippingPolicy();showToast("全商品の出荷・在庫連動を開始しました");
+  }catch(e){showToast(e.message||"運用を開始できませんでした。通信状態を確認してください");}
+  finally{shippingPolicyBusy=false;renderShippingPolicy();}
+}
+function initShippingPolicy() {
+  document.getElementById("shippingStartAllBtn").addEventListener("click",startAllShipping);
+  renderShippingPolicy();
+}
+
+window.KOBUNSHA_APP_VERSION = "2026-11-14-shipping-policy-jan-v46";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
