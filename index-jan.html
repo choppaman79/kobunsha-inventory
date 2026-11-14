@@ -1290,11 +1290,12 @@
     </section>
 
     <section id="tabFestival" class="work-panel" style="display:none;">
-      <h2>月始祭準備・頒布集計</h2><p>翌月分を事前に準備します。準備確定後も準備分は総在庫に含まれます。み祭り後に戻り数などを入力して売上数を確定します。</p>
+      <h2>月始祭準備・頒布集計</h2><p>翌月分を事前に準備します。在庫数に関係なく準備数を入力・確定できます。準備確定後も準備分は総在庫に含まれます。み祭り後に戻り数などを入力して売上数を確定します。</p>
       <div class="toolbar"><label>対象月 <input type="month" id="festivalMonth"></label><div class="spacer"></div>
         <button class="btn-secondary-inline" id="festivalLoadBtn">この月を開く</button><button class="btn-secondary-inline" id="festivalPrintBtn">印刷</button></div>
       <details class="pilot-panel"><summary>月始祭Excelを取り込む（全商品・S1出）</summary><p>「頒布詳細」のA列コードとC列「S1出」を照合します。追加・直送・戻り・売上数は取り込みません。対象月を選んでください。</p><label for="festivalExcelFile">み祭り頒布集計表</label><input id="festivalExcelFile" type="file" accept=".xlsx,.xlsm"><button type="button" class="btn-secondary-inline" id="festivalExcelPreviewBtn">取込内容を確認</button><pre id="festivalExcelPreview" style="white-space:pre-wrap;max-height:400px;overflow:auto;" role="status" aria-live="polite"></pre><button type="button" class="btn-primary" id="festivalExcelApplyBtn" disabled>確認した内容を準備案へ保存</button></details>
       <div id="festivalStatus" class="work-status"></div>
+      <p id="festivalStockNotice" role="status" aria-live="polite" style="white-space:pre-line;"></p>
       <div class="work-filter">
         <label for="festivalCategory">ジャンル</label><select id="festivalCategory"><option value="">すべて</option></select>
         <input type="text" id="festivalSearch" placeholder="商品名・コードで検索" aria-label="月始祭の商品検索">
@@ -1787,9 +1788,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261114-phone-reception-jan-v44"></script>
+<script src="app-jan.js?v=20261114-festival-unrestricted-jan-v45"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-14-phone-reception-jan-v44") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-14-festival-unrestricted-jan-v45") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
