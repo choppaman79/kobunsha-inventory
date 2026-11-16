@@ -3793,7 +3793,7 @@ function syncInspectionCounts() {
   const complete=document.getElementById("slipDetailCompleteBtn");if(complete)complete.textContent="出荷確定・在庫に反映";
   const inactive=s.items.filter(i=>!shippingProductActive(shippingProductForItem(i),{shippingAllEnabled}));
   const notice=document.getElementById("shippingSlipPolicy");if(notice){notice.hidden=false;notice.textContent=inactive.length
-    ?"棚卸し後の運用開始前の商品が含まれています。この伝票は出荷確定できません。防災用品だけ先に出荷する場合は伝票を分けてください。"
+    ?"棚卸し後の運用開始前の商品が含まれています。この伝票は出荷確定できません。紙製御み霊箱・防災用品だけ先に出荷する場合は伝票を分けてください。"
     :hasJan?"紙製御み霊箱だけJAN検品を行います。その他の商品はJAN検品不要です。数量を確認し、出荷確定で全明細の在庫を減らします。"
     :"全明細JAN検品不要です。出荷数量を確認し、出荷確定で在庫を減らします。";}
   const done=s.status==="done";
@@ -4774,7 +4774,7 @@ function initPhoneReception(){
   auth.onAuthStateChanged(user=>{if(!user){phoneSubscriptionEpoch++;if(phoneUnsubscribe)phoneUnsubscribe();phoneUnsubscribe=null;phoneReceipts=[];phoneNewRecord();phoneRenderLedger();}});phoneNewRecord();
 }
 
-// 出荷は防災用品を先行開始。全商品は棚卸し後に明示的に開始する。
+// 紙製御み霊箱と防災用品は運用中。その他の商品は棚卸し後に明示的に開始する。
 let shippingAllEnabled=false, shippingPolicyBusy=false;
 function shippingPaperBox(product) {
   return String(product?.name??product?.productName??"").normalize("NFKC").replace(/\s+/g,"").includes("紙製御み霊箱");
@@ -4782,17 +4782,17 @@ function shippingPaperBox(product) {
 function shippingProductForItem(item) { return allProducts.find(p=>p.id===item.productId)||item; }
 function shippingRequiresInspection(item) { return shippingPaperBox(shippingProductForItem(item)); }
 function shippingProductActive(product,control) {
-  return control?.shippingAllEnabled===true || (!shippingPaperBox(product)&&categoryLabel(product?.category)==="防災用品");
+  return control?.shippingAllEnabled===true || shippingPaperBox(product) || categoryLabel(product?.category)==="防災用品";
 }
 function requireShippingActive(product,control) {
-  if(!shippingProductActive(product,control))throw Error(`棚卸し後の出荷運用開始前です：${product.name||product.productName||"商品"}。防災用品以外はまだ出荷確定できません`);
+  if(!shippingProductActive(product,control))throw Error(`棚卸し後の出荷運用開始前です：${product.name||product.productName||"商品"}。紙製御み霊箱・防災用品以外はまだ出荷確定できません`);
 }
 function shippingRequiredMask(s) { return (s.items||[]).map(shippingRequiresInspection); }
 function renderShippingPolicy() {
   const status=document.getElementById("shippingPolicyStatus"),button=document.getElementById("shippingStartAllBtn");
   if(status)status.textContent=!inventoryControlReady?"出荷運用設定を確認中です。":shippingAllEnabled
     ?"全商品の出荷・在庫連動を運用中です。紙製御み霊箱だけJAN検品を行い、その他の商品は数量確認後に出荷確定します。"
-    :"防災用品だけ出荷・在庫連動を運用中です。その他の商品は棚卸し後に開始してください。伝票の下書き作成はできますが、出荷確定・在庫減算はできません。";
+    :"紙製御み霊箱と防災用品の出荷・在庫連動を運用中です。紙製御み霊箱はJAN検品後に出荷確定します。その他の商品は棚卸し後に開始してください。開始待ち商品を含む伝票は出荷確定できません。";
   if(button){button.hidden=shippingAllEnabled;button.disabled=shippingPolicyBusy||!inventoryControlReady||inventoryResetLocked;}
   const s=allSlips.find(s=>s.id===openSlipId);
   if(s?.type==="out")syncInspectionCounts();
@@ -4816,7 +4816,7 @@ function initShippingPolicy() {
   renderShippingPolicy();
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-16-festival-batches-jan-v49";
+window.KOBUNSHA_APP_VERSION = "2026-11-16-paper-shipping-active-jan-v50";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
