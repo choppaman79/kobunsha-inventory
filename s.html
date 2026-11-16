@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>出荷指示書を開く</title>
+<p id="message">出荷指示書を開いています…</p><a id="open" hidden>出荷指示書を開く</a>
+<script>
+(() => {
+  try {
+    const id=decodeURIComponent(location.hash.slice(1));
+    if(!id||id.length>200||/[\/\x00-\x1f\x7f]/.test(id))throw Error('invalid');
+    const url=new URL('index-jan.html',location.href);url.hash='s='+encodeURIComponent(id);
+    const link=document.getElementById('open');link.href=url.href;link.hidden=false;
+    location.replace(url.href);
+  } catch(e) {document.getElementById('message').textContent='伝票のリンクが正しくありません。在庫管理の「伝票・検品」から確認してください。';}
+})();
+</script></html>
