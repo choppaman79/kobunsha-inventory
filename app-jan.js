@@ -334,7 +334,7 @@ function subscribeProducts() {
     refreshOrderSupplierOptions();
     renderSummary();
     renderProductList();
-    renderStocktake(); renderFestival();
+    renderStocktake(); refreshFestivalStockDisplay();
     checkLowStockAutoNotify();
     if (document.getElementById("tabOrders").style.display !== "none") renderLowStockAlert();
     handlePendingHash();
@@ -2801,14 +2801,10 @@ function inventoryStockQuantity(value,label="現在庫") {
   return Number(value);
 }
 function festivalIsNew(record) {return record?.festivalVersion===2;}
-function festivalStagedQuantity(record,item) {return Number(festivalIsNew(record)?item.completedQty||0:item.qty||0);}
+function festivalStagedQuantity(record,item) {return festivalIsItemMode(record)?festivalPostedQty(record,item):Number(festivalIsNew(record)?item.completedQty||0:item.qty||0);}
 function festivalStable(value) {return Array.isArray(value)?value.map(festivalStable):value&&typeof value==="object"?Object.fromEntries(Object.keys(value).sort().map(k=>[k,festivalStable(value[k])])):value;}
-function festivalState(record) {return JSON.stringify(festivalStable(record?[record.status||"draft",record.stockMode||"included",record.festivalVersion||0,record.revision||0,record.items||[],record.excelImports||[]]:null));}
+function festivalState(record) {return JSON.stringify(festivalStable(record?[record.status||"draft",record.stockMode||"included",record.festivalVersion||0,record.revision||0,record.items||[],record.excelImports||[],record.preparationMode||""]:null));}
 function festivalLegacySnapshot(record) {return record?.legacySnapshot||(!record||festivalIsNew(record)?null:{status:record.status||"draft",stockMode:record.stockMode||"deducted",items:record.items||[]});}
-function festivalViewItem(item,record) {
-  const modern=festivalIsNew(record);
-  return {productId:item.productId,name:item.name||"",code:item.code||"",category:item.category||"",unit:item.unit||"個",price:Number(item.price||0),qty:Number(item.qty||0),completedQty:modern?Number(item.completedQty||0):0,directQty:Number(item.directQty||0),returnedQty:modern?Number(item.returnedQty||0):0,ngQty:modern?Number(item.ngQty||0):0};
-}
 function festivalNumbers(i) {
   const qty=Number(i.qty||0),completed=Number(i.completedQty||0),direct=Number(i.directQty||0),returned=Number(i.returnedQty||0),ng=Number(i.ngQty||0);
   return {qty,completed,direct,returned,ng,sold:completed+direct-returned-ng,consumed:completed-returned};
@@ -2828,7 +2824,7 @@ function validateFestivalItems(items) {
     return out;
   });
 }
-async function commitFestivalAction(month,action,input,expectedState) {
+async function commitFestivalMonthlyAction(month,action,input,expectedState) {
   if(!inventoryWritesAllowed())throw Error("現在は更新できません");
   if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||!["save","prepare","cancel","settle"].includes(action))throw Error("対象月・操作を確認してください");
   const entered=action==="cancel"?null:validateFestivalItems(input),ref=db.collection(FESTIVALS).doc(month);
@@ -2836,6 +2832,7 @@ async function commitFestivalAction(month,action,input,expectedState) {
     await requireNoActiveReset(tx);
     const doc=await tx.get(ref),prior=doc.exists?doc.data():null;
     if(festivalState(prior)!==expectedState)throw Error("月始祭データが変更されています。この月を開き直して確認してください");
+    if(festivalIsItemMode(prior))throw Error("品目別準備は各行の登録・訂正ボタンを使ってください");
     const status=prior?.status||"draft",modern=festivalIsNew(prior),mode=prior?.stockMode||"deducted";
     if(modern&&mode!==FESTIVAL_COMPLETED_MODE)throw Error("月始祭の在庫方式が一致しません。記録を確認してください");
     if(status==="settled")throw Error("精算済みです。再度反映できません");
@@ -2887,95 +2884,221 @@ async function commitFestivalAction(month,action,input,expectedState) {
   });
 }
 
-let festivalActionBusy=false;
-function renderFestivalPrepared() {
-  const target=$w("festivalPreparedRows"),source=$w("festivalRows");if(!target||!source)return;
-  const rows=[...source.querySelectorAll("tr")].filter(r=>r.style.display!=="none"&&Number(r.querySelector(".completedQty")?.value)>0);
-  target.innerHTML=rows.map(r=>{const p=allProducts.find(p=>p.id===r.dataset.id)||(festivalRecord?.items||[]).find(i=>i.productId===r.dataset.id);return `<tr><td>${safe(r.dataset.code||"")}</td><td>${safe(r.dataset.name||"")}</td><td>${safe(r.dataset.category||"未分類")}</td><td>${safe(r.querySelector(".completedQty").value)}</td><td>${safe(p?.unit||"個")}</td></tr>`;}).join("");
-  $w("festivalPreparedCount").textContent=`実際準備完了数のある商品：${rows.length}件（ジャンル・検索条件を反映／入力保存だけでは在庫未反映）`;
-  $w("festivalPreparedPrintBtn").disabled=!rows.length;
+const FESTIVAL_ITEM_MODE="per-item-v1";
+function festivalIsItemMode(record){return record?.preparationMode===FESTIVAL_ITEM_MODE;}
+function festivalPostedQty(record,item){
+  if(festivalIsItemMode(record))return inventoryQuantity(item.postedQty??0,"在庫反映済み数量");
+  return festivalIsNew(record)&&["prepared","settled"].includes(record?.status)?inventoryQuantity(item.completedQty??0,"在庫反映済み数量"):0;
 }
-function renderFestivalStockNotice() {
-  const node=$w("festivalStockNotice"),body=$w("festivalRows");if(!node||!body)return;
-  const status=festivalRecord?.status||"draft",modern=festivalIsNew(festivalRecord),short=[];
-  if(status==="settled"){node.textContent="精算済みです。準備完了分の再減算、良品戻りの再加算は行いません。";return;}
-  for(const row of body.querySelectorAll("tr")){
-    const p=allProducts.find(p=>p.id===row.dataset.id);if(!p)continue;
-    const completed=Number(row.querySelector(".completedQty")?.value||0);if(!Number.isSafeInteger(completed)||completed<0)continue;
-    const old=(festivalRecord?.items||[]).find(i=>i.productId===p.id);
-    const restore=!modern&&status==="prepared"&&festivalRecord.stockMode!=="included"?Number(old?.qty||0):0;
-    const after=Number(p.currentStock||0)+restore-(modern&&status==="prepared"?0:completed);
-    if(after<0)short.push(`${p.code||""} ${p.name}：${-after}${p.unit||"個"}不足（${modern&&status==="prepared"?"現在庫":"確定後の現在庫"} ${after}）`);
-  }
-  node.textContent=(modern&&status==="prepared"?"実際準備完了分は在庫から減算済みです。精算時は再販売可能な良品戻りだけを在庫へ戻します。":"予定数と入力保存では在庫は動きません。「実際準備完了を確定」で完了数を減算します。")+(short.length?"\n在庫未登録・不足でも確定できます。マイナス残高を確認してください。\n"+short.join("\n"):"");
+function festivalViewItem(item,record){
+  const posted=festivalPostedQty(record,item),pending=festivalIsItemMode(record)?Number(item.pendingQty||0):festivalIsNew(record)&&record?.status==="draft"?Number(item.completedQty||0):0;
+  return {productId:item.productId,name:item.name||item.productName||"",code:item.code||"",category:item.category||"",unit:item.unit||"個",price:Number(item.price||0),qty:Number(item.qty||0),completedQty:posted,postedQty:posted,pendingQty:pending,directQty:Number(item.directQty||0),returnedQty:festivalIsNew(record)?Number(item.returnedQty||0):0,ngQty:festivalIsNew(record)?Number(item.ngQty||0):0,lineRevision:Number(item.lineRevision||0)};
 }
+function festivalLineState(record,id){
+  const raw=(record?.items||[]).find(i=>i.productId===id);if(!raw)return "null";
+  const i=festivalViewItem(raw,record);return JSON.stringify(festivalStable([i.productId,i.qty,i.postedQty,i.directQty,i.returnedQty,i.ngQty,i.price,i.lineRevision]));
+}
+function validateFestivalBatchItems(items){
+  const checked=validateFestivalItems(items);
+  return checked.map((i,n)=>({...i,postedQty:i.completedQty,pendingQty:inventoryQuantity(items[n].pendingQty??0,"今回準備数"),lineRevision:inventoryQuantity(items[n].lineRevision??0,"品目の版")}));
+}
+function festivalBatchMonthStatus(items){return items.some(i=>i.postedQty>0)?"prepared":"draft";}
+function festivalBatchRecord(prior,month,items){
+  const result={...(prior||{}),month,festivalVersion:2,preparationMode:FESTIVAL_ITEM_MODE,stockMode:FESTIVAL_COMPLETED_MODE,revision:Number(prior?.revision||0)+1,items,status:festivalBatchMonthStatus(items),updatedAt:stamp(),updatedBy:currentStaffName};
+  if(!Number.isSafeInteger(result.revision))throw Error("記録の版を確認してください");
+  const legacy=festivalLegacySnapshot(prior);if(legacy)result.legacySnapshot=legacy;return result;
+}
+function festivalRequireEditable(prior){
+  if(prior?.status==="settled")throw Error("精算済みの月には準備登録・訂正できません");
+  if(prior?.status&&!["draft","prepared"].includes(prior.status))throw Error("この月の準備状態を確認してください");
+  if(!festivalIsNew(prior)&&prior?.status==="prepared")throw Error("先に旧準備を新方式へ切り替えてください");
+  if(festivalIsNew(prior)&&prior.stockMode!==FESTIVAL_COMPLETED_MODE)throw Error("在庫方式が一致しません");
+}
+async function commitFestivalAction(month,action,input,expectedState){
+  if(action==="prepare"||action==="cancel")return commitFestivalMonthlyAction(month,action,input,expectedState);
+  if(!inventoryWritesAllowed())throw Error("現在は更新できません");
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||!["save","settle"].includes(action))throw Error("対象月・操作を確認してください");
+  const entered=validateFestivalBatchItems(input),ref=db.collection(FESTIVALS).doc(month);
+  return db.runTransaction(async tx=>{
+    await requireNoActiveReset(tx);const doc=await tx.get(ref),prior=doc.exists?doc.data():null;
+    if(festivalState(prior)!==expectedState)throw Error("月始祭データが変更されています。入力値を控えてこの月を開き直してください");
+    festivalRequireEditable(prior);
+    const previous=new Map((prior?.items||[]).map(i=>[i.productId,festivalViewItem(i,prior)]));
+    for(const old of previous.values())if(old.postedQty&&!entered.some(i=>i.productId===old.productId))throw Error("在庫反映済みの商品を削除できません");
+    const items=entered.map(i=>{
+      const old=previous.get(i.productId),posted=old?.postedQty||0;
+      if(i.completedQty!==posted)throw Error("累計完了数は直接変更できません。品目ごとの登録・訂正ボタンを使ってください");
+      const changed=!old||["qty","directQty","returnedQty","ngQty","price"].some(f=>i[f]!==old[f]);
+      return {...i,postedQty:posted,completedQty:posted,lineRevision:(old?.lineRevision||0)+(changed?1:0)};
+    });
+    if(action==="settle"){
+      if(items.some(i=>i.pendingQty>0))throw Error("未登録の今回準備数があります。登録するか0にしてから精算してください");
+      if(!items.some(i=>i.postedQty||i.directQty))throw Error("準備完了の登録がありません");
+    }
+    const products=await Promise.all(items.map(i=>tx.get(db.collection(COLLECTION).doc(i.productId))));
+    products.forEach((p,n)=>{if(!p.exists)throw Error("商品が削除されています："+items[n].name);});
+    const result=festivalBatchRecord(prior,month,items);
+    if(action==="settle"){
+      items.forEach((i,n)=>{if(!i.returnedQty)return;const next=inventoryStockQuantity(products[n].data().currentStock??0)+i.returnedQty;if(!Number.isSafeInteger(next))throw Error("数量が大きすぎます");tx.update(products[n].ref,{currentStock:next});tx.set(db.collection(MOVEMENTS_COLLECTION).doc(`festival-${month}-${result.revision}-${n}`),{productId:i.productId,productName:i.name,unit:i.unit,type:"in",qty:i.returnedQty,note:`月始祭 ${month} 再販売可能な良品戻り`,sourceFestival:month,festivalRevision:result.revision,staff:currentStaffName,createdAt:stamp()});});
+      result.status="settled";result.settledAt=stamp();result.settledBy=currentStaffName;
+    }
+    tx.set(ref,result);return result;
+  });
+}
+async function commitFestivalBatch(input){
+  if(!inventoryWritesAllowed())throw Error("現在は更新できません");
+  const {month,productId,action,token,expectedLine}=input,qty=inventoryQuantity(input.qty,"今回の登録数");
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||typeof productId!=="string"||!productId||productId.includes("/")||!["add","undo"].includes(action)||!qty||!/^[A-Za-z0-9_-]{8,80}$/.test(token))throw Error("対象月・商品・数量を確認してください");
+  const requestState=JSON.stringify(festivalStable([month,productId,action,qty,input.item]));
+  const ref=db.collection(FESTIVALS).doc(month),event=db.collection(MOVEMENTS_COLLECTION).doc("festival-batch-"+token);
+  return db.runTransaction(async tx=>{
+    await requireNoActiveReset(tx);const [doc,receipt]=await Promise.all([tx.get(ref),tx.get(event)]),prior=doc.exists?doc.data():null;
+    if(receipt.exists){if(receipt.data().batchRequestState!==requestState)throw Error("同じ登録番号の内容が一致しません");if(!prior)throw Error("登録済みですが月の記録がありません。確認してください");return prior;}
+    festivalRequireEditable(prior);
+    if(festivalLineState(prior,productId)!==expectedLine)throw Error("この商品の完了数・予定数が変更されています。入力値を控えてこの月を開き直してください");
+    const product=await tx.get(db.collection(COLLECTION).doc(productId));if(!product.exists)throw Error("商品が削除されています");
+    const items=(prior?.items||[]).map(i=>festivalViewItem(i,prior)),index=items.findIndex(i=>i.productId===productId),old=index<0?null:items[index],posted=old?.postedQty||0;
+    const nextPosted=posted+(action==="add"?qty:-qty);if(!Number.isSafeInteger(nextPosted)||nextPosted<0)throw Error("取消数が在庫反映済みの完了数を超えています");
+    const edited=action==="add"?input.item:old;if(!edited)throw Error("取消対象がありません");
+    const raw={...edited,productId,name:product.data().name||edited.name||"",code:String(product.data().code||""),category:categoryLabel(product.data().category),unit:product.data().unit||"個",completedQty:nextPosted,postedQty:nextPosted,pendingQty:0,lineRevision:(old?.lineRevision||0)+1};
+    const target=validateFestivalBatchItems([raw])[0];if(index<0)items.push(target);else items[index]=target;
+    if(items.length>245)throw Error("1か月245商品までです");
+    const stock=inventoryStockQuantity(product.data().currentStock??0),delta=action==="add"?-qty:qty,next=stock+delta;if(!Number.isSafeInteger(next))throw Error("数量が大きすぎます");
+    const result=festivalBatchRecord(prior,month,items);result.lastBatchAt=stamp();result.lastBatchBy=currentStaffName;
+    tx.update(product.ref,{currentStock:next});
+    tx.set(event,{kind:"festival-prepare-batch-v1",batchToken:token,batchRequestState:requestState,sourceFestival:month,productId,productName:target.name,code:target.code,unit:target.unit,type:delta>0?"in":"out",qty,note:`月始祭 ${month} 品目別準備${action==="add"?"完了追加":"完了取消"} ${qty}${target.unit}（累計 ${nextPosted}${target.unit}）`,completedBefore:posted,completedAfter:nextPosted,lineRevision:target.lineRevision,staff:currentStaffName,createdAt:stamp()});
+    tx.set(ref,result);return result;
+  });
+}
+
 function renderFestivalLegacy(record) {
   const node=$w("festivalLegacyRecord");if(!node)return;
   const legacy=festivalLegacySnapshot(record);node.hidden=!legacy;
   if(!legacy){node.innerHTML="";return;}
   node.innerHTML='<summary>旧方式の記録（参照用・新項目へ自動転記しません）</summary><pre style="white-space:pre-wrap;">'+safe((legacy.items||[]).map(i=>`${i.code||""} ${i.name||""}：旧準備 ${i.qty||0}／旧追加 ${i.extraQty||0}／旧戻り ${i.returnedQty||0}／旧乱丁 ${i.damagedQty||0}／旧見本 ${i.sampleQty||0}`).join("\n"))+'</pre>';
 }
-function renderFestival() {
+
+let festivalActionBusy=false;
+let festivalFormBaseline=new Map();
+const festivalBatchRequests=new Map();
+const festivalEditableFields=["qty","batchQty","directQty","returnedQty","ngQty","price"];
+function festivalProgress(planned,posted){
+  if(!posted)return {label:planned?"未準備":"予定未設定",tone:"none",remaining:planned};
+  if(!planned)return {label:"準備済み（予定未設定）",tone:"over",remaining:0};
+  if(posted<planned)return {label:"準備中",tone:"partial",remaining:planned-posted};
+  return {label:posted===planned?"準備完了":"準備完了（予定超過）",tone:posted===planned?"done":"over",remaining:0};
+}
+function festivalCaptureInputs(){return new Map([...$w("festivalRows").querySelectorAll("tr")].map(row=>[row.dataset.id,Object.fromEntries(festivalEditableFields.map(f=>[f,row.querySelector("."+f)?.value??""]))]));}
+function festivalCaptureDirty(){
+  const dirty=new Map();for(const [id,values] of festivalCaptureInputs()){
+    const baseline=festivalFormBaseline.get(id)||{},changed=Object.fromEntries(Object.entries(values).filter(([f,v])=>v!==baseline[f]));if(Object.keys(changed).length)dirty.set(id,changed);
+  }return dirty;
+}
+function festivalRestoreDirty(dirty,skipProduct=null){
+  for(const row of $w("festivalRows").querySelectorAll("tr")){
+    if(row.dataset.id===skipProduct)continue;
+    for(const [f,v] of Object.entries(dirty.get(row.dataset.id)||{})){const input=row.querySelector("."+f);if(input&&!input.readOnly&&input.dataset.lock!=="1")input.value=v;}
+    updateFestivalRow(row);
+  }renderFestivalPrepared();renderFestivalStockNotice();
+}
+function updateFestivalRow(row){
+  const value=f=>Number(row.querySelector("."+f)?.value||0),i={qty:value("qty"),completedQty:value("completedQty"),directQty:value("directQty"),returnedQty:value("returnedQty"),ngQty:value("ngQty")},n=festivalNumbers(i),p=festivalProgress(i.qty,i.completedQty);
+  const state=row.querySelector(".festival-line-state"),remaining=row.querySelector(".festival-remaining");
+  if(state){state.textContent=p.label;state.className="festival-line-state festival-progress-"+p.tone;}
+  if(remaining)remaining.textContent=String(p.remaining);
+  row.querySelector(".soldQty").textContent=n.sold;row.querySelector(".salesAmount").textContent=(n.sold*value("price")).toLocaleString();
+}
+function renderFestivalPrepared(){
+  const target=$w("festivalPreparedRows"),body=$w("festivalRows");if(!target||!body)return;
+  const rows=[...body.querySelectorAll("tr")].filter(r=>r.style.display!=="none"&&Number(r.querySelector(".completedQty")?.value)>0),legacy=!festivalIsNew(festivalRecord)&&festivalRecord?.status==="prepared";
+  target.innerHTML=rows.map(r=>{const p=allProducts.find(p=>p.id===r.dataset.id)||(festivalRecord?.items||[]).find(i=>i.productId===r.dataset.id);const q=Number(r.querySelector(".completedQty").value),planned=Number(r.querySelector(".qty").value),state=festivalProgress(planned,q);return `<tr><td>${safe(r.dataset.code)}</td><td>${safe(r.dataset.name)}</td><td>${safe(r.dataset.category)}</td><td>${q}</td><td>${safe(p?.unit||"個")}</td><td>${safe(legacy?"旧方式・切替未確定":state.label+"／在庫反映済み")}</td></tr>`;}).join("");
+  $w("festivalPreparedCount").textContent=`${legacy?"切替前の入力値":"在庫反映済みの累計完了数"}がある商品：${rows.length}件（ジャンル・検索条件を反映）${festivalRecord?.status==="settled"?"／精算済み":""}`;
+  $w("festivalPreparedPrintBtn").disabled=!rows.length;
+}
+function renderFestivalStockNotice(){
+  const node=$w("festivalStockNotice"),body=$w("festivalRows");if(!node||!body)return;
+  if(festivalActionBusy){node.textContent="登録・在庫反映の処理中です。完了表示をお待ちください。";return;}
+  if(festivalRecord?.status==="settled"){node.textContent="精算済みです。準備追加・訂正・良品戻りの再反映はできません。";return;}
+  const shortage=[];for(const row of body.querySelectorAll("tr")){
+    const p=allProducts.find(p=>p.id===row.dataset.id);if(!p)continue;
+    const batch=Number(row.querySelector(".batchQty")?.value||0),stock=Number(p.currentStock||0);if(!Number.isSafeInteger(batch)||batch<0)continue;
+    if(stock-batch<0)shortage.push(`${p.code||""} ${p.name}：今回分 ${batch}${p.unit||"個"} 登録後の在庫 ${stock-batch}`);
+  }
+  node.textContent="「今回準備数」は追加する数量です。累計ではありません。入力保存だけでは在庫は動かず、各行の「この数量を準備完了」で今回分だけ減らします。"+(shortage.length?"\n在庫不足でも登録できます。マイナス残高を確認してください。\n"+shortage.join("\n"):"");
+}
+function renderFestival(){
   const body=$w("festivalRows");if(!body)return;
-  const record=festivalRecord,status=record?.status||"draft",modern=festivalIsNew(record),settled=status==="settled",locked=modern&&status==="prepared";
-  const saved=new Map((record?.items||[]).map(i=>[i.productId,i]));
-  const source=status==="prepared"||settled?record.items:allProducts.map(p=>({productId:p.id,name:p.name,code:p.code,category:p.category,unit:p.unit,price:Number(p.price||0),...saved.get(p.id)}));
+  const record=festivalRecord,status=record?.status||"draft",settled=status==="settled",legacy=!festivalIsNew(record)&&status==="prepared",oldSettled=settled&&!festivalIsNew(record),saved=new Map((record?.items||[]).map(i=>[i.productId,i]));
+  const source=legacy||settled?record.items:allProducts.map(p=>({productId:p.id,name:p.name,code:p.code,category:p.category,unit:p.unit,price:Number(p.price||0),...saved.get(p.id)}));
+  if(!legacy&&!settled)for(const raw of saved.values())if(!source.some(i=>i.productId===raw.productId))source.push(raw);
   body.innerHTML=source.map(raw=>{
-    const i=festivalViewItem(raw,record),p=allProducts.find(p=>p.id===i.productId),n=festivalNumbers(i),oldSettled=settled&&!modern;
-    const stock=Number(p?.currentStock||0),field=(name,value,lock=false)=>`<input class="${name}" type="number" min="0" step="1" value="${value}" ${settled||lock&&locked?"disabled":""}>`;
-    const sold=oldSettled?festivalLegacyNumbers(raw):n.sold;
-    return `<tr data-id="${safe(i.productId)}" data-code="${safe(i.code)}" data-name="${safe(i.name)}" data-category="${safe(categoryLabel(p?.category||i.category)||"未分類")}" data-stock="${stock}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${p?stock:"―"}</td><td>${field("qty",i.qty,true)}</td><td>${oldSettled?"―":field("completedQty",i.completedQty,true)}</td><td>${field("directQty",i.directQty)}</td><td>${oldSettled?"―":field("returnedQty",i.returnedQty)}</td><td>${oldSettled?"―":field("ngQty",i.ngQty)}</td><td class="soldQty">${sold}</td><td>${field("price",i.price)}</td><td class="salesAmount">${(sold*i.price).toLocaleString()}</td></tr>`;
+    const i=festivalViewItem(raw,record),p=allProducts.find(p=>p.id===i.productId),stock=Number(p?.currentStock||0),progress=festivalProgress(i.qty,i.postedQty),n=festivalNumbers(i);
+    const field=(name,v,lock=false,readOnly=false)=>`<input class="${name}" type="number" min="0" step="1" value="${v}" data-lock="${settled||lock?"1":"0"}" ${settled||lock?"disabled":""} ${readOnly?"readonly":""}>`;
+    return `<tr data-id="${safe(i.productId)}" data-code="${safe(i.code)}" data-name="${safe(i.name)}" data-category="${safe(categoryLabel(p?.category||i.category)||"未分類")}" data-stock="${stock}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${p?stock:"―"}</td><td>${field("qty",i.qty,legacy)}</td><td>${oldSettled?"―":field("completedQty",legacy?0:i.postedQty,false,!legacy)}</td><td class="festival-remaining">${progress.remaining}</td><td>${field("batchQty",legacy?0:i.pendingQty,legacy)}<button type="button" class="btn-secondary-inline festival-line-add" data-product="${safe(i.productId)}" ${settled||legacy?"disabled":""}>この数量を準備完了</button><button type="button" class="btn-secondary-inline festival-line-undo" data-product="${safe(i.productId)}" ${settled||legacy||!i.postedQty?"disabled":""}>完了数を訂正（減らす）</button></td><td><span class="festival-line-state festival-progress-${progress.tone}">${safe(legacy?"旧方式・切替待ち":progress.label)}</span></td><td>${field("directQty",i.directQty)}</td><td>${oldSettled?"―":field("returnedQty",i.returnedQty)}</td><td>${oldSettled?"―":field("ngQty",i.ngQty)}</td><td class="soldQty">${oldSettled?festivalLegacyNumbers(raw):n.sold}</td><td>${field("price",i.price)}</td><td class="salesAmount">${((oldSettled?festivalLegacyNumbers(raw):n.sold)*i.price).toLocaleString()}</td></tr>`;
   }).join("");
   labelTableCells(body);
-  body.querySelectorAll("input").forEach(input=>input.oninput=()=>{
-    const row=input.closest("tr"),i={};["qty",...festivalFields].forEach(f=>i[f]=Number(row.querySelector("."+f)?.value||0));
-    const n=festivalNumbers(i);row.querySelector(".soldQty").textContent=n.sold;row.querySelector(".salesAmount").textContent=(n.sold*Number(row.querySelector(".price").value||0)).toLocaleString();renderFestivalPrepared();renderFestivalStockNotice();
-  });
-  $w("festivalStatus").textContent=settled?(modern?"月始祭精算済み：良品戻りのみ在庫へ加算済み":"旧方式の精算済み記録（在庫を再反映しません）"):locked?"実際準備完了を確定済み：完了数は在庫から減算済み":status==="prepared"?"旧方式で準備済み：実際完了数を入力して新方式へ切り替えてください。旧準備は二重に減らしません。":"予定・実際準備完了数を入力中（保存だけでは在庫未反映）";
-  $w("festivalCommitBtn").textContent=status==="prepared"&&!modern?"新方式へ切替・実際準備完了を確定":"実際準備完了を確定・在庫から減算";
-  $w("festivalReturnBtn").textContent=modern?"準備完了を取消・在庫へ戻す":"旧準備を取り消す";
+  body.querySelectorAll("input").forEach(input=>input.oninput=()=>{updateFestivalRow(input.closest("tr"));renderFestivalPrepared();renderFestivalStockNotice();});
+  body.querySelectorAll(".festival-line-add").forEach(b=>b.onclick=()=>runFestivalBatch(b.dataset.product,"add"));
+  body.querySelectorAll(".festival-line-undo").forEach(b=>b.onclick=()=>runFestivalBatch(b.dataset.product,"undo"));
+  festivalFormBaseline=festivalCaptureInputs();updateFestivalControls();renderFestivalLegacy(record);applyWorkTableView("festival");renderFestivalStockNotice();
+}
+function updateFestivalControls(){
+  const record=festivalRecord,status=record?.status||"draft",settled=status==="settled",legacy=!festivalIsNew(record)&&status==="prepared",items=record?.items||[],posted=items.reduce((n,i)=>n+festivalPostedQty(record,i),0);
+  $w("festivalStatus").textContent=settled?"月始祭精算済み：良品戻り加算済み":legacy?"旧準備済みです。累計完了数欄に実際の数量を入力し、新方式へ切り替えてください。":`品目ごとに準備登録できます。在庫反映済みの累計：${posted}点。未準備の品目は引き続き入力できます。`;
+  for(const id of ["festivalCommitBtn","festivalReturnBtn","festivalCopyPlanBtn"])$w(id).style.display=legacy?"":"none";
+  $w("festivalCommitBtn").textContent="新方式へ切替・実際準備完了を確定";$w("festivalReturnBtn").textContent="旧準備を取り消す";
+  $w("festivalCommitBtn").disabled=festivalActionBusy||!legacy;$w("festivalReturnBtn").disabled=festivalActionBusy||!legacy;$w("festivalCopyPlanBtn").disabled=festivalActionBusy||!legacy;
+  $w("festivalSaveBtn").disabled=festivalActionBusy||settled||legacy;$w("festivalSettleBtn").disabled=festivalActionBusy||settled||legacy||!items.some(i=>festivalPostedQty(record,i)||Number(i.directQty||0));
   $w("festivalSettleBtn").textContent="月始祭を精算・良品戻りを在庫へ加算";
-  $w("festivalCommitBtn").disabled=festivalActionBusy||settled||locked;
-  $w("festivalReturnBtn").disabled=festivalActionBusy||status!=="prepared";
-  $w("festivalSettleBtn").disabled=festivalActionBusy||!locked;
-  $w("festivalSaveBtn").disabled=festivalActionBusy||settled||status==="prepared"&&!modern;
-  $w("festivalCopyPlanBtn").disabled=festivalActionBusy||settled||locked;
   $w("festivalMonth").disabled=festivalActionBusy;$w("festivalLoadBtn").disabled=festivalActionBusy;
-  renderFestivalLegacy(record);applyWorkTableView("festival");renderFestivalStockNotice();
-}
-async function loadFestival() {
-  if(festivalActionBusy)return;
-  const month=festivalKey();if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))return showToast("対象月を選択してください");
-  try{const doc=await db.collection(FESTIVALS).doc(month).get();if(festivalKey()!==month)return;festivalRecord=doc.exists?doc.data():null;renderFestival();}catch(e){showToast(e.message||"この月を開けませんでした");}
-}
-function collectFestival() {
-  return validateFestivalItems([...$w("festivalRows").querySelectorAll("tr")].map(row=>{
-    const p=allProducts.find(p=>p.id===row.dataset.id)||(festivalRecord?.items||[]).find(i=>i.productId===row.dataset.id),item={productId:row.dataset.id,name:p?.name||"",code:p?.code||"",category:p?.category||"",unit:p?.unit||"個"};
-    for(const f of ["qty",...festivalFields,"price"]){const raw=row.querySelector("."+f)?.value;if(raw===undefined||raw==="")throw Error("数量と単価は0以上の整数で入力してください");item[f]=inventoryQuantity(raw,"数量と単価");}return item;
-  }).filter(i=>i.qty||festivalFields.some(f=>i[f])));
-}
-function copyFestivalPlan() {
-  if(festivalActionBusy||festivalRecord?.status==="settled"||festivalIsNew(festivalRecord)&&festivalRecord.status==="prepared")return;
-  if(!confirm("表示条件に関係なく、この月の全商品の予定数を実際準備完了数へコピーします。在庫はまだ変わりません。実際の完了数に修正してから確定してください。"))return;
   for(const row of $w("festivalRows").querySelectorAll("tr")){
-    const target=row.querySelector(".completedQty");if(!target)continue;target.value=row.querySelector(".qty").value;
-    const item={};["qty",...festivalFields].forEach(f=>item[f]=Number(row.querySelector("."+f)?.value||0));
-    const n=festivalNumbers(item);row.querySelector(".soldQty").textContent=n.sold;row.querySelector(".salesAmount").textContent=(n.sold*Number(row.querySelector(".price").value||0)).toLocaleString();
+    row.querySelectorAll("input").forEach(e=>e.disabled=festivalActionBusy||e.dataset.lock==="1");
+    const add=row.querySelector(".festival-line-add"),undo=row.querySelector(".festival-line-undo");if(add)add.disabled=festivalActionBusy||settled||legacy;if(undo)undo.disabled=festivalActionBusy||settled||legacy||!Number(row.querySelector(".completedQty")?.value||0);
   }
-  renderFestivalPrepared();renderFestivalStockNotice();
 }
-async function runFestivalAction(action) {
-  if(festivalActionBusy||!inventoryWritesAllowed())return;
-  const month=festivalKey();let items;
+function refreshFestivalStockDisplay(){
+  const body=$w("festivalRows");if(!body)return;const rows=[...body.querySelectorAll("tr")];if(!rows.length){renderFestival();return;}
+  rows.forEach(row=>{const p=allProducts.find(p=>p.id===row.dataset.id);if(p){row.dataset.stock=String(Number(p.currentStock||0));if(row.children[2])row.children[2].textContent=String(Number(p.currentStock||0));}});renderFestivalStockNotice();
+}
+async function loadFestival(){
+  if(festivalActionBusy)return;const month=festivalKey();if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))return showToast("対象月を選択してください");
+  try{const doc=await db.collection(FESTIVALS).doc(month).get({source:"server"});if(festivalKey()!==month)return;festivalRecord=doc.exists?doc.data():null;renderFestival();}catch(e){showToast(e.message||"この月を開けませんでした");}
+}
+function festivalReadRow(row){
+  const p=allProducts.find(p=>p.id===row.dataset.id)||(festivalRecord?.items||[]).find(i=>i.productId===row.dataset.id),item={productId:row.dataset.id,name:p?.name||"",code:p?.code||"",category:p?.category||"",unit:p?.unit||"個"};
+  for(const f of ["qty","completedQty","directQty","returnedQty","ngQty","price"]){const raw=row.querySelector("."+f)?.value;if(raw===undefined||raw==="")throw Error("数量と単価は0以上の整数で入力してください");item[f]=inventoryQuantity(raw,"数量と単価");}
+  item.pendingQty=inventoryQuantity(row.querySelector(".batchQty")?.value??0,"今回準備数");return item;
+}
+function collectFestival(){return validateFestivalBatchItems([...$w("festivalRows").querySelectorAll("tr")].map(festivalReadRow).filter(i=>i.qty||i.completedQty||i.pendingQty||i.directQty||i.returnedQty||i.ngQty));}
+function copyFestivalPlan(){
+  if(festivalActionBusy||festivalIsNew(festivalRecord)||festivalRecord?.status!=="prepared")return;
+  if(!confirm("旧準備の予定数を累計完了数欄へコピーします。実際の数量に修正してから切替を確定してください。"))return;
+  for(const row of $w("festivalRows").querySelectorAll("tr")){const target=row.querySelector(".completedQty");if(target){target.value=row.querySelector(".qty").value;updateFestivalRow(row);}}renderFestivalPrepared();renderFestivalStockNotice();
+}
+async function runFestivalAction(action){
+  if(festivalActionBusy||!inventoryWritesAllowed())return;const month=festivalKey();let items;
   try{items=action==="cancel"?null:collectFestival();}catch(e){return showToast(e.message);}
-  const amount=items?.reduce((n,i)=>n+i.completedQty,0)||0,returned=items?.reduce((n,i)=>n+i.returnedQty,0)||0;
-  const question=action==="prepare"?`${month}：実際準備完了 ${amount}点を確定し、在庫から減らします。旧方式の準備済み分は差分だけを反映します。在庫不足時はマイナス残高になります。よろしいですか？`:action==="cancel"?`${month}の準備完了を取り消します。減算済みの完了分を在庫へ戻し、良品戻り・NG品の入力を0に戻します。旧方式は旧準備の処理だけを取り消します。よろしいですか？`:action==="settle"?`${month}：良品戻り ${returned}点だけを在庫へ加算して精算します。準備完了分を再度減らしません。戻りNG品は在庫へ戻しません。よろしいですか？`:null;
-  if(question&&!confirm(question))return;
-  const expected=festivalState(festivalRecord);festivalActionBusy=true;
-  for(const id of ["festivalSaveBtn","festivalCommitBtn","festivalReturnBtn","festivalSettleBtn","festivalCopyPlanBtn","festivalMonth","festivalLoadBtn"])$w(id).disabled=true;
-  try{const record=await commitFestivalAction(month,action,items,expected);if(festivalKey()===month){festivalRecord=record;renderFestival();}showToast(action==="prepare"?"実際準備完了数を在庫から減らしました":action==="settle"?"良品戻りだけを在庫へ戻して精算しました":action==="cancel"?"準備完了を取り消しました":"入力を保存しました。在庫数は変わりません");}
-  catch(e){showToast(e.message||"更新結果を確認できません。この月を開き直して確認してください");}
-  finally{festivalActionBusy=false;renderFestival();}
+  if(action==="settle"&&items.some(i=>i.pendingQty))return showToast("未登録の今回準備数があります。登録するか0にしてから精算してください");
+  const remaining=items?.reduce((n,i)=>n+Math.max(0,i.qty-i.completedQty),0)||0;
+  const question=action==="prepare"?`${month}の旧準備を新方式へ切り替え、実際完了分を差分反映します。よろしいですか？`:action==="cancel"?`${month}の旧準備を取り消します。よろしいですか？`:action==="settle"?`${month}を精算します。良品戻り合計 ${items.reduce((n,i)=>n+i.returnedQty,0)}点だけを在庫へ戻します。${remaining?`予定に対し未準備 ${remaining}点があります。精算後は追加登録できません。`:""} よろしいですか？`:null;
+  if(question&&!confirm(question))return;const expected=festivalState(festivalRecord);festivalActionBusy=true;let succeeded=false;updateFestivalControls();
+  try{const record=await commitFestivalAction(month,action,items,expected);if(festivalKey()===month){festivalRecord=record;succeeded=true;}showToast(action==="settle"?"良品戻りを加算して精算しました":action==="save"?"入力を保存しました。在庫は変わりません":"旧準備を更新しました");}
+  catch(e){showToast(e.message||"処理結果を確認できません。入力値を控えてこの月を開き直してください");}
+  finally{festivalActionBusy=false;if(succeeded)renderFestival();else{updateFestivalControls();renderFestivalPrepared();renderFestivalStockNotice();}}
+}
+function festivalBatchToken(){return typeof crypto.randomUUID==="function"?crypto.randomUUID():Array.from(crypto.getRandomValues(new Uint8Array(16))).map(n=>n.toString(16).padStart(2,"0")).join("");}
+async function runFestivalBatch(productId,action){
+  if(festivalActionBusy||!inventoryWritesAllowed())return;const month=festivalKey(),row=[...$w("festivalRows").querySelectorAll("tr")].find(r=>r.dataset.id===productId);if(!row)return;
+  let item,qty;try{item=festivalReadRow(row);if(action==="add")qty=item.pendingQty;else{const raw=prompt(`在庫反映済み累計 ${item.completedQty}${item.unit} のうち、何個を取り消して在庫へ戻しますか？`,"1");if(raw===null)return;qty=inventoryQuantity(raw,"取消数");}if(!qty)throw Error("今回の数量は1以上にしてください");}catch(e){return showToast(e.message);}
+  const posted=festivalPostedQty(festivalRecord,(festivalRecord?.items||[]).find(i=>i.productId===productId)||{}),after=posted+(action==="add"?qty:-qty);
+  if(action==="undo"&&(after<0||after<item.returnedQty+item.ngQty))return showToast("取消後の累計が良品戻り＋NG品数を下回ります。取消数と戻り数を確認してください");
+  if(!confirm(`${item.name}\n${action==="add"?"今回準備完了として登録":"完了登録を取り消す"}：${qty}${item.unit}\n累計：${posted} → ${after}${item.unit}\n在庫は${qty}${item.unit}${action==="add"?"減ります":"戻ります"}。${action==="add"&&after>item.qty?"予定数を超えています。":""}よろしいですか？`))return;
+  const expectedLine=festivalLineState(festivalRecord,productId),signature=JSON.stringify(festivalStable([month,productId,action,qty,item,expectedLine])),key=month+":"+productId;
+  let request=festivalBatchRequests.get(key);if(!request||request.signature!==signature){request={signature,input:{month,productId,action,qty,item,expectedLine,token:festivalBatchToken()}};festivalBatchRequests.set(key,request);}
+  const dirty=festivalCaptureDirty();festivalActionBusy=true;updateFestivalControls();let succeeded=false;
+  try{const record=await commitFestivalBatch(request.input);if(festivalKey()===month){festivalRecord=record;succeeded=true;}festivalBatchRequests.delete(key);showToast(`${item.name}：今回 ${qty}${item.unit}を${action==="add"?"登録":"取消"}しました`);}
+  catch(e){showToast((e.message||"処理できませんでした")+"。同じ入力での再実行は二重に減算しません。状態が不明なら入力値を控えてこの月を開き直してください");}
+  finally{festivalActionBusy=false;if(succeeded){renderFestival();festivalRestoreDirty(dirty,action==="add"?productId:null);}else{updateFestivalControls();renderFestivalPrepared();renderFestivalStockNotice();}}
 }
 async function saveFestival(){return runFestivalAction("save");}
 async function changeFestival(prepare){return runFestivalAction(prepare?"prepare":"cancel");}
@@ -4487,17 +4610,17 @@ async function prepareFestivalExcel(book,month,source){
   const merged=new Map((prior?.items||[]).map(i=>[i.productId,{...i}]));
   for(const [id,item]of mapped){const old=merged.get(id);merged.set(id,{...item,...old,qty:item.qty,name:item.name,code:item.code,category:item.category,unit:item.unit});}
   const items=[...merged.values()].map(i=>festivalViewItem(i,prior));if(items.length>245)throw Error('現在の準備確定は245商品までです。既存の準備案と合わせた件数を確認してください');
-  return {month,items,states,priorItems:prior?.items||[],priorState:festivalDraftState(prior),source,warnings,count:mapped.size,quantity:[...mapped.values()].reduce((n,i)=>n+i.qty,0)};
+  return {month,items,states,priorItems:(prior?.items||[]).map(i=>festivalViewItem(i,prior)),priorState:festivalDraftState(prior),source,warnings,count:mapped.size,quantity:[...mapped.values()].reduce((n,i)=>n+i.qty,0)};
 }
 async function commitFestivalExcel(plan){
   if(!inventoryWritesAllowed())throw Error('登録できません');const ref=db.collection(FESTIVALS).doc(plan.month);
   await db.runTransaction(async tx=>{await requireNoActiveReset(tx);const doc=await tx.get(ref),old=doc.exists?doc.data():null;if(festivalDraftState(old)!==plan.priorState)throw Error('準備案が変更されています。もう一度取込内容を確認してください');if(old&&old.status!=='draft')throw Error('準備確定済みです');
     for(const [id,state] of Object.entries(plan.states)){const p=await tx.get(db.collection(COLLECTION).doc(id));if(!p.exists||disasterMasterState(p.data())!==state)throw Error('商品情報が変わりました。再確認してください');}
-    tx.set(ref,{...(old||{}),month:plan.month,status:'draft',stockMode:FESTIVAL_COMPLETED_MODE,festivalVersion:2,revision:Number(old?.revision||0)+1,...(festivalLegacySnapshot(old)?{legacySnapshot:festivalLegacySnapshot(old)}:{}),items:plan.items,excelImports:[...(old?.excelImports||[]),plan.source.digest],lastExcelSource:plan.source,updatedBy:currentStaffName,updatedAt:stamp()});
+    tx.set(ref,{...(old||{}),month:plan.month,status:'draft',stockMode:FESTIVAL_COMPLETED_MODE,festivalVersion:2,preparationMode:FESTIVAL_ITEM_MODE,revision:Number(old?.revision||0)+1,...(festivalLegacySnapshot(old)?{legacySnapshot:festivalLegacySnapshot(old)}:{}),items:plan.items,excelImports:[...(old?.excelImports||[]),plan.source.digest],lastExcelSource:plan.source,updatedBy:currentStaffName,updatedAt:stamp()});
   });
 }
 function festivalExcelSetBusy(busy){festivalExcelBusy=busy;for(const id of ['festivalExcelFile','festivalExcelPreviewBtn','festivalMonth'])$w(id).disabled=busy;$w('festivalExcelApplyBtn').disabled=busy||!festivalExcelPlan;}
-function festivalUiSignature(items){return JSON.stringify(items.map(i=>[i.productId,...['qty',...festivalFields,'price'].map(k=>Number(i[k]||0))]).sort((a,b)=>a[0].localeCompare(b[0])));}
+function festivalUiSignature(items){return JSON.stringify(items.map(i=>[i.productId,...['qty',...festivalFields,'pendingQty','price'].map(k=>Number(i[k]||0))]).sort((a,b)=>a[0].localeCompare(b[0])));}
 async function previewFestivalExcel(){
   if(festivalExcelBusy)return;clearFestivalExcel();const generation=festivalExcelGeneration,file=$w('festivalExcelFile').files[0],month=festivalKey();
   if(!file)return $w('festivalExcelPreview').textContent='Excelを選択してください';if(file.size>20*1024*1024)return $w('festivalExcelPreview').textContent='20MB以下のExcelを選択してください';
@@ -4508,7 +4631,7 @@ async function previewFestivalExcel(){
 }
 async function applyFestivalExcel(){
   if(festivalExcelBusy||!festivalExcelPlan)return;const plan=festivalExcelPlan;if(festivalKey()!==plan.month)return clearFestivalExcel();if(festivalUiSignature(collectFestival())!==plan.uiSignature){clearFestivalExcel();$w('festivalExcelPreview').textContent='準備表の入力が変わりました。先に入力を保存し、取込内容を確認し直してください。';return;}if(!confirm(plan.month+'の準備案へ取り込みます。同じ商品の準備数を置き換えます。よろしいですか？'))return;
-  festivalExcelSetBusy(true);try{await commitFestivalExcel(plan);clearFestivalExcel();await loadFestival();$w('festivalExcelPreview').textContent='予定数に取り込みました。在庫は変わりません。実際準備完了数を入力し「実際準備完了を確定」で在庫から減らしてください。';}catch(e){clearFestivalExcel();$w('festivalExcelPreview').textContent=(e.message||'保存できませんでした')+'。保存済みか確認してから再度読み込んでください。';}finally{festivalExcelSetBusy(false);}
+  festivalExcelSetBusy(true);try{await commitFestivalExcel(plan);clearFestivalExcel();await loadFestival();$w('festivalExcelPreview').textContent='予定数に取り込みました。在庫は変わりません。各行の「今回準備数」を入力し「この数量を準備完了」で登録してください。';}catch(e){clearFestivalExcel();$w('festivalExcelPreview').textContent=(e.message||'保存できませんでした')+'。保存済みか確認してから再度読み込んでください。';}finally{festivalExcelSetBusy(false);}
 }
 
 let disasterEditingId=null,disasterEditingState=null;
@@ -4693,7 +4816,7 @@ function initShippingPolicy() {
   renderShippingPolicy();
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-14-festival-completed-jan-v47";
+window.KOBUNSHA_APP_VERSION = "2026-11-16-festival-batches-jan-v49";
 init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
