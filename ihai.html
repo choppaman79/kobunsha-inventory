@@ -1,0 +1,193 @@
+
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin"><title>位牌引き取り管理｜弘文社</title>
+<style>
+:root{font-family:"Yu Gothic UI","Meiryo",sans-serif;color:#213830;background:#f4f6f3;font-size:16px}*{box-sizing:border-box}body{margin:0}header{background:#214c40;color:white;padding:24px max(24px,calc((100vw - 1080px)/2));display:flex;justify-content:space-between;align-items:center;gap:12px}h1{font-size:24px;margin:4px 0}h2{font-size:19px;margin:0 0 18px}.brand{letter-spacing:.15em;font-size:12px;color:#c3d6cd}.sub{font-size:13px;color:#d5e2dc}main{max-width:1128px;margin:auto;padding:28px 24px}section,.card{background:white;border:1px solid #dce4df;border-radius:12px;padding:24px;margin-bottom:20px}#login{max-width:430px;margin:55px auto}label{display:block;font-size:14px;font-weight:600;margin-bottom:6px}input,select,button{font:inherit}input,select{width:100%;padding:12px;border:1px solid #a9bab0;border-radius:6px;background:white;color:#213830;min-height:46px}input:focus,select:focus,button:focus-visible{outline:3px solid #a8c8b7;outline-offset:2px}button{cursor:pointer;border:1px solid #b5c7bc;background:white;color:#214c40;border-radius:6px;padding:11px 16px;min-height:44px;white-space:nowrap}.primary{background:#245c49;color:white;border-color:#245c49}.return{color:#865f22;border-color:#bda77c}button:disabled{opacity:.5;cursor:default}.field{margin-bottom:18px}.grid{display:grid;grid-template-columns:1fr 1fr auto;gap:16px;align-items:end}.grid .field{margin:0}.hint{font-size:13px;color:#64786d;margin:12px 0 0}.topline{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.counts{display:flex;gap:12px;margin:0 0 22px;flex-wrap:wrap}.count{background:#e7eee9;padding:15px 22px;border-radius:9px;min-width:155px}.count strong{font-size:27px;margin-left:14px}.filters{display:grid;grid-template-columns:1fr 180px;gap:14px;margin:20px 0}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:14px;text-align:left}th{color:#64786d;font-size:12px;background:#f6f8f6;white-space:nowrap}th,td{padding:14px 12px;border-bottom:1px solid #e5ebe7}td.slip{font-weight:700;overflow-wrap:anywhere;min-width:120px}td.person{overflow-wrap:anywhere;min-width:120px}.actions{display:flex;gap:7px;flex-wrap:wrap}.actions button{font-size:13px;padding:8px 12px}.badge{display:inline-block;border-radius:20px;padding:5px 10px;font-size:12px;white-space:nowrap}.pending{background:#fff1d9;color:#7e591c}.completed{background:#e6f2eb;color:#216344}.date{font-size:12px;color:#65786d;white-space:nowrap}.empty{text-align:center;padding:40px;color:#64786d}.message{background:#edf4ef;border-radius:7px;padding:12px 16px;margin-bottom:18px;white-space:pre-wrap}.error{background:#fff0eb;color:#8c3925}.connection{font-size:13px;font-weight:600;color:#64786d}.headerbtn{background:transparent;border-color:#85aa98;color:white;font-size:13px}dialog{width:min(680px,calc(100% - 24px));border:1px solid #b5c7bc;border-radius:12px;padding:24px;max-height:85vh}dialog::backdrop{background:#10291b66}.event{padding:14px 0;border-bottom:1px solid #e5ebe7}.event p{margin:5px 0;overflow-wrap:anywhere}footer{font-size:12px;text-align:center;color:#74877b;padding:10px 20px 25px}[hidden]{display:none!important}@media(max-width:650px){header{padding:20px}h1{font-size:21px}main{padding:20px 12px}.grid,.filters{grid-template-columns:1fr}.count{padding:12px;min-width:130px}.count strong{font-size:23px}section{padding:18px}#login{margin:25px auto}}
+</style></head><body>
+<header><div><div class="brand">KOBUNSHA</div><h1>位牌引き取り管理</h1><div class="sub">受付から、引き取り確認まで。</div></div><button id="logout" class="headerbtn" hidden>迫さん · ログアウト</button></header>
+<main><div id="message" class="message" role="status" aria-live="polite" hidden></div>
+<section id="login"><h2>ログイン</h2><form id="loginForm"><div class="field"><label for="loginName">名前</label><input id="loginName" value="迫" readonly autocomplete="username"></div><div class="field"><label for="password">パスワード</label><input id="password" type="password" autocomplete="current-password" required></div><button id="loginBtn" class="primary" type="submit">ログインする</button><p class="hint">在庫管理システムと同じパスワードを入力してください。</p></form></section>
+<div id="app" hidden>
+<div class="counts"><div class="count">未完了<strong id="pendingCount">—</strong></div><div class="count">消込済<strong id="completedCount">—</strong></div></div>
+<section><h2>新しく登録する</h2><form id="registerForm" class="grid"><div class="field"><label for="slip">伝票番号</label><input id="slip" maxlength="80" autocomplete="off" required placeholder="例：001234"></div><div class="field"><label for="person">名前</label><input id="person" maxlength="100" autocomplete="off" required placeholder="お名前を入力"></div><button class="primary write" type="submit">登録する</button></form><p class="hint">伝票番号の先頭の「0」も保存されます。全角の英数字は半角にそろえます。</p></section>
+<section><div class="topline"><h2 style="margin:0">引き取り状況</h2><span id="connection" class="connection" role="status">接続を確認しています…</span></div><div class="filters"><div><label for="search">伝票番号・名前で検索</label><input id="search" type="search" placeholder="番号や名前の一部を入力" autocomplete="off"></div><div><label for="filter">表示する状況</label><select id="filter"><option value="pending">未完了</option><option value="completed">消込済</option><option value="all">すべて</option></select></div></div><p class="hint" id="shown"></p><div class="tablewrap"><table><thead><tr><th>伝票番号</th><th>名前</th><th>状況</th><th>引取日時</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div><p class="hint">位牌を引き取ったら「引取済にする」を押してください。履歴は消えません。</p></section>
+</div></main>
+<dialog id="confirmDialog"><h2 id="confirmTitle"></h2><p id="confirmText" style="white-space:pre-wrap;overflow-wrap:anywhere"></p><form id="confirmForm"><div id="renameField" class="field" hidden><label for="newName">正しい名前</label><input id="newName" maxlength="100"></div><div class="actions"><button id="confirmOk" class="primary" type="submit">実行する</button><button id="confirmCancel" type="button">やめる</button></div></form></dialog>
+<dialog id="historyDialog"><div class="topline"><h2 id="historyTitle">操作履歴</h2><button id="historyClose">閉じる</button></div><div id="historyContent"></div></dialog>
+<footer>弘文社 · 位牌引き取り管理 · 2026.11.17</footer>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+/* 位牌引き取り管理 2026-11-17 */
+const IhaiCore = (() => {
+  const OWNER = '迫@koubunsha.com';
+  function validate(slip, name) {
+    slip = String(slip).normalize('NFKC').trim();
+    name = String(name).trim();
+    if (!slip || !name) throw new Error('伝票番号と名前を入力してください。');
+    if (slip.length > 80 || name.length > 100) throw new Error('伝票番号は80文字、名前は100文字以内で入力してください。');
+    if (/[\u0000-\u001f\u007f]/.test(slip + name)) throw new Error('改行や制御文字は使用できません。');
+    return { slip, name, id: 's_' + encodeURIComponent(slip) };
+  }
+  function isOwner(user) { return !!user && user.email === OWNER; }
+  async function save(db, user, input, action, expectedRevision, stamp) {
+    if (!isOwner(user)) throw new Error('迫様のアカウントでログインしてください。');
+    const v = validate(input.slip, input.name);
+    const ref = db.collection('ihai_pickups').doc(v.id);
+    const event = ref.collection('events').doc();
+    await db.runTransaction(async tx => {
+      const snapshot = await tx.get(ref);
+      const old = snapshot.exists ? snapshot.data() : null;
+      if (action === 'register' && old) throw new Error('この伝票番号は登録済みです。検索してご確認ください。');
+      if (action !== 'register' && !old) throw new Error('対象の記録が見つかりません。再読み込みしてください。');
+      if (old && old.revision !== expectedRevision) throw new Error('別の画面で更新されています。最新の表示を確認してから再操作してください。');
+      if (!['register', 'complete', 'reopen', 'rename'].includes(action)) throw new Error('操作が正しくありません。');
+      if (action === 'complete' && old.status !== 'pending') throw new Error('すでに消込済みです。');
+      if (action === 'reopen' && old.status !== 'completed') throw new Error('すでに未完了です。');
+      if (action === 'rename' && old.name === v.name) throw new Error('名前が変更されていません。');
+      const status = action === 'complete' ? 'completed' : action === 'reopen' || action === 'register' ? 'pending' : old.status;
+      const now = stamp();
+      const record = {
+        slip: v.slip, name: action === 'register' || action === 'rename' ? v.name : old.name,
+        status, revision: old ? old.revision + 1 : 1,
+        createdAt: old ? old.createdAt : now, updatedAt: now,
+        completedAt: action === 'complete' ? now : action === 'rename' ? old.completedAt : null,
+        updatedBy: user.uid, lastEventId: event.id
+      };
+      tx.set(ref, record);
+      tx.set(event, { action, from: old ? old.status : '', to: status,
+        oldName: old ? old.name : '', name: record.name, slip: v.slip,
+        revision: record.revision, at: now, by: user.uid });
+    });
+  }
+  return { OWNER, validate, isOwner, save };
+})();
+if (typeof module !== 'undefined') module.exports = IhaiCore;
+
+'use strict';
+(() => {
+  const $ = id => document.getElementById(id);
+  let auth, db, user = null, records = [], ready = false, busy = false, unsubscribe, historyUnsubscribe, epoch = 0, pendingAction;
+  const titles = { register: '登録', complete: '引取済にする（消込）', reopen: '未完了に戻す', rename: '名前を訂正する' };
+  const fmt = v => v && typeof v.toDate === 'function' ? new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }).format(v.toDate()) : '—';
+  function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); $('message').hidden = !text; }
+  function errorText(err) {
+    if (err.code === 'permission-denied') return '保存先へのアクセスが許可されていません。Firebaseの位牌用アクセスルールをご確認ください。';
+    if (err.code === 'unavailable' || err.code === 'auth/network-request-failed') return '通信できませんでした。接続を確認し、最新の一覧を確認してから再操作してください。';
+    if (String(err.code || '').startsWith('auth/')) return 'ログインできませんでした。パスワードと接続状況をご確認ください。';
+    return err.message || '処理できませんでした。再読み込みしてください。';
+  }
+  function render() {
+    $('pendingCount').textContent = ready ? records.filter(r => r.status === 'pending').length : '—';
+    $('completedCount').textContent = ready ? records.filter(r => r.status === 'completed').length : '—';
+    const q = $('search').value.normalize('NFKC').trim().toLocaleLowerCase('ja');
+    const filter = $('filter').value;
+    const visible = records.filter(r => (filter === 'all' || r.status === filter) && (r.slip + '\n' + r.name).normalize('NFKC').toLocaleLowerCase('ja').includes(q));
+    $('shown').textContent = ready ? `${visible.length}件表示 ／ 全${records.length}件` : '最新のデータを確認しています。';
+    $('rows').replaceChildren();
+    if (!visible.length) {
+      const tr = document.createElement('tr'), td = document.createElement('td'); td.colSpan = 5; td.className = 'empty';
+      td.textContent = ready ? '該当する記録はありません。' : '読み込み待ちです。'; tr.append(td); $('rows').append(tr);
+    }
+    visible.forEach(record => {
+      const tr = document.createElement('tr');
+      for (const [value, cls] of [[record.slip,'slip'],[record.name,'person']]) { const td = document.createElement('td'); td.textContent = value; td.className = cls; tr.append(td); }
+      const td = document.createElement('td'), badge = document.createElement('span'); badge.className = 'badge ' + record.status; badge.textContent = record.status === 'pending' ? '未完了' : '消込済'; td.append(badge); tr.append(td);
+      const date = document.createElement('td'); date.textContent = fmt(record.completedAt); date.className = 'date'; tr.append(date);
+      const operations = document.createElement('td'), actions = document.createElement('div'); actions.className = 'actions';
+      const action = record.status === 'pending' ? 'complete' : 'reopen';
+      [[action, record.status === 'pending' ? '引取済にする' : '未完了に戻す'],['history','履歴'],['rename','名前訂正']].forEach(([key,label]) => {
+        const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+        button.disabled = !ready || busy;
+        button.className = key === 'complete' ? 'primary' : key === 'reopen' ? 'return' : '';
+        button.addEventListener('click', () => key === 'history' ? history(record) : confirm(record,key)); actions.append(button);
+      }); operations.append(actions); tr.append(operations); $('rows').append(tr);
+    });
+    document.querySelectorAll('.write').forEach(b => b.disabled = !ready || busy);
+  }
+  async function perform(input, action, revision) {
+    if (!ready || busy || !navigator.onLine) { message('接続が確認できてから操作してください。', true); return false; }
+    busy = true; render(); $('confirmOk').disabled = true; $('confirmCancel').disabled = true;
+    const operationEpoch = epoch;
+    try {
+      await IhaiCore.save(db, user, input, action, revision, () => firebase.firestore.FieldValue.serverTimestamp());
+      if (operationEpoch !== epoch) return false;
+      message(action === 'register' ? '登録しました。' : action === 'complete' ? '引取済として消込しました。' : action === 'reopen' ? '未完了に戻しました。履歴は保存されています。' : '名前を訂正しました。');
+      return true;
+    } catch (err) { if (operationEpoch === epoch) message(errorText(err), true); return false; }
+    finally { busy = false; $('confirmOk').disabled = false; $('confirmCancel').disabled = false; render(); }
+  }
+  function confirm(record, action) {
+    pendingAction = { record, action }; $('confirmTitle').textContent = titles[action];
+    $('confirmText').textContent = `伝票番号：${record.slip}\n名前：${record.name}\n\n${action === 'complete' ? '位牌の引き取りは完了していますか？' : action === 'reopen' ? '未完了に戻します。消込と取消の履歴は残ります。' : '訂正前と訂正後の名前を履歴に残します。'}`;
+    $('renameField').hidden = action !== 'rename'; $('newName').required = action === 'rename'; $('newName').value = record.name;
+    $('confirmDialog').showModal();
+  }
+  function history(record) {
+    if (historyUnsubscribe) historyUnsubscribe();
+    $('historyTitle').textContent = `操作履歴：${record.slip}`; $('historyContent').textContent = '読み込み中…'; $('historyDialog').showModal();
+    const currentEpoch = epoch;
+    historyUnsubscribe = db.collection('ihai_pickups').doc(record.id).collection('events').orderBy('at','desc').onSnapshot({includeMetadataChanges:true}, snap => {
+      if (currentEpoch !== epoch) return;
+      $('historyContent').replaceChildren();
+      if (snap.metadata.fromCache) { $('historyContent').textContent = '最新の履歴を確認しています…'; return; }
+      if (snap.empty) $('historyContent').textContent = '履歴はありません。';
+      snap.forEach(doc => { const e = doc.data(), div = document.createElement('div'); div.className = 'event';
+        const label = document.createElement('strong'); label.textContent = titles[e.action] || e.action;
+        const time = document.createElement('p'); time.className = 'date'; time.textContent = `${fmt(e.at)}（日本時間） · 迫`;
+        const name = document.createElement('p'); name.textContent = e.action === 'rename' ? `${e.oldName} → ${e.name}` : e.name;
+        div.append(label,time,name); $('historyContent').append(div);
+      });
+    }, err => { $('historyContent').textContent = errorText(err); });
+  }
+  function closeDialogs() { ['confirmDialog','historyDialog'].forEach(id => { if ($(id).open) $(id).close(); }); }
+  $('historyClose').onclick = () => $('historyDialog').close();
+  $('historyDialog').addEventListener('close', () => { if (historyUnsubscribe) historyUnsubscribe(); historyUnsubscribe = null; $('historyContent').replaceChildren(); });
+  $('confirmCancel').onclick = () => $('confirmDialog').close();
+  $('confirmDialog').addEventListener('cancel', e => { if (busy) e.preventDefault(); });
+  $('confirmForm').onsubmit = async e => {
+    e.preventDefault(); const p = pendingAction; if (!p) return;
+    const input = { slip:p.record.slip, name:p.action === 'rename' ? $('newName').value : p.record.name };
+    const ok = await perform(input,p.action,p.record.revision); if (ok) $('confirmDialog').close();
+    else if ($('confirmDialog').open) { $('confirmDialog').close(); } // 再度最新の行から操作
+  };
+  $('registerForm').onsubmit = async e => { e.preventDefault(); if (await perform({slip:$('slip').value,name:$('person').value},'register')) { $('registerForm').reset(); $('slip').focus(); } };
+  $('search').oninput = render; $('filter').onchange = render;
+  window.addEventListener('offline', () => { ready = false; $('connection').textContent = '通信が切れています · 操作停止中'; render(); });
+  window.addEventListener('online', () => { if (user) { $('connection').textContent = '再接続を確認しています…'; subscribe(epoch); } });
+  function subscribe(currentEpoch) {
+    if (unsubscribe) unsubscribe(); ready = false; render();
+    unsubscribe = db.collection('ihai_pickups').orderBy('updatedAt','desc').onSnapshot({includeMetadataChanges:true}, snap => {
+      if (currentEpoch !== epoch) return;
+      ready = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites && navigator.onLine;
+      records = ready ? snap.docs.map(d => ({...d.data(),id:d.id})) : [];
+      $('connection').textContent = ready ? '接続済 · 最新の状態' : '最新のデータを確認しています…'; render();
+    }, err => { if (currentEpoch !== epoch) return; ready = false; records = []; render(); $('connection').textContent = '読み込みできません'; message(errorText(err),true); });
+  }
+  $('loginForm').onsubmit = async e => {
+    e.preventDefault(); $('loginBtn').disabled = true; message('');
+    try { await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION); await auth.signInWithEmailAndPassword(IhaiCore.OWNER,$('password').value); }
+    catch (err) { message(errorText(err),true); }
+    finally { $('password').value = ''; $('loginBtn').disabled = false; }
+  };
+  $('logout').onclick = async () => { if (busy) { message('保存が完了してからログアウトしてください。'); return; } try { await auth.signOut(); message('ログアウトしました。'); } catch (err) { message(errorText(err),true); } };
+  try {
+    if (!window.firebase || !firebase.apps.length) throw new Error('Firebase設定を読み込めません。既存の firebase-config.js と同じフォルダーに ihai.html を配置してください。');
+    auth = firebase.auth(); db = firebase.firestore();
+    auth.onAuthStateChanged(async nextUser => {
+      epoch++; if (unsubscribe) unsubscribe(); unsubscribe = null; closeDialogs();
+      ready = false; records = []; user = null; $('app').hidden = true; $('logout').hidden = true; $('login').hidden = false; render();
+      if (!nextUser) return;
+      if (!IhaiCore.isOwner(nextUser)) { message('この画面は迫様専用です。迫様のアカウントでログインしてください。',true); return; }
+      user = nextUser; message(''); $('login').hidden = true; $('app').hidden = false; $('logout').hidden = false; subscribe(epoch);
+    });
+  } catch (err) { message(errorText(err),true); $('loginBtn').disabled = true; }
+})();
+
+</script></body></html>
+
+
+
+
