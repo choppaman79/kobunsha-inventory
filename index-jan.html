@@ -1109,6 +1109,72 @@
     #festivalMainTableWrap .work-table tbody td:nth-child(2) {position:static;}
   }
 
+  #tabDisaster .ds-bulk-toolbar input[type=search] {max-width:340px;margin:0;}
+  #tabDisaster .ds-bulk-only {display:flex;align-items:center;gap:6px;margin:0;white-space:nowrap;}
+  #tabDisaster .ds-bulk-only input {width:auto;margin:0;}
+  #tabDisaster .ds-bulk-summary {font-weight:700;color:var(--indigo-deep);}
+  #tabDisaster .ds-single-entry {margin:20px 0;padding:12px;border:1px solid var(--line);border-radius:8px;}
+  #tabDisaster #dsSave {margin-top:16px;max-width:420px;}
+  @media screen {
+    #tabDisaster .ds-table-wrap {overflow:auto;max-height:68vh;isolation:isolate;}
+    #tabDisaster .ds-table-wrap .work-table {display:table;width:100%;min-width:1000px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:14px;line-height:1.45;}
+    #tabDisaster .ds-table-wrap .work-table thead {display:table-header-group;}
+    #tabDisaster .ds-table-wrap .work-table tbody {display:table-row-group;width:auto;}
+    #tabDisaster .ds-table-wrap .work-table tbody tr {display:table-row;padding:0;}
+    #tabDisaster .ds-table-wrap .work-table th,
+    #tabDisaster .ds-table-wrap .work-table tbody td {display:table-cell;min-width:0;padding:10px;border:0;border-bottom:1px solid #e2ded6;vertical-align:middle;overflow-wrap:anywhere;}
+    #tabDisaster .ds-table-wrap .work-table th {position:sticky;top:0;z-index:2;background:#314563;color:white;font-size:13px;font-weight:700;text-align:left;line-height:1.5;}
+    #tabDisaster .ds-table-wrap .work-table tbody td::before {display:none;}
+    #tabDisaster .ds-table-wrap .work-table tbody td:nth-child(2) {font-weight:700;color:var(--indigo-deep);}
+    #tabDisaster .ds-table-wrap .work-table tbody tr:nth-child(even) {background:#faf9f6;}
+    #tabDisaster .ds-table-wrap .work-table tbody tr:hover {background:#eef2f7;}
+    #tabDisaster .ds-table-wrap .work-table tr[hidden] {display:none;}
+    #tabDisaster #dsBulkWrap .work-table {width:1261px;min-width:1261px;max-width:none;}
+    #tabDisaster #dsBulkWrap .work-table th,
+    #tabDisaster #dsBulkWrap .work-table td {width:auto;}
+    #tabDisaster #dsBulkWrap input[type=number] {width:100%;min-width:0;max-width:100%;height:34px;margin:0;padding:5px 6px;line-height:22px;font-size:14px;text-align:right;box-sizing:border-box;}
+    #tabDisaster #dsBulkWrap td:nth-child(n+3):nth-child(-n+10) {text-align:right;font-variant-numeric:tabular-nums;}
+    #tabDisaster #dsBulkWrap .ds-bulk-error {display:block;font-weight:400;font-size:12px;line-height:1.5;color:#a3392b;margin-top:5px;}
+    #tabDisaster #dsBulkWrap .ds-bulk-error[hidden] {display:none;}
+    #tabDisaster #dsBulkWrap .ds-bulk-selected {background:#eef5f0;}
+    #tabDisaster #dsBulkWrap .ds-bulk-invalid {background:#fff0ed;}
+    #tabDisaster #dsBulkWrap .btn-secondary-inline {display:block;width:100%;max-width:100%;margin:3px 0;padding:6px;font-size:12px;line-height:18px;white-space:normal;overflow-wrap:anywhere;}
+    #tabDisaster #dsBulkWrap .btn-secondary-inline[hidden] {display:none;}
+    #tabDisaster #dsBulkWrap th:nth-child(1),#tabDisaster #dsBulkWrap td:nth-child(1) {position:sticky;left:0;}
+    #tabDisaster #dsBulkWrap th:nth-child(2),#tabDisaster #dsBulkWrap td:nth-child(2) {position:sticky;left:90px;box-shadow:2px 0 #e2ded6;}
+    #tabDisaster #dsBulkWrap tbody td:nth-child(-n+2) {z-index:1;background:#fff;}
+    #tabDisaster #dsBulkWrap thead th:nth-child(-n+2) {z-index:3;}
+    #tabDisaster #dsBulkWrap .ds-bulk-selected td:nth-child(-n+2) {background:#eef5f0;}
+    #tabDisaster #dsBulkWrap .ds-bulk-invalid td:nth-child(-n+2) {background:#fff0ed;}
+    #tabDisaster #dsBulkWrap col:nth-child(1) {width:90px;}
+    #tabDisaster #dsBulkWrap col:nth-child(2) {width:250px;}
+    #tabDisaster #dsBulkWrap col:nth-child(3) {width:90px;}
+    #tabDisaster #dsBulkWrap col:nth-child(4) {width:80px;}
+    #tabDisaster #dsBulkWrap col:nth-child(5),#tabDisaster #dsBulkWrap col:nth-child(6) {width:84px;}
+    #tabDisaster #dsBulkWrap col:nth-child(7),#tabDisaster #dsBulkWrap col:nth-child(8) {width:112px;}
+    #tabDisaster #dsBulkWrap col:nth-child(9) {width:100px;}
+    #tabDisaster #dsBulkWrap col:nth-child(10) {width:118px;}
+    #tabDisaster #dsBulkWrap col:nth-child(11) {width:141px;}
+    #tabDisaster #dsCartWrap th:nth-child(2) {width:28%;}
+    #tabDisaster #dsCartWrap th:nth-child(3) {width:23%;}
+    #tabDisaster #dsCartWrap th:nth-child(6) {width:150px;}
+    #tabDisaster #dsCartWrap button,#tabDisaster #dsLedgerWrap button {width:auto;max-width:100%;margin:4px 0;padding:7px 10px;font-size:12px;line-height:18px;white-space:normal;}
+    #tabDisaster #dsLedgerWrap .work-table {min-width:1300px;}
+    #tabDisaster #dsLedgerWrap th:nth-child(3) {width:33%;}
+    #tabDisaster #dsLedgerWrap th:nth-child(6) {width:145px;}
+    #tabDisaster #dsLedgerWrap .ds-receive-row {display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0;}
+    #tabDisaster #dsLedgerWrap .ds-receive-row input[type=number] {width:90px;min-width:0;margin:0;padding:7px;font-size:14px;}
+    #tabDisaster #dsStockWrap .work-table {min-width:1450px;}
+    #tabDisaster #dsStockWrap th:nth-child(1) {width:85px;}
+    #tabDisaster #dsStockWrap th:nth-child(2) {width:260px;}
+    #tabDisaster #dsStockWrap td:nth-child(n+3) {text-align:right;font-variant-numeric:tabular-nums;}
+    #tabDisaster #dsSummaryWrap .work-table {min-width:680px;}
+  }
+  @media screen and (max-width:700px) {
+    #tabDisaster #dsBulkWrap th:nth-child(2) {left:auto;}
+    #tabDisaster #dsBulkWrap tbody td:nth-child(2) {position:static;}
+  }
+
 </style>
 </head>
 <body>
@@ -1424,20 +1490,39 @@
       <h2>防災斡旋・発注／入荷</h2><p>カテゴリー「防災用品」の商品と通常在庫を共用します。発注は入荷予定、入荷確定で在庫加算、出荷確定で在庫減算します。</p>
       <div class="toolbar"><label>入力・一覧<select id="dsMode"><option value="sale">注文入力・発送</option><option value="purchase">仕入先への発注・入荷</option></select></label><button type="button" class="btn-secondary-inline" id="dsNew">新しい入力</button><button type="button" class="btn-secondary-inline" id="dsFestival">月始祭準備（全商品・Excel取込）</button></div>
       <p id="dsStatus" role="status" aria-live="polite"></p>
-      <fieldset id="dsEntry"><legend>明細を入力</legend><div class="invoice-pdf-fields">
-        <div><label id="dsPartyLabel" for="dsParty">注文者・出荷先</label><input id="dsParty" type="text"></div><div><label for="dsReference">注文番号／発注番号（任意）</label><input id="dsReference" type="text"></div>
-        <div id="dsChannelWrap"><label for="dsChannel">区分</label><select id="dsChannel"><option>斡旋防災</option><option>売掛</option><option>ネット</option><option>前受</option><option>代引き</option><option>お供え</option></select></div><div id="dsExpectedWrap" hidden><label for="dsExpected">入荷予定日（任意）</label><input id="dsExpected" type="date"></div>
-        <div><label for="dsNote">備考（任意）</label><input id="dsNote" type="text"></div><div><label for="dsProduct">商品（コード・名前で選択）</label><select id="dsProduct"><option value="">商品を選択</option></select></div>
-        <div><label for="dsPack">1箱の入数（基準単位：<span id="dsBaseUnit">個</span>）</label><input id="dsPack" type="number" min="1" step="1" value="1"></div>
-        <div><label for="dsBoxes">箱数</label><input id="dsBoxes" type="number" min="0" step="1" value="0"></div><div><label for="dsLoose">ばら数量</label><input id="dsLoose" type="number" min="0" step="1" value="1"></div>
-        <div><label id="dsUnitPriceLabel" for="dsUnitPrice">販売ばら単価（円）</label><input id="dsUnitPrice" type="number" min="0" value="0"></div><div><label id="dsBoxPriceLabel" for="dsBoxPrice">販売箱単価（円）</label><input id="dsBoxPrice" type="number" min="0" value="0"></div>
-      </div><button type="button" class="btn-secondary-inline" id="dsPackSave">入数・箱単価を商品に保存</button><button type="button" class="btn-secondary-inline" id="dsAddLine">明細を追加</button>
-      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>箱・ばら</th><th>基準数量</th><th>金額</th><th>操作</th></tr></thead><tbody id="dsCart"></tbody></table></div><button type="button" class="btn-primary" id="dsSave">注文を登録</button></fieldset>
+      <fieldset id="dsEntry"><legend>注文・発注をまとめて入力</legend>
+        <div class="invoice-pdf-fields ds-common-fields">
+          <div><label id="dsPartyLabel" for="dsParty">注文者・出荷先</label><input id="dsParty" type="text"></div>
+          <div><label for="dsReference">注文番号／発注番号（任意）</label><input id="dsReference" type="text"></div>
+          <div id="dsChannelWrap"><label for="dsChannel">区分</label><select id="dsChannel"><option>斡旋防災</option><option>売掛</option><option>ネット</option><option>前受</option><option>代引き</option><option>お供え</option></select></div>
+          <div id="dsExpectedWrap" hidden><label for="dsExpected">入荷予定日（任意）</label><input id="dsExpected" type="date"></div>
+          <div><label for="dsNote">備考（任意）</label><input id="dsNote" type="text"></div>
+        </div>
+        <h3>防災用品を一覧で入力</h3>
+        <p>必要な商品の箱数・ばら数を入力してください。合計数量・金額は自動計算します。数量が空欄・両方0の商品は登録しません。入数・単価の変更は今回の注文・発注に適用します。</p>
+        <div class="toolbar ds-bulk-toolbar"><input type="search" id="dsBulkSearch" placeholder="商品コード・商品名・JANで検索" aria-label="一括入力する防災用品の検索"><label class="ds-bulk-only"><input type="checkbox" id="dsBulkOnly"> 入力済みだけ表示</label><span id="dsBulkCount" role="status"></span><button type="button" class="btn-secondary-inline" id="dsBulkClearAll">商品入力をクリア</button></div>
+        <p>Tabで次の欄へ、Enterで次の商品の同じ欄へ進みます。右側の単価・金額は横にスクロールして確認できます。</p>
+        <div class="work-scroll ds-table-wrap" id="dsBulkWrap" tabindex="0" aria-label="防災用品の一括入力表（横スクロール可能）"><table class="work-table ds-bulk-table"><colgroup><col><col><col><col><col><col><col><col><col><col><col></colgroup><thead><tr><th scope="col">コード</th><th scope="col">商品名</th><th scope="col">現在庫</th><th scope="col">1箱の<br>入数</th><th scope="col">箱数</th><th scope="col">ばら数</th><th scope="col" id="dsBulkUnitTitle">販売ばら単価（円）</th><th scope="col" id="dsBulkBoxTitle">販売箱単価（円）</th><th scope="col">合計数量</th><th scope="col">金額</th><th scope="col">入力の操作</th></tr></thead><tbody id="dsBulkRows"></tbody></table></div>
+        <p id="dsBulkSummary" class="ds-bulk-summary" role="status" aria-live="polite"></p>
+        <button type="button" class="btn-secondary-inline" id="dsBulkApply">入力した商品をまとめて明細へ反映</button>
+        <details class="ds-single-entry"><summary>個別入力・商品マスタの入数変更（任意）</summary>
+          <p>商品を1件ずつ追加する場合や、商品マスタの入数・箱単価を更新する場合に使います。</p>
+          <div class="invoice-pdf-fields">
+            <div><label for="dsProduct">商品（コード・名前で選択）</label><select id="dsProduct"><option value="">商品を選択</option></select></div>
+            <div><label for="dsPack">1箱の入数（基準単位：<span id="dsBaseUnit">個</span>）</label><input id="dsPack" type="number" min="1" step="1" value="1"></div>
+            <div><label for="dsBoxes">箱数</label><input id="dsBoxes" type="number" min="0" step="1" value="0"></div><div><label for="dsLoose">ばら数量</label><input id="dsLoose" type="number" min="0" step="1" value="1"></div>
+            <div><label id="dsUnitPriceLabel" for="dsUnitPrice">販売ばら単価（円）</label><input id="dsUnitPrice" type="number" min="0" value="0"></div><div><label id="dsBoxPriceLabel" for="dsBoxPrice">販売箱単価（円）</label><input id="dsBoxPrice" type="number" min="0" value="0"></div>
+          </div><button type="button" class="btn-secondary-inline" id="dsPackSave">入数・箱単価を商品に保存</button><button type="button" class="btn-secondary-inline" id="dsAddLine">個別の明細を追加</button>
+        </details>
+        <h3>登録予定の明細</h3><p>一括入力を「明細へ反映」で確認できます。下の登録ボタンでも、一括入力表の最新の数量・単価をまとめて反映して保存します。</p>
+        <div class="work-scroll ds-table-wrap" id="dsCartWrap"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>箱・ばら</th><th>基準数量</th><th>金額</th><th>操作</th></tr></thead><tbody id="dsCart"></tbody></table></div>
+        <button type="button" class="btn-primary" id="dsSave">注文を登録</button>
+      </fieldset>
       <h3>登録した注文・発注</h3><div class="toolbar"><label for="dsChannelFilter">区分</label><select id="dsChannelFilter"><option value="">すべて</option><option>斡旋防災</option><option>売掛</option><option>ネット</option><option>前受</option><option>代引き</option><option>お供え</option></select><input id="dsSearch" type="search" placeholder="相手先・番号・商品で検索"></div>
-      <div class="work-scroll"><table class="work-table"><thead><tr><th>登録日時・番号</th><th>区分・相手先</th><th>明細・数量</th><th>金額・予定日</th><th>状態・備考</th><th>操作</th></tr></thead><tbody id="dsLedger"></tbody></table></div>
+      <div class="work-scroll ds-table-wrap" id="dsLedgerWrap"><table class="work-table"><thead><tr><th>登録日時・番号</th><th>区分・相手先</th><th>明細・数量</th><th>金額・予定日</th><th>状態・備考</th><th>操作</th></tr></thead><tbody id="dsLedger"></tbody></table></div>
       <h3>商品別の在庫・必要数</h3><p>新方式の月始祭準備完了分は現在庫から減算済みです。準備確保数は旧方式の未精算分です。利用可能数は旧確保数を除き、必要数＝旧確保数＋未出荷注文数、過不足＝現在庫－必要数（＋は余り／－は不足）です。予定数だけでは在庫は動きません。</p><button type="button" class="btn-secondary-inline" id="dsCsv">在庫集計CSV</button>
-      <div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>月始祭等準備数</th><th>利用可能数</th><th>未出荷注文数</th><th>必要数</th><th>入荷予定数</th><th>過不足</th><th>不足数</th><th>入荷予定反映後過不足</th></tr></thead><tbody id="dsStock"></tbody></table></div>
-      <h3>区分別集計</h3><div class="work-scroll"><table class="work-table"><thead><tr><th>区分</th><th>注文件数</th><th>未出荷件数</th><th>出荷済件数</th><th>注文金額（取消除く）</th></tr></thead><tbody id="dsSummary"></tbody></table></div>
+      <div class="work-scroll ds-table-wrap" id="dsStockWrap"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>月始祭等準備数</th><th>利用可能数</th><th>未出荷注文数</th><th>必要数</th><th>入荷予定数</th><th>過不足</th><th>不足数</th><th>入荷予定反映後過不足</th></tr></thead><tbody id="dsStock"></tbody></table></div>
+      <h3>区分別集計</h3><div class="work-scroll ds-table-wrap" id="dsSummaryWrap"><table class="work-table"><thead><tr><th>区分</th><th>注文件数</th><th>未出荷件数</th><th>出荷済件数</th><th>注文金額（取消除く）</th></tr></thead><tbody id="dsSummary"></tbody></table></div>
       <p>以前の独立した防災在庫は自動合算しません。今回の注文・発注は新規入力から開始します。通常在庫の既存数量は保持します。</p>
     </section>
 
@@ -1905,9 +1990,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261117-incoming-jan-v52"></script>
+<script src="app-jan.js?v=20261117-disaster-bulk-jan-v53"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-17-incoming-jan-v52") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-17-disaster-bulk-jan-v53") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
