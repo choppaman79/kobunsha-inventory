@@ -1,21 +1,22 @@
-
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin"><title>位牌引き取り管理｜弘文社</title>
 <style>
 :root{font-family:"Yu Gothic UI","Meiryo",sans-serif;color:#213830;background:#f4f6f3;font-size:16px}*{box-sizing:border-box}body{margin:0}header{background:#214c40;color:white;padding:24px max(24px,calc((100vw - 1080px)/2));display:flex;justify-content:space-between;align-items:center;gap:12px}h1{font-size:24px;margin:4px 0}h2{font-size:19px;margin:0 0 18px}.brand{letter-spacing:.15em;font-size:12px;color:#c3d6cd}.sub{font-size:13px;color:#d5e2dc}main{max-width:1128px;margin:auto;padding:28px 24px}section,.card{background:white;border:1px solid #dce4df;border-radius:12px;padding:24px;margin-bottom:20px}#login{max-width:430px;margin:55px auto}label{display:block;font-size:14px;font-weight:600;margin-bottom:6px}input,select,button{font:inherit}input,select{width:100%;padding:12px;border:1px solid #a9bab0;border-radius:6px;background:white;color:#213830;min-height:46px}input:focus,select:focus,button:focus-visible{outline:3px solid #a8c8b7;outline-offset:2px}button{cursor:pointer;border:1px solid #b5c7bc;background:white;color:#214c40;border-radius:6px;padding:11px 16px;min-height:44px;white-space:nowrap}.primary{background:#245c49;color:white;border-color:#245c49}.return{color:#865f22;border-color:#bda77c}button:disabled{opacity:.5;cursor:default}.field{margin-bottom:18px}.grid{display:grid;grid-template-columns:1fr 1fr auto;gap:16px;align-items:end}.grid .field{margin:0}.hint{font-size:13px;color:#64786d;margin:12px 0 0}.topline{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.counts{display:flex;gap:12px;margin:0 0 22px;flex-wrap:wrap}.count{background:#e7eee9;padding:15px 22px;border-radius:9px;min-width:155px}.count strong{font-size:27px;margin-left:14px}.filters{display:grid;grid-template-columns:1fr 180px;gap:14px;margin:20px 0}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:14px;text-align:left}th{color:#64786d;font-size:12px;background:#f6f8f6;white-space:nowrap}th,td{padding:14px 12px;border-bottom:1px solid #e5ebe7}td.slip{font-weight:700;overflow-wrap:anywhere;min-width:120px}td.person{overflow-wrap:anywhere;min-width:120px}.actions{display:flex;gap:7px;flex-wrap:wrap}.actions button{font-size:13px;padding:8px 12px}.badge{display:inline-block;border-radius:20px;padding:5px 10px;font-size:12px;white-space:nowrap}.pending{background:#fff1d9;color:#7e591c}.completed{background:#e6f2eb;color:#216344}.date{font-size:12px;color:#65786d;white-space:nowrap}.empty{text-align:center;padding:40px;color:#64786d}.message{background:#edf4ef;border-radius:7px;padding:12px 16px;margin-bottom:18px;white-space:pre-wrap}.error{background:#fff0eb;color:#8c3925}.connection{font-size:13px;font-weight:600;color:#64786d}.headerbtn{background:transparent;border-color:#85aa98;color:white;font-size:13px}dialog{width:min(680px,calc(100% - 24px));border:1px solid #b5c7bc;border-radius:12px;padding:24px;max-height:85vh}dialog::backdrop{background:#10291b66}.event{padding:14px 0;border-bottom:1px solid #e5ebe7}.event p{margin:5px 0;overflow-wrap:anywhere}footer{font-size:12px;text-align:center;color:#74877b;padding:10px 20px 25px}[hidden]{display:none!important}@media(max-width:650px){header{padding:20px}h1{font-size:21px}main{padding:20px 12px}.grid,.filters{grid-template-columns:1fr}.count{padding:12px;min-width:130px}.count strong{font-size:23px}section{padding:18px}#login{margin:25px auto}}
+.register-grid{grid-template-columns:1fr 1fr 170px auto}.month-filters{grid-template-columns:1fr 180px 190px}.monthly-total{font-weight:700;background:#edf4ef}@media(max-width:650px){.register-grid,.month-filters{grid-template-columns:1fr}}
 </style></head><body>
 <header><div><div class="brand">KOBUNSHA</div><h1>位牌引き取り管理</h1><div class="sub">受付から、引き取り確認まで。</div></div><button id="logout" class="headerbtn" hidden>迫さん · ログアウト</button></header>
 <main><div id="message" class="message" role="status" aria-live="polite" hidden></div>
 <section id="login"><h2>ログイン</h2><form id="loginForm"><div class="field"><label for="loginName">名前</label><input id="loginName" value="迫" readonly autocomplete="username"></div><div class="field"><label for="password">パスワード</label><input id="password" type="password" autocomplete="current-password" required></div><button id="loginBtn" class="primary" type="submit">ログインする</button><p class="hint">在庫管理システムと同じパスワードを入力してください。</p></form></section>
 <div id="app" hidden>
 <div class="counts"><div class="count">未完了<strong id="pendingCount">—</strong></div><div class="count">消込済<strong id="completedCount">—</strong></div></div>
-<section id="excelSection"><div class="topline"><h2 style="margin:0">Excelから一括登録</h2><button id="excelTemplate" type="button">入力用Excelをダウンロード</button></div><p class="hint">1行目に「伝票番号」「名前」、2行目以降にデータを入れてください。取り込んだ記録は「未完了」になります。</p><p class="hint">伝票番号の列はExcelで「文字列」にすると、先頭の0を保持できます。</p><div class="grid" style="margin-top:18px"><div class="field"><label for="excelFile">Excelファイル（.xlsx / .xls）</label><input id="excelFile" type="file" accept=".xlsx,.xls"></div><div class="field"><label for="excelSheet">取り込むシート</label><select id="excelSheet" disabled><option>ファイルを選択してください</option></select></div><button id="excelPreview" type="button" disabled>内容を確認する</button></div><p class="hint">1回1,000行・10MBまで。登録済みの伝票番号は上書きしません。</p><div id="excelResults" hidden><p id="excelSummary" class="message" role="status" style="margin-top:18px"></p><div class="tablewrap" style="max-height:340px"><table><thead><tr><th>Excel行</th><th>伝票番号</th><th>名前</th><th>確認結果</th></tr></thead><tbody id="excelRows"></tbody></table></div><p class="hint">空欄や不備のある行、Excel内で伝票番号が重複している行は除外します。プレビューだけでは登録されません。</p><div class="actions" style="margin-top:16px"><button id="excelImport" type="button" class="primary" disabled>新規の行を登録する</button><button id="excelStop" type="button" hidden>処理を停止する</button><button id="excelClear" type="button">確認を閉じる</button></div><p id="excelProgress" class="hint" role="status" aria-live="polite"></p></div></section>
-<section><h2>新しく登録する</h2><form id="registerForm" class="grid"><div class="field"><label for="slip">伝票番号</label><input id="slip" maxlength="80" autocomplete="off" required placeholder="例：001234"></div><div class="field"><label for="person">名前</label><input id="person" maxlength="100" autocomplete="off" required placeholder="お名前を入力"></div><button class="primary write" type="submit">登録する</button></form><p class="hint">伝票番号の先頭の「0」も保存されます。全角の英数字は半角にそろえます。</p></section>
-<section><div class="topline"><h2 style="margin:0">引き取り状況</h2><span id="connection" class="connection" role="status">接続を確認しています…</span></div><div class="filters"><div><label for="search">伝票番号・名前で検索</label><input id="search" type="search" placeholder="番号や名前の一部を入力" autocomplete="off"></div><div><label for="filter">表示する状況</label><select id="filter"><option value="pending">未完了</option><option value="completed">消込済</option><option value="all">すべて</option></select></div></div><p class="hint" id="shown"></p><div class="tablewrap"><table><thead><tr><th>伝票番号</th><th>名前</th><th>状況</th><th>引取日時</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div><p class="hint">位牌を引き取ったら「引取済にする」を押してください。履歴は消えません。</p></section>
+<section><h2>月分別の集計</h2><p class="hint">ExcelのC列・画面で設定した月分を基準に集計します。実際の引取月による集計ではありません。</p><div class="tablewrap" style="margin-top:14px"><table><thead><tr><th>月分</th><th>登録件数</th><th>未引取件数</th><th>引取済件数</th></tr></thead><tbody id="monthlyRows"></tbody></table></div><p class="hint">全記録の集計です。消込・未完了への戻し・月分の変更を反映します。</p></section>
+<section id="excelSection"><div class="topline"><h2 style="margin:0">Excelから一括登録</h2><button id="excelTemplate" type="button">入力用Excelをダウンロード</button></div><p class="hint">1行目はA列「伝票番号」・B列「名前」・C列「月分」。2行目以降のC列には「2026年11月分」の形式で入力してください。取り込んだ記録は「未完了」になります。</p><p class="hint">伝票番号の列はExcelで「文字列」にすると、先頭の0を保持できます。</p><div class="grid" style="margin-top:18px"><div class="field"><label for="excelFile">Excelファイル（.xlsx / .xls）</label><input id="excelFile" type="file" accept=".xlsx,.xls"></div><div class="field"><label for="excelSheet">取り込むシート</label><select id="excelSheet" disabled><option>ファイルを選択してください</option></select></div><button id="excelPreview" type="button" disabled>内容を確認する</button></div><p class="hint">1回1,000行・10MBまで。登録済みで月分がない記録は、月分だけを補います。名前・引取状況は維持します。</p><div id="excelResults" hidden><p id="excelSummary" class="message" role="status" style="margin-top:18px"></p><div class="tablewrap" style="max-height:340px"><table><thead><tr><th>Excel行</th><th>伝票番号</th><th>名前</th><th>月分</th><th>確認結果</th></tr></thead><tbody id="excelRows"></tbody></table></div><p class="hint">空欄や不備のある行、Excel内で伝票番号が重複している行は除外します。プレビューだけでは登録されません。</p><div class="actions" style="margin-top:16px"><button id="excelImport" type="button" class="primary" disabled>新規の行を登録する</button><button id="excelStop" type="button" hidden>処理を停止する</button><button id="excelClear" type="button">確認を閉じる</button></div><p id="excelProgress" class="hint" role="status" aria-live="polite"></p></div></section>
+<section><h2>新しく登録する</h2><form id="registerForm" class="grid register-grid"><div class="field"><label for="slip">伝票番号</label><input id="slip" maxlength="80" autocomplete="off" required placeholder="例：001234"></div><div class="field"><label for="person">名前</label><input id="person" maxlength="100" autocomplete="off" required placeholder="お名前を入力"></div><div class="field"><label for="period">月分</label><input id="period" type="month" min="1900-01" max="9999-12" required></div><button class="primary write" type="submit">登録する</button></form><p class="hint">伝票番号の先頭の「0」も保存されます。全角の英数字は半角にそろえます。</p></section>
+<section><div class="topline"><h2 style="margin:0">引き取り状況</h2><span id="connection" class="connection" role="status">接続を確認しています…</span></div><div class="filters month-filters"><div><label for="search">伝票番号・名前で検索</label><input id="search" type="search" placeholder="番号や名前の一部を入力" autocomplete="off"></div><div><label for="filter">表示する状況</label><select id="filter"><option value="pending">未完了</option><option value="completed">消込済</option><option value="all">すべて</option></select></div><div><label for="monthFilter">月分で絞り込み</label><select id="monthFilter"><option value="all">すべての月分</option></select></div></div><p class="hint" id="shown"></p><div class="tablewrap"><table><thead><tr><th>伝票番号</th><th>名前</th><th>月分</th><th>状況</th><th>引取日時</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div><p class="hint">位牌を引き取ったら「引取済にする」を押してください。履歴は消えません。</p></section>
 </div></main>
-<dialog id="confirmDialog"><h2 id="confirmTitle"></h2><p id="confirmText" style="white-space:pre-wrap;overflow-wrap:anywhere"></p><form id="confirmForm"><div id="renameField" class="field" hidden><label for="newName">正しい名前</label><input id="newName" maxlength="100"></div><div class="actions"><button id="confirmOk" class="primary" type="submit">実行する</button><button id="confirmCancel" type="button">やめる</button></div></form></dialog>
+<dialog id="confirmDialog"><h2 id="confirmTitle"></h2><p id="confirmText" style="white-space:pre-wrap;overflow-wrap:anywhere"></p><form id="confirmForm"><div id="renameField" class="field" hidden><label for="newName">正しい名前</label><input id="newName" maxlength="100"></div><div id="periodField" class="field" hidden><label for="newPeriod">月分</label><input id="newPeriod" type="month" min="1900-01" max="9999-12"></div><div class="actions"><button id="confirmOk" class="primary" type="submit">実行する</button><button id="confirmCancel" type="button">やめる</button></div></form></dialog>
 <dialog id="historyDialog"><div class="topline"><h2 id="historyTitle">操作履歴</h2><button id="historyClose">閉じる</button></div><div id="historyContent"></div></dialog>
-<footer>弘文社 · 位牌引き取り管理 · Excel取込版 2026.11.17</footer>
+<footer>弘文社 · 位牌引き取り管理 · 月分集計版 2026.11.17</footer>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
@@ -33,6 +34,26 @@ const IhaiCore = (() => {
     return { slip, name, id: 's_' + encodeURIComponent(slip) };
   }
   function isOwner(user) { return !!user && user.email === OWNER; }
+  function period(value, required = false) {
+    const text = String(value ?? '').normalize('NFKC').replace(/\s/g,'');
+    if (!text && !required) return '';
+    const m = /^(\d{4})(?:年(\d{1,2})月分|-(\d{2}))$/.exec(text);
+    if (!m || Number(m[1]) < 1900 || Number(m[1]) > 9999 || Number(m[2] || m[3]) < 1 || Number(m[2] || m[3]) > 12) throw new Error('月分は「2026年11月分」の形式で入力してください。');
+    return `${m[1]}-${String(Number(m[2] || m[3])).padStart(2,'0')}`;
+  }
+  function periodLabel(value) { const key = period(value); return key ? `${key.slice(0,4)}年${Number(key.slice(5))}月分` : '月分未設定'; }
+  function recordPeriod(record) { try { return period(record.period); } catch { return ''; } }
+  function monthlySummary(records) {
+    const groups = new Map();
+    for (const record of records) {
+      const key = recordPeriod(record);
+      if (!groups.has(key)) groups.set(key,{period:key,total:0,pending:0,completed:0});
+      const group = groups.get(key); group.total++;
+      if (record.status === 'pending') group.pending++;
+      if (record.status === 'completed') group.completed++;
+    }
+    return [...groups.values()].sort((a,b)=>a.period === '' ? 1 : b.period === '' ? -1 : b.period.localeCompare(a.period));
+  }
   async function save(db, user, input, action, expectedRevision, stamp) {
     if (!isOwner(user)) throw new Error('迫様のアカウントでログインしてください。');
     const v = validate(input.slip, input.name);
@@ -44,26 +65,31 @@ const IhaiCore = (() => {
       if (action === 'register' && old) { const error = new Error('この伝票番号は登録済みです。検索してご確認ください。'); error.code = 'ihai/duplicate'; throw error; }
       if (action !== 'register' && !old) throw new Error('対象の記録が見つかりません。再読み込みしてください。');
       if (old && old.revision !== expectedRevision) throw new Error('別の画面で更新されています。最新の表示を確認してから再操作してください。');
-      if (!['register', 'complete', 'reopen', 'rename'].includes(action)) throw new Error('操作が正しくありません。');
+      if (!['register', 'complete', 'reopen', 'rename', 'setPeriod'].includes(action)) throw new Error('操作が正しくありません。');
       if (action === 'complete' && old.status !== 'pending') throw new Error('すでに消込済みです。');
       if (action === 'reopen' && old.status !== 'completed') throw new Error('すでに未完了です。');
       if (action === 'rename' && old.name === v.name) throw new Error('名前が変更されていません。');
+      const oldPeriod = old ? recordPeriod(old) : '';
+      const nextPeriod = action === 'register' ? period(input.period) : action === 'setPeriod' ? period(input.period,true) : oldPeriod;
+      if (action === 'setPeriod' && nextPeriod === oldPeriod) throw new Error('月分が変更されていません。');
       const status = action === 'complete' ? 'completed' : action === 'reopen' || action === 'register' ? 'pending' : old.status;
       const now = stamp();
       const record = {
         slip: v.slip, name: action === 'register' || action === 'rename' ? v.name : old.name,
         status, revision: old ? old.revision + 1 : 1,
         createdAt: old ? old.createdAt : now, updatedAt: now,
-        completedAt: action === 'complete' ? now : action === 'rename' ? old.completedAt : null,
+        completedAt: action === 'complete' ? now : ['rename','setPeriod'].includes(action) ? old.completedAt : null,
+        period: nextPeriod,
         updatedBy: user.uid, lastEventId: event.id
       };
       tx.set(ref, record);
       tx.set(event, { action, from: old ? old.status : '', to: status,
         oldName: old ? old.name : '', name: record.name, slip: v.slip,
+        period: nextPeriod, oldPeriod,
         revision: record.revision, at: now, by: user.uid });
     });
   }
-  return { OWNER, validate, isOwner, save };
+  return { OWNER, validate, isOwner, save, period, periodLabel, recordPeriod, monthlySummary };
 })();
 if (typeof module !== 'undefined') module.exports = IhaiCore;
 
@@ -74,7 +100,7 @@ const IhaiExcel = (() => {
     if (!sheet || !sheet['!ref']) throw new Error('選択したシートにデータがありません。');
     const range = XLSX.utils.decode_range(sheet['!fullref'] || sheet['!ref']);
     if (range.e.r > MAX_ROWS) throw new Error('1回に取り込めるのは、見出し行を除いて1,000行までです。Excelを分けてください。');
-    if (range.e.c > 99) throw new Error('Excelは100列以内にしてください。必要な列は「伝票番号」「名前」の2列です。');
+    if (range.e.c > 99) throw new Error('Excelは100列以内にしてください。必要な列は「伝票番号」「名前」「月分」です。');
     const cell = (r,c) => sheet[XLSX.utils.encode_cell({r,c})];
     const displayed = c => c ? String(c.w != null ? c.w : XLSX.utils.format_cell(c) || '').trim() : '';
     const heading = c => displayed(c).normalize('NFKC').replace(/\s/g,'');
@@ -84,35 +110,44 @@ const IhaiExcel = (() => {
       if (['名前','氏名'].includes(heading(cell(0,c)))) columns.name.push(c);
     }
     if (columns.slip.length !== 1 || columns.name.length !== 1) throw new Error('1行目に「伝票番号」「名前」（または「氏名」）の見出しを1つずつ入れてください。');
+    if (!['月分','何月分','対象月'].includes(heading(cell(0,2)))) throw new Error('C列の1行目に「月分」、2行目以降に「2026年11月分」の形式で入力してください。');
+    if (columns.slip[0] === 2 || columns.name[0] === 2) throw new Error('C列は月分専用です。伝票番号・名前はA列とB列などに分けてください。');
     const existing = new Map(existingRecords.map(r=>[IhaiCore.validate(r.slip,r.name).id,r]));
     const rows = [];
     for (let r = 1; r <= range.e.r; r++) {
-      const a = cell(r,columns.slip[0]), b = cell(r,columns.name[0]);
-      const slip = displayed(a), name = displayed(b);
-      if (!slip && !name && !a?.f && !b?.f) continue;
-      const entry = { row:r+1, slip, name, status:'new', detail:'新規登録します' };
+      const a = cell(r,columns.slip[0]), b = cell(r,columns.name[0]), c = cell(r,2);
+      const slip = displayed(a), name = displayed(b), monthText = displayed(c);
+      if (!slip && !name && !monthText && !a?.f && !b?.f && !c?.f) continue;
+      const entry = { row:r+1, slip, name, monthText, status:'new', detail:'新規登録します' };
       try {
-        if (a?.f || b?.f) throw new Error('数式を値に貼り付け直してください。');
+        if (a?.f || b?.f || c?.f) throw new Error('数式を値に貼り付け直してください。');
+        if (c && !['s','str'].includes(c.t)) throw new Error('C列の月分は「2026年11月分」の文字列で入力してください。');
+        if (!/^\d{4}年\d{1,2}月分$/.test(monthText.normalize('NFKC').replace(/\s/g,''))) throw new Error('月分は「2026年11月分」の形式で入力してください。');
+        entry.period = IhaiCore.period(monthText,true); entry.monthText = IhaiCore.periodLabel(entry.period);
         if ([a,b].some(c=>c && !['s','str','n','z'].includes(c.t))) throw new Error('文字列または番号を入力してください。');
         if (a?.t === 'n' && (!Number.isSafeInteger(a.v) || a.v < 0 || a.v >= 1e15)) throw new Error('伝票番号は文字列で入力してください（16桁以上の数値や小数は不可）。');
         if (a?.t === 'n' && a.z && XLSX.SSF.is_date(a.z)) throw new Error('伝票番号が日付形式です。文字列に直してください。');
         const v = IhaiCore.validate(slip,name); Object.assign(entry,v);
         const old = existing.get(v.id);
-        if (old) { entry.status='existing'; entry.detail=old.name === v.name ? '登録済みのため取り込みません' : '登録済み（名前が異なります）。上書きしません'; }
+        if (old) {
+          entry.status='existing';
+          if(old.name===v.name && !IhaiCore.recordPeriod(old)) {entry.status='setMonth';entry.revision=old.revision;entry.detail='月分のみ設定します（名前・引取状況は維持）';}
+          else entry.detail=old.name !== v.name ? '登録済み（名前が異なります）。上書きしません' : IhaiCore.recordPeriod(old) !== entry.period ? '登録済み（月分が異なります）。一覧の「月分設定」から変更してください' : '登録済みのため取り込みません';
+        }
       } catch (err) { entry.status='invalid'; entry.detail=err.message; }
       rows.push(entry);
     }
     if (!rows.length) throw new Error('取り込むデータがありません。2行目以降に伝票番号と名前を入力してください。');
     const groups = new Map();
-    for (const row of rows.filter(r=>r.status==='new')) { if (!groups.has(row.id)) groups.set(row.id,[]); groups.get(row.id).push(row); }
+    for (const row of rows.filter(r=>['new','setMonth'].includes(r.status))) { if (!groups.has(row.id)) groups.set(row.id,[]); groups.get(row.id).push(row); }
     for (const group of groups.values()) if (group.length > 1) for (const row of group) { row.status='duplicate'; row.detail='Excel内で伝票番号が重複しています。重複した行はすべて除外します'; }
     return rows;
   }
   async function commit(rows, save, canContinue, progress) {
-    const targets = rows.filter(r=>r.status==='new'); let attempted = 0;
+    const targets = rows.filter(r=>['new','setMonth'].includes(r.status)); let attempted = 0;
     for (const row of targets) {
       if (!canContinue()) return { stopped:true, attempted, total:targets.length };
-      try { await save(row); row.status='imported'; row.detail='未完了として登録しました'; }
+      try { const wasMonth=row.status==='setMonth';await save(row); row.status=wasMonth?'monthSet':'imported'; row.detail=wasMonth?'月分を設定しました（引取状況は維持）':'未完了として登録しました'; }
       catch (err) {
         if (err.code === 'ihai/duplicate') { row.status='existing'; row.detail='別の画面で登録済みのため取り込みません'; }
         else { row.status='failed'; row.detail=err.code === 'permission-denied' ? '保存権限がありません' : '保存を確認できません。最新の一覧を確認してから再読み込みしてください'; attempted++; progress(row,attempted,targets.length); return { stopped:true, attempted, total:targets.length }; }
@@ -150,19 +185,19 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
     $('excelPreview').disabled = busy || excelParsing || !excelWorkbook || !ready;
     $('excelTemplate').disabled = busy || excelParsing;
     $('excelClear').disabled = busy || excelParsing;
-    $('excelImport').disabled = busy || excelParsing || !ready || excelNeedsReview || !excelRows.some(r=>r.status==='new');
+    $('excelImport').disabled = busy || excelParsing || !ready || excelNeedsReview || !excelRows.some(r=>['new','setMonth'].includes(r.status));
   }
   function excelRender() {
     const count = status => excelRows.filter(r=>r.status===status).length;
     $('excelResults').hidden = !excelRows.length;
-    $('excelSummary').textContent = `新規 ${count('new')}件 ／ 登録済 ${count('existing')}件 ／ Excel内重複 ${count('duplicate')}件 ／ 不備 ${count('invalid')}件 ／ 取込完了 ${count('imported')}件 ／ 保存未確認 ${count('failed')}件`;
+    $('excelSummary').textContent = `新規 ${count('new')}件 ／ 月分のみ設定 ${count('setMonth')}件 ／ 登録済 ${count('existing')}件 ／ Excel内重複 ${count('duplicate')}件 ／ 不備 ${count('invalid')}件 ／ 取込完了 ${count('imported')}件 ／ 月分設定完了 ${count('monthSet')}件 ／ 保存未確認 ${count('failed')}件`;
     $('excelRows').replaceChildren();
     for (const row of excelRows) {
       const tr=document.createElement('tr');
-      for (const value of [row.row,row.slip,row.name,row.detail]) { const td=document.createElement('td'); td.textContent=value; td.style.overflowWrap='anywhere'; tr.append(td); }
+      for (const value of [row.row,row.slip,row.name,row.monthText || '',row.detail]) { const td=document.createElement('td'); td.textContent=value; td.style.overflowWrap='anywhere'; tr.append(td); }
       $('excelRows').append(tr);
     }
-    $('excelImport').textContent = `新規${count('new')}件を登録する`;
+    $('excelImport').textContent = `新規${count('new')}件を登録・月分${count('setMonth')}件を設定する`;
     excelControls();
   }
   function excelReset() {
@@ -173,7 +208,7 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
     if (!ready || busy || !excelWorkbook) return;
     try {
       excelRows=IhaiExcel.prepare(window.XLSX,excelWorkbook,$('excelSheet').value,records); excelNeedsReview=false;
-      $('excelProgress').textContent='内容を確認し、「新規の行を登録する」を押してください。登録済みの状態と履歴は維持します。'; excelRender();
+      $('excelProgress').textContent='内容を確認して実行してください。登録済みで月分未設定の記録は、名前が一致した場合に月分だけを設定します。引取状況と履歴は維持します。'; excelRender();
     } catch (err) { excelRows=[]; excelRender(); message(err.message,true); }
   }
   $('excelFile').addEventListener('change', async () => {
@@ -202,18 +237,19 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
   $('excelTemplate').onclick=async()=>{
     excelParsing=true; excelControls();
     try {
-      const XLSX=await loadExcelLibrary(), sheet=XLSX.utils.aoa_to_sheet([['伝票番号','名前']]);
-      sheet['!cols']=[{wch:24},{wch:28}];
+      const XLSX=await loadExcelLibrary(), sheet=XLSX.utils.aoa_to_sheet([['伝票番号','名前','月分']]);
+      sheet['!cols']=[{wch:24},{wch:28},{wch:24}];
       const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'位牌引取');XLSX.writeFile(book,'ihai-import-template.xlsx');
-      message('入力用Excelをダウンロードしました。2行目以降に入力してください。伝票番号の列は「文字列」に設定してください。');
+      message('入力用Excelをダウンロードしました。C列は「2026年11月分」の形式で入力してください。伝票番号の列は「文字列」に設定してください。');
     } catch(err) { message(errorText(err),true); }
     finally { excelParsing=false; excelControls(); }
   };
   $('excelImport').onclick=()=>{
-    if (!ready || busy || excelNeedsReview || !excelRows.some(r=>r.status==='new')) return;
+    if (!ready || busy || excelNeedsReview || !excelRows.some(r=>['new','setMonth'].includes(r.status))) return;
     pendingAction={action:'import'}; $('confirmTitle').textContent='Excelから一括登録';
-    $('confirmText').textContent=`新規${excelRows.filter(r=>r.status==='new').length}件を「未完了」として登録します。\n登録済み・重複・不備の行は取り込みません。\n\n表示した内容で登録しますか？`;
+    $('confirmText').textContent=`新規${excelRows.filter(r=>r.status==='new').length}件を「未完了」として登録します。\n登録済みで月分未設定の${excelRows.filter(r=>r.status==='setMonth').length}件は、月分だけを設定します。名前・引取状況は変わりません。\n重複・不備の行は取り込みません。\n\n表示した内容で実行しますか？`;
     $('renameField').hidden=true;$('newName').required=false;$('confirmDialog').showModal();
+    $('periodField').hidden=true;$('newPeriod').required=false;
   };
   async function excelCommit() {
     if (!ready || busy || !navigator.onLine || excelNeedsReview) { message('最新の接続状態を確認し、内容確認からやり直してください。',true); return; }
@@ -223,18 +259,38 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
     const unload=e=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',unload);
     try {
       const result=await IhaiExcel.commit(excelRows,
-        row=>IhaiCore.save(db,currentUser,row,'register',undefined,()=>firebase.firestore.FieldValue.serverTimestamp()),
+        row=>IhaiCore.save(db,currentUser,row,row.status==='setMonth'?'setPeriod':'register',row.status==='setMonth'?row.revision:undefined,()=>firebase.firestore.FieldValue.serverTimestamp()),
         ()=>!excelStopped && navigator.onLine && currentEpoch===epoch && IhaiCore.isOwner(user),
         (row,n,total)=>{if(currentEpoch===epoch){$('excelProgress').textContent=`${n} / ${total}件を処理しました。`;excelRender();}});
       if (currentEpoch!==epoch) return;
       excelNeedsReview=true;
       const saved=excelRows.filter(r=>r.status==='imported').length;
-      $('excelProgress').textContent=`${result.stopped ? '処理を停止しました。' : '取り込みが完了しました。'}取込完了 ${saved}件。${result.stopped ? '登録済みの記録は保存されています。最新の一覧を確認し、「内容を確認する」から再確認してください。' : '登録した記録は一覧の「未完了」で確認できます。'}`;
-      message(result.stopped ? '取り込みを停止しました。確認結果をご覧ください。' : `Excelから${saved}件を登録しました。`,result.stopped);
+      const monthSet=excelRows.filter(r=>r.status==='monthSet').length;
+      $('excelProgress').textContent=`${result.stopped ? '処理を停止しました。' : '取り込みが完了しました。'}取込完了 ${saved}件。月分設定完了 ${monthSet}件。${result.stopped ? '登録済みの記録は保存されています。最新の一覧を確認し、「内容を確認する」から再確認してください。' : '新規登録した記録は一覧の「未完了」、集計は「月分別の集計」で確認できます。'}`;
+      message(result.stopped ? '取り込みを停止しました。確認結果をご覧ください。' : `Excelから${saved}件を登録し、${monthSet}件の月分を設定しました。`,result.stopped);
     } catch(err) { if(currentEpoch===epoch){excelNeedsReview=true;message(errorText(err),true);} }
     finally { window.removeEventListener('beforeunload',unload);busy=false;$('excelStop').hidden=true;render();excelRender(); }
   }
-  const titles = { register: '登録', complete: '引取済にする（消込）', reopen: '未完了に戻す', rename: '名前を訂正する' };
+  const titles = { register: '登録', complete: '引取済にする（消込）', reopen: '未完了に戻す', rename: '名前を訂正する', setPeriod:'月分を設定する' };
+  function renderMonthly() {
+    const groups=IhaiCore.monthlySummary(records), previous=$('monthFilter').value || 'all';
+    $('monthFilter').replaceChildren();
+    const choices=[['all','すべての月分'],...groups.map(g=>[g.period || 'unset',IhaiCore.periodLabel(g.period)])];
+    if(!ready && previous!=='all' && !choices.some(([key])=>key===previous)) choices.push([previous,previous==='unset' ? '月分未設定' : IhaiCore.periodLabel(previous)]);
+    for(const [key,label] of choices) {
+      const option=document.createElement('option');option.value=key;option.textContent=label;$('monthFilter').append(option);
+    }
+    $('monthFilter').value=[...$('monthFilter').children].some(o=>o.value===previous) ? previous : 'all';
+    $('monthlyRows').replaceChildren();
+    if (!ready || !groups.length) {
+      const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=4;td.className='empty';td.textContent=ready ? '集計する記録はありません。' : '最新のデータを確認しています。';tr.append(td);$('monthlyRows').append(tr);return;
+    }
+    for(const g of [...groups,{period:'total',total:records.length,pending:records.filter(r=>r.status==='pending').length,completed:records.filter(r=>r.status==='completed').length}]) {
+      const tr=document.createElement('tr');if(g.period==='total')tr.className='monthly-total';
+      for(const value of [g.period==='total' ? '合計' : IhaiCore.periodLabel(g.period),g.total,g.pending,g.completed]) {const td=document.createElement('td');td.textContent=value;tr.append(td);}
+      $('monthlyRows').append(tr);
+    }
+  }
   const fmt = v => v && typeof v.toDate === 'function' ? new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }).format(v.toDate()) : '—';
   function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); $('message').hidden = !text; }
   function errorText(err) {
@@ -244,25 +300,28 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
     return err.message || '処理できませんでした。再読み込みしてください。';
   }
   function render() {
+    renderMonthly();
     $('pendingCount').textContent = ready ? records.filter(r => r.status === 'pending').length : '—';
     $('completedCount').textContent = ready ? records.filter(r => r.status === 'completed').length : '—';
     const q = $('search').value.normalize('NFKC').trim().toLocaleLowerCase('ja');
     const filter = $('filter').value;
-    const visible = records.filter(r => (filter === 'all' || r.status === filter) && (r.slip + '\n' + r.name).normalize('NFKC').toLocaleLowerCase('ja').includes(q));
+    const month = $('monthFilter').value;
+    const visible = records.filter(r => (filter === 'all' || r.status === filter) && (month === 'all' || IhaiCore.recordPeriod(r) === (month === 'unset' ? '' : month)) && (r.slip + '\n' + r.name).normalize('NFKC').toLocaleLowerCase('ja').includes(q));
     $('shown').textContent = ready ? `${visible.length}件表示 ／ 全${records.length}件` : '最新のデータを確認しています。';
     $('rows').replaceChildren();
     if (!visible.length) {
-      const tr = document.createElement('tr'), td = document.createElement('td'); td.colSpan = 5; td.className = 'empty';
+      const tr = document.createElement('tr'), td = document.createElement('td'); td.colSpan = 6; td.className = 'empty';
       td.textContent = ready ? '該当する記録はありません。' : '読み込み待ちです。'; tr.append(td); $('rows').append(tr);
     }
     visible.forEach(record => {
       const tr = document.createElement('tr');
       for (const [value, cls] of [[record.slip,'slip'],[record.name,'person']]) { const td = document.createElement('td'); td.textContent = value; td.className = cls; tr.append(td); }
+      const periodCell=document.createElement('td');periodCell.textContent=IhaiCore.periodLabel(IhaiCore.recordPeriod(record));periodCell.className='date';tr.append(periodCell);
       const td = document.createElement('td'), badge = document.createElement('span'); badge.className = 'badge ' + record.status; badge.textContent = record.status === 'pending' ? '未完了' : '消込済'; td.append(badge); tr.append(td);
       const date = document.createElement('td'); date.textContent = fmt(record.completedAt); date.className = 'date'; tr.append(date);
       const operations = document.createElement('td'), actions = document.createElement('div'); actions.className = 'actions';
       const action = record.status === 'pending' ? 'complete' : 'reopen';
-      [[action, record.status === 'pending' ? '引取済にする' : '未完了に戻す'],['history','履歴'],['rename','名前訂正']].forEach(([key,label]) => {
+      [[action, record.status === 'pending' ? '引取済にする' : '未完了に戻す'],['history','履歴'],['rename','名前訂正'],['setPeriod','月分設定']].forEach(([key,label]) => {
         const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
         button.disabled = !ready || busy;
         button.className = key === 'complete' ? 'primary' : key === 'reopen' ? 'return' : '';
@@ -279,15 +338,16 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
     try {
       await IhaiCore.save(db, user, input, action, revision, () => firebase.firestore.FieldValue.serverTimestamp());
       if (operationEpoch !== epoch) return false;
-      message(action === 'register' ? '登録しました。' : action === 'complete' ? '引取済として消込しました。' : action === 'reopen' ? '未完了に戻しました。履歴は保存されています。' : '名前を訂正しました。');
+      message(action === 'register' ? '登録しました。' : action === 'complete' ? '引取済として消込しました。' : action === 'reopen' ? '未完了に戻しました。履歴は保存されています。' : action === 'setPeriod' ? '月分を設定しました。月分別の集計に反映します。' : '名前を訂正しました。');
       return true;
     } catch (err) { if (operationEpoch === epoch) message(errorText(err), true); return false; }
     finally { busy = false; $('confirmOk').disabled = false; $('confirmCancel').disabled = false; render(); }
   }
   function confirm(record, action) {
     pendingAction = { record, action }; $('confirmTitle').textContent = titles[action];
-    $('confirmText').textContent = `伝票番号：${record.slip}\n名前：${record.name}\n\n${action === 'complete' ? '位牌の引き取りは完了していますか？' : action === 'reopen' ? '未完了に戻します。消込と取消の履歴は残ります。' : '訂正前と訂正後の名前を履歴に残します。'}`;
+    $('confirmText').textContent = `伝票番号：${record.slip}\n名前：${record.name}\n月分：${IhaiCore.periodLabel(IhaiCore.recordPeriod(record))}\n\n${action === 'complete' ? '位牌の引き取りは完了していますか？' : action === 'reopen' ? '未完了に戻します。消込と取消の履歴は残ります。' : action === 'setPeriod' ? '設定前と設定後の月分を履歴に残します。引取状況は変わりません。' : '訂正前と訂正後の名前を履歴に残します。'}`;
     $('renameField').hidden = action !== 'rename'; $('newName').required = action === 'rename'; $('newName').value = record.name;
+    $('periodField').hidden=action!=='setPeriod';$('newPeriod').required=action==='setPeriod';$('newPeriod').value=IhaiCore.recordPeriod(record);
     $('confirmDialog').showModal();
   }
   function history(record) {
@@ -303,7 +363,8 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
         const label = document.createElement('strong'); label.textContent = titles[e.action] || e.action;
         const time = document.createElement('p'); time.className = 'date'; time.textContent = `${fmt(e.at)}（日本時間） · 迫`;
         const name = document.createElement('p'); name.textContent = e.action === 'rename' ? `${e.oldName} → ${e.name}` : e.name;
-        div.append(label,time,name); $('historyContent').append(div);
+        const month=document.createElement('p');month.textContent=e.action==='setPeriod' ? `${IhaiCore.periodLabel(e.oldPeriod || '')} → ${IhaiCore.periodLabel(e.period || '')}` : IhaiCore.periodLabel(e.period || '');
+        div.append(label,time,name,month); $('historyContent').append(div);
       });
     }, err => { $('historyContent').textContent = errorText(err); });
   }
@@ -315,12 +376,12 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
   $('confirmForm').onsubmit = async e => {
     e.preventDefault(); const p = pendingAction; if (!p) return;
     if (p.action==='import') { await excelCommit(); return; }
-    const input = { slip:p.record.slip, name:p.action === 'rename' ? $('newName').value : p.record.name };
+    const input = { slip:p.record.slip, name:p.action === 'rename' ? $('newName').value : p.record.name, period:p.action==='setPeriod' ? $('newPeriod').value : IhaiCore.recordPeriod(p.record) };
     const ok = await perform(input,p.action,p.record.revision); if (ok) $('confirmDialog').close();
     else if ($('confirmDialog').open) { $('confirmDialog').close(); } // 再度最新の行から操作
   };
-  $('registerForm').onsubmit = async e => { e.preventDefault(); if (await perform({slip:$('slip').value,name:$('person').value},'register')) { $('registerForm').reset(); $('slip').focus(); } };
-  $('search').oninput = render; $('filter').onchange = render;
+  $('registerForm').onsubmit = async e => { e.preventDefault(); const value=$('period').value;if (await perform({slip:$('slip').value,name:$('person').value,period:value},'register')) { $('registerForm').reset();$('period').value=value; $('slip').focus(); } };
+  $('search').oninput = render; $('filter').onchange = render; $('monthFilter').onchange=render;
   window.addEventListener('offline', () => { ready = false; $('connection').textContent = '通信が切れています · 操作停止中'; render(); });
   window.addEventListener('online', () => { if (user) { $('connection').textContent = '再接続を確認しています…'; subscribe(epoch); } });
   function subscribe(currentEpoch) {
