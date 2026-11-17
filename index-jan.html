@@ -1051,7 +1051,7 @@
   .festival-layout-hint {margin:8px 0;font-size:12px!important;}
   @media screen {
     #festivalMainTableWrap {overflow:auto;max-height:72vh;border:1px solid var(--line);border-radius:8px;isolation:isolate;}
-    #festivalMainTableWrap .work-table {width:2063px;min-width:2063px;max-width:none;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:14px;line-height:1.45;}
+    #festivalMainTableWrap .work-table {width:1903px;min-width:1903px;max-width:none;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:14px;line-height:1.45;}
     #tabFestival #festivalMainTableWrap .work-table th,
     #tabFestival #festivalMainTableWrap .work-table tbody td {width:auto;min-width:0;padding:12px 10px;border:0;border-bottom:1px solid #e2ded6;vertical-align:middle;overflow-wrap:normal;word-break:normal;}
     #festivalMainTableWrap .work-table thead th {height:58px;background:#314563;color:#fff;font-size:13px;line-height:1.5;text-align:center;white-space:normal;position:sticky;top:0;z-index:3;box-shadow:inset -1px 0 #52627b;}
@@ -1067,14 +1067,16 @@
     #festivalMainTableWrap .work-table tbody td:nth-child(6),
     #festivalMainTableWrap .work-table tbody td:nth-child(7),
     #festivalMainTableWrap .work-table tbody td:nth-child(n+10) {text-align:right;font-variant-numeric:tabular-nums;}
-    #festivalMainTableWrap .work-table tbody td:nth-child(8) {white-space:nowrap;}
+    #tabFestival #festivalMainTableWrap .work-table tbody td:nth-child(8) {white-space:normal;overflow:hidden;}
     #festivalMainTableWrap .work-table tbody td:nth-child(9) {text-align:center;}
-    #festivalMainTableWrap .work-table input,
-    #festivalMainTableWrap .work-table input[type=number] {width:100%;min-width:0;height:34px;margin:0;padding:6px 7px;font-size:14px;line-height:20px;text-align:right;}
-    #festivalMainTableWrap .work-table .batchQty {display:inline-block;width:64px;vertical-align:middle;}
-    #festivalMainTableWrap .work-table .festival-line-add,
-    #festivalMainTableWrap .work-table .festival-line-undo {display:inline-flex;width:auto;max-width:none;min-height:34px;margin:0 0 0 6px;padding:7px 8px;align-items:center;justify-content:center;vertical-align:middle;white-space:nowrap;word-break:keep-all;font-size:12px;line-height:18px;}
-    #festivalMainTableWrap .work-table .festival-line-state {white-space:nowrap;font-size:13px;padding:5px 8px;}
+    #tabFestival #festivalMainTableWrap .work-table input,
+    #tabFestival #festivalMainTableWrap .work-table input[type=number] {width:100%;min-width:0;height:34px;margin:0;padding:6px 7px;font-size:14px;line-height:20px;text-align:right;}
+    #tabFestival #festivalMainTableWrap .work-table input.batchQty[type=number] {display:inline-block;width:56px;min-width:56px;max-width:56px;vertical-align:middle;}
+    #tabFestival #festivalMainTableWrap .work-table .festival-line-add,
+    #tabFestival #festivalMainTableWrap .work-table .festival-line-undo {min-width:0;min-height:32px;padding:6px 8px;align-items:center;justify-content:center;vertical-align:middle;word-break:normal;font-size:12px;line-height:18px;box-sizing:border-box;}
+    #tabFestival #festivalMainTableWrap .work-table .festival-line-add {display:inline-flex;width:144px;max-width:calc(100% - 62px);margin:0 0 0 6px;white-space:normal;overflow-wrap:anywhere;}
+    #tabFestival #festivalMainTableWrap .work-table .festival-line-undo {display:flex;width:206px;max-width:100%;margin:6px 0 0;white-space:normal;overflow-wrap:anywhere;}
+    #tabFestival #festivalMainTableWrap .work-table .festival-line-state {max-width:100%;white-space:normal;overflow-wrap:anywhere;font-size:13px;line-height:1.4;padding:5px 8px;}
     /* 横に動かしても商品を確認できるよう、コードと商品名を固定。 */
     #festivalMainTableWrap .work-table th:nth-child(1),
     #festivalMainTableWrap .work-table td:nth-child(1) {position:sticky;left:0;}
@@ -1093,7 +1095,7 @@
     #festivalMainTableWrap .work-table col:nth-child(5) {width:95px;}
     #festivalMainTableWrap .work-table col:nth-child(6) {width:110px;}
     #festivalMainTableWrap .work-table col:nth-child(7) {width:95px;}
-    #festivalMainTableWrap .work-table col:nth-child(8) {width:390px;}
+    #festivalMainTableWrap .work-table col:nth-child(8) {width:230px;}
     #festivalMainTableWrap .work-table col:nth-child(9) {width:135px;}
     #festivalMainTableWrap .work-table col:nth-child(10) {width:85px;}
     #festivalMainTableWrap .work-table col:nth-child(11) {width:115px;}
