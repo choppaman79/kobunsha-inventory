@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin"><title>位牌引き取り管理｜弘文社</title>
 <style>
@@ -14,9 +15,9 @@
 <section><h2>新しく登録する</h2><form id="registerForm" class="grid register-grid"><div class="field"><label for="slip">伝票番号</label><input id="slip" maxlength="80" autocomplete="off" required placeholder="例：001234"></div><div class="field"><label for="person">名前</label><input id="person" maxlength="100" autocomplete="off" required placeholder="お名前を入力"></div><div class="field"><label for="period">月分</label><input id="period" type="month" min="1900-01" max="9999-12" required></div><button class="primary write" type="submit">登録する</button></form><p class="hint">伝票番号の先頭の「0」も保存されます。全角の英数字は半角にそろえます。</p></section>
 <section><div class="topline"><h2 style="margin:0">引き取り状況</h2><span id="connection" class="connection" role="status">接続を確認しています…</span></div><div class="filters month-filters"><div><label for="search">伝票番号・名前で検索</label><input id="search" type="search" placeholder="番号や名前の一部を入力" autocomplete="off"></div><div><label for="filter">表示する状況</label><select id="filter"><option value="pending">未完了</option><option value="completed">消込済</option><option value="all">すべて</option></select></div><div><label for="monthFilter">月分で絞り込み</label><select id="monthFilter"><option value="all">すべての月分</option></select></div></div><p class="hint" id="shown"></p><div class="tablewrap"><table><thead><tr><th>伝票番号</th><th>名前</th><th>月分</th><th>状況</th><th>引取日時</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div><p class="hint">位牌を引き取ったら「引取済にする」を押してください。履歴は消えません。</p></section>
 </div></main>
-<dialog id="confirmDialog"><h2 id="confirmTitle"></h2><p id="confirmText" style="white-space:pre-wrap;overflow-wrap:anywhere"></p><form id="confirmForm"><div id="renameField" class="field" hidden><label for="newName">正しい名前</label><input id="newName" maxlength="100"></div><div id="periodField" class="field" hidden><label for="newPeriod">月分</label><input id="newPeriod" type="month" min="1900-01" max="9999-12"></div><div class="actions"><button id="confirmOk" class="primary" type="submit">実行する</button><button id="confirmCancel" type="button">やめる</button></div></form></dialog>
+<dialog id="confirmDialog"><h2 id="confirmTitle"></h2><p id="confirmText" style="white-space:pre-wrap;overflow-wrap:anywhere"></p><form id="confirmForm"><div id="renameField" class="field" hidden><label for="newName">正しい名前</label><input id="newName" maxlength="100"></div><div id="periodField" class="field" hidden><label for="newPeriod">月分</label><input id="newPeriod" type="month" min="1900-01" max="9999-12"></div><div id="slipField" class="field" hidden><label for="newSlip">正しい伝票番号</label><input id="newSlip" maxlength="80" autocomplete="off"><p class="hint">訂正前の番号は別の記録には再利用できません。同じ記録を以前の番号に戻すことはできます。</p></div><div class="actions"><button id="confirmOk" class="primary" type="submit">実行する</button><button id="confirmCancel" type="button">やめる</button></div></form></dialog>
 <dialog id="historyDialog"><div class="topline"><h2 id="historyTitle">操作履歴</h2><button id="historyClose">閉じる</button></div><div id="historyContent"></div></dialog>
-<footer>弘文社 · 位牌引き取り管理 · 月分集計版 2026.11.17</footer>
+<footer>弘文社 · 位牌引き取り管理 · 伝票番号訂正版 2026.11.17</footer>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
@@ -57,7 +58,9 @@ const IhaiCore = (() => {
   async function save(db, user, input, action, expectedRevision, stamp) {
     if (!isOwner(user)) throw new Error('迫様のアカウントでログインしてください。');
     const v = validate(input.slip, input.name);
-    const ref = db.collection('ihai_pickups').doc(v.id);
+    // 記録IDは固定し、伝票番号だけを変更する。操作履歴も同じ場所に残す。
+    const ref = db.collection('ihai_pickups').doc(action === 'register' ? v.id : input.recordId || input.id || v.id);
+    const next = action === 'renumber' ? validate(input.newSlip, v.name) : null;
     const event = ref.collection('events').doc();
     await db.runTransaction(async tx => {
       const snapshot = await tx.get(ref);
@@ -65,7 +68,22 @@ const IhaiCore = (() => {
       if (action === 'register' && old) { const error = new Error('この伝票番号は登録済みです。検索してご確認ください。'); error.code = 'ihai/duplicate'; throw error; }
       if (action !== 'register' && !old) throw new Error('対象の記録が見つかりません。再読み込みしてください。');
       if (old && old.revision !== expectedRevision) throw new Error('別の画面で更新されています。最新の表示を確認してから再操作してください。');
-      if (!['register', 'complete', 'reopen', 'rename', 'setPeriod'].includes(action)) throw new Error('操作が正しくありません。');
+      if (!['register', 'complete', 'reopen', 'rename', 'setPeriod', 'renumber'].includes(action)) throw new Error('操作が正しくありません。');
+      if(old && old.slip !== v.slip) throw new Error('伝票番号が別の画面で変更されています。最新の記録を確認してください。');
+      // 元の記録と訂正先の予約を同じトランザクションで確認し、同時操作でも重複させない。
+      let numberRef;
+      if(action === 'register') {
+        numberRef = db.collection('ihai_slip_numbers').doc(v.id);
+        const reservation = await tx.get(numberRef);
+        if(reservation.exists) { const error = new Error('この伝票番号は使用済みです。訂正履歴を含めて重複しない番号にしてください。');error.code='ihai/duplicate';throw error; }
+      }
+      if(action === 'renumber') {
+        if(next.slip === old.slip) throw new Error('伝票番号が変更されていません。');
+        const targetRef = db.collection('ihai_pickups').doc(next.id);
+        numberRef = db.collection('ihai_slip_numbers').doc(next.id);
+        const target = await tx.get(targetRef), reservation = await tx.get(numberRef);
+        if((target.exists && targetRef.id !== ref.id) || (reservation.exists && reservation.data().recordId !== ref.id)) throw new Error('この伝票番号は別の記録で使用済みです。別の番号を入力してください。');
+      }
       if (action === 'complete' && old.status !== 'pending') throw new Error('すでに消込済みです。');
       if (action === 'reopen' && old.status !== 'completed') throw new Error('すでに未完了です。');
       if (action === 'rename' && old.name === v.name) throw new Error('名前が変更されていません。');
@@ -75,18 +93,21 @@ const IhaiCore = (() => {
       const status = action === 'complete' ? 'completed' : action === 'reopen' || action === 'register' ? 'pending' : old.status;
       const now = stamp();
       const record = {
-        slip: v.slip, name: action === 'register' || action === 'rename' ? v.name : old.name,
+        slip: next ? next.slip : v.slip, name: action === 'register' || action === 'rename' ? v.name : old.name,
         status, revision: old ? old.revision + 1 : 1,
         createdAt: old ? old.createdAt : now, updatedAt: now,
-        completedAt: action === 'complete' ? now : ['rename','setPeriod'].includes(action) ? old.completedAt : null,
+        completedAt: action === 'complete' ? now : ['rename','setPeriod','renumber'].includes(action) ? old.completedAt : null,
         period: nextPeriod,
         updatedBy: user.uid, lastEventId: event.id
       };
       tx.set(ref, record);
       tx.set(event, { action, from: old ? old.status : '', to: status,
-        oldName: old ? old.name : '', name: record.name, slip: v.slip,
+        oldName: old ? old.name : '', name: record.name, slip: record.slip,
+        oldSlip: old ? old.slip : '',
+        numberKey: next ? next.id : v.id,
         period: nextPeriod, oldPeriod,
         revision: record.revision, at: now, by: user.uid });
+      if(numberRef) tx.set(numberRef,{recordId:ref.id,slip:record.slip,updatedAt:now,updatedBy:user.uid});
     });
   }
   return { OWNER, validate, isOwner, save, period, periodLabel, recordPeriod, monthlySummary };
@@ -131,7 +152,7 @@ const IhaiExcel = (() => {
         const old = existing.get(v.id);
         if (old) {
           entry.status='existing';
-          if(old.name===v.name && !IhaiCore.recordPeriod(old)) {entry.status='setMonth';entry.revision=old.revision;entry.detail='月分のみ設定します（名前・引取状況は維持）';}
+          if(old.name===v.name && !IhaiCore.recordPeriod(old)) {entry.status='setMonth';entry.recordId=old.id;entry.revision=old.revision;entry.detail='月分のみ設定します（名前・引取状況は維持）';}
           else entry.detail=old.name !== v.name ? '登録済み（名前が異なります）。上書きしません' : IhaiCore.recordPeriod(old) !== entry.period ? '登録済み（月分が異なります）。一覧の「月分設定」から変更してください' : '登録済みのため取り込みません';
         }
       } catch (err) { entry.status='invalid'; entry.detail=err.message; }
@@ -250,6 +271,7 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
     $('confirmText').textContent=`新規${excelRows.filter(r=>r.status==='new').length}件を「未完了」として登録します。\n登録済みで月分未設定の${excelRows.filter(r=>r.status==='setMonth').length}件は、月分だけを設定します。名前・引取状況は変わりません。\n重複・不備の行は取り込みません。\n\n表示した内容で実行しますか？`;
     $('renameField').hidden=true;$('newName').required=false;$('confirmDialog').showModal();
     $('periodField').hidden=true;$('newPeriod').required=false;
+    $('slipField').hidden=true;$('newSlip').required=false;
   };
   async function excelCommit() {
     if (!ready || busy || !navigator.onLine || excelNeedsReview) { message('最新の接続状態を確認し、内容確認からやり直してください。',true); return; }
@@ -271,7 +293,7 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
     } catch(err) { if(currentEpoch===epoch){excelNeedsReview=true;message(errorText(err),true);} }
     finally { window.removeEventListener('beforeunload',unload);busy=false;$('excelStop').hidden=true;render();excelRender(); }
   }
-  const titles = { register: '登録', complete: '引取済にする（消込）', reopen: '未完了に戻す', rename: '名前を訂正する', setPeriod:'月分を設定する' };
+  const titles = { register: '登録', complete: '引取済にする（消込）', reopen: '未完了に戻す', rename: '名前を訂正する', setPeriod:'月分を設定する', renumber:'伝票番号を訂正する' };
   function renderMonthly() {
     const groups=IhaiCore.monthlySummary(records), previous=$('monthFilter').value || 'all';
     $('monthFilter').replaceChildren();
@@ -321,7 +343,7 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
       const date = document.createElement('td'); date.textContent = fmt(record.completedAt); date.className = 'date'; tr.append(date);
       const operations = document.createElement('td'), actions = document.createElement('div'); actions.className = 'actions';
       const action = record.status === 'pending' ? 'complete' : 'reopen';
-      [[action, record.status === 'pending' ? '引取済にする' : '未完了に戻す'],['history','履歴'],['rename','名前訂正'],['setPeriod','月分設定']].forEach(([key,label]) => {
+      [[action, record.status === 'pending' ? '引取済にする' : '未完了に戻す'],['history','履歴'],['rename','名前訂正'],['setPeriod','月分設定'],['renumber','伝票番号訂正']].forEach(([key,label]) => {
         const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
         button.disabled = !ready || busy;
         button.className = key === 'complete' ? 'primary' : key === 'reopen' ? 'return' : '';
@@ -338,7 +360,7 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
     try {
       await IhaiCore.save(db, user, input, action, revision, () => firebase.firestore.FieldValue.serverTimestamp());
       if (operationEpoch !== epoch) return false;
-      message(action === 'register' ? '登録しました。' : action === 'complete' ? '引取済として消込しました。' : action === 'reopen' ? '未完了に戻しました。履歴は保存されています。' : action === 'setPeriod' ? '月分を設定しました。月分別の集計に反映します。' : '名前を訂正しました。');
+      message(action === 'register' ? '登録しました。' : action === 'complete' ? '引取済として消込しました。' : action === 'reopen' ? '未完了に戻しました。履歴は保存されています。' : action === 'setPeriod' ? '月分を設定しました。月分別の集計に反映します。' : action === 'renumber' ? '伝票番号を訂正しました。訂正前後の番号を履歴に保存しました。' : '名前を訂正しました。');
       return true;
     } catch (err) { if (operationEpoch === epoch) message(errorText(err), true); return false; }
     finally { busy = false; $('confirmOk').disabled = false; $('confirmCancel').disabled = false; render(); }
@@ -348,6 +370,8 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
     $('confirmText').textContent = `伝票番号：${record.slip}\n名前：${record.name}\n月分：${IhaiCore.periodLabel(IhaiCore.recordPeriod(record))}\n\n${action === 'complete' ? '位牌の引き取りは完了していますか？' : action === 'reopen' ? '未完了に戻します。消込と取消の履歴は残ります。' : action === 'setPeriod' ? '設定前と設定後の月分を履歴に残します。引取状況は変わりません。' : '訂正前と訂正後の名前を履歴に残します。'}`;
     $('renameField').hidden = action !== 'rename'; $('newName').required = action === 'rename'; $('newName').value = record.name;
     $('periodField').hidden=action!=='setPeriod';$('newPeriod').required=action==='setPeriod';$('newPeriod').value=IhaiCore.recordPeriod(record);
+    if(action==='renumber') $('confirmText').textContent=`訂正前の伝票番号：${record.slip}\n名前：${record.name}\n月分：${IhaiCore.periodLabel(IhaiCore.recordPeriod(record))}\n\n名前・月分・引取状況と、これまでの履歴は維持します。正しい伝票番号を入力してください。`;
+    $('slipField').hidden=action!=='renumber';$('newSlip').required=action==='renumber';$('newSlip').value=record.slip;
     $('confirmDialog').showModal();
   }
   function history(record) {
@@ -363,6 +387,7 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
         const label = document.createElement('strong'); label.textContent = titles[e.action] || e.action;
         const time = document.createElement('p'); time.className = 'date'; time.textContent = `${fmt(e.at)}（日本時間） · 迫`;
         const name = document.createElement('p'); name.textContent = e.action === 'rename' ? `${e.oldName} → ${e.name}` : e.name;
+        if(e.action==='renumber') { const number=document.createElement('p');number.textContent=`伝票番号：${e.oldSlip} → ${e.slip}`;div.append(number); }
         const month=document.createElement('p');month.textContent=e.action==='setPeriod' ? `${IhaiCore.periodLabel(e.oldPeriod || '')} → ${IhaiCore.periodLabel(e.period || '')}` : IhaiCore.periodLabel(e.period || '');
         div.append(label,time,name,month); $('historyContent').append(div);
       });
@@ -376,7 +401,7 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
   $('confirmForm').onsubmit = async e => {
     e.preventDefault(); const p = pendingAction; if (!p) return;
     if (p.action==='import') { await excelCommit(); return; }
-    const input = { slip:p.record.slip, name:p.action === 'rename' ? $('newName').value : p.record.name, period:p.action==='setPeriod' ? $('newPeriod').value : IhaiCore.recordPeriod(p.record) };
+    const input = { id:p.record.id, slip:p.record.slip, newSlip:p.action==='renumber' ? $('newSlip').value : undefined, name:p.action === 'rename' ? $('newName').value : p.record.name, period:p.action==='setPeriod' ? $('newPeriod').value : IhaiCore.recordPeriod(p.record) };
     const ok = await perform(input,p.action,p.record.revision); if (ok) $('confirmDialog').close();
     else if ($('confirmDialog').open) { $('confirmDialog').close(); } // 再度最新の行から操作
   };
