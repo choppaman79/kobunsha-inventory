@@ -71,6 +71,7 @@ function init() {
   initPilotTools();
   initOpeningStockTools();
   initInventoryTools();
+  initIncomingWait();
   initInvoicePdfImport();
   initProductLabelSizes();
   initLabelPrinterGuide();
@@ -327,6 +328,7 @@ function subscribeProducts() {
   db.collection(COLLECTION).orderBy("name").onSnapshot(snapshot => {
     allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     refreshInvoiceProductNames();
+    incomingRefreshProducts();
     renderDisaster();
     phoneRenderProducts();
     renderShippingPolicy();
@@ -403,6 +405,7 @@ function renderProductList() {
       <th scope="col" class="inventory-code">商品コード</th>
       <th scope="col" class="inventory-name">商品名</th>
       <th scope="col" class="inventory-stock">現在庫数</th>
+      <th scope="col" class="inventory-incoming">入荷予定<br>未入荷数</th>
       <th scope="col" class="inventory-unit">単位</th>
       <th scope="col" class="inventory-price">単価</th>
       <th scope="col" class="inventory-action">操作</th>
@@ -431,6 +434,7 @@ function renderProductList() {
           </dl></details>
         </td>
         <td class="inventory-stock"><strong>${Number(p.currentStock ?? 0).toLocaleString("ja-JP")}</strong>${isLow ? '<span class="inventory-low-label">在庫僅少</span>' : ''}</td>
+        <td class="inventory-incoming"><strong>${incomingQtyText(p.id)}</strong><small>予定日：${escapeHtml(incomingDateText(p.id))}</small></td>
         <td class="inventory-unit">${escapeHtml(p.unit || "―")}</td>
         <td class="inventory-price">¥${Number(p.price || 0).toLocaleString("ja-JP")}</td>
         <td class="inventory-action"><div class="inventory-buttons">
@@ -1442,8 +1446,8 @@ function buildDeliverySheetHtml(s) {
 function getOpenOrderProductIds() {
   const ids = new Set();
   allOrders.forEach(o => {
-    if (o.status === "draft" || o.status === "ordered") {
-      (o.items || []).forEach(item => ids.add(item.productId));
+    if (["draft", "ordered", "part_received"].includes(o.status)) {
+      (o.items || []).forEach(item => {if(o.status==="draft"||Number(item.qty)>Number(item.receivedQty||0))ids.add(item.productId);});
     }
   });
   return ids;
@@ -1567,15 +1571,17 @@ function openSupplierOrder() {
 
 // ===================== Phase4: 発注（購入発注）管理 =====================
 function subscribeOrders() {
+  incomingSources.orders="loading";
   db.collection(ORDERS_COLLECTION).orderBy("createdAt", "desc").onSnapshot(snapshot => {
-    allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(o=>o.kind!==PHONE_KIND&&o.type!=="phone-reception").slice(0,200);
+    allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(o=>o.kind!==PHONE_KIND&&o.type!=="phone-reception");
+    incomingSources.orders="ready";refreshIncomingViews();
     if (document.getElementById("tabOrders").style.display !== "none") {
       renderLowStockAlert();
       renderOrderList(getActiveOrderFilter());
     }
     updateOrdersTabBadge(getLowStockNeedingOrder().length);
     handlePendingHash();
-  }, err => console.error(err));
+  }, err => {console.error(err);incomingSources.orders="error";refreshIncomingViews();});
 }
 
 function getActiveOrderFilter() {
@@ -1583,7 +1589,7 @@ function getActiveOrderFilter() {
   return active ? active.dataset.filter : "all";
 }
 
-const ORDER_STATUS_LABEL = { draft: "未発注", ordered: "発注済み", received: "入荷済み", cancelled: "キャンセル" };
+const ORDER_STATUS_LABEL = { draft: "未発注", ordered: "発注済み", part_received:"一部入荷", received: "入荷済み", cancelled: "キャンセル" };
 
 function renderOrderList(filter) {
   const listEl = document.getElementById("orderList");
@@ -1620,6 +1626,7 @@ function openOrderCreateModal(prefillItems, supplier) {
   currentOrderItems = Array.isArray(prefillItems) ? prefillItems.map(i => ({ ...i })) : [];
   document.getElementById("orderPartner").value = supplier || "";
   document.getElementById("orderMemo").value = "";
+  document.getElementById("orderExpectedDate").value = "";
   document.getElementById("orderItemCodeInput").value = "";
   document.getElementById("orderItemCodeError").textContent = "";
   const productSelect = document.getElementById("orderItemProduct");
@@ -1796,6 +1803,7 @@ function handleOrderCreateSave() {
   btn.disabled = true;
   db.collection(ORDERS_COLLECTION).add({
     orderNumber: generateOrderNumber(),
+    expectedDate: document.getElementById("orderExpectedDate").value,
     partner,
     memo,
     status: "draft",
@@ -1816,6 +1824,7 @@ function openOrderDetailModal(id) {
   const o = allOrders.find(x => x.id === id);
   if (!o) return;
   openOrderId = id;
+  incomingOrderDisplayed={...o,items:(o.items||[]).map(i=>({...i}))};
   document.getElementById("orderDetailNumber").textContent = o.orderNumber || "";
   document.getElementById("orderDetailStatus").textContent = ORDER_STATUS_LABEL[o.status] || o.status;
   document.getElementById("orderDetailStatus").className =
@@ -1823,9 +1832,9 @@ function openOrderDetailModal(id) {
   document.getElementById("orderDetailPartner").textContent = o.partner || "仕入先未設定";
   document.getElementById("orderDetailDate").textContent = o.createdAt && o.createdAt.toDate ? formatDateTime(o.createdAt.toDate()) : "";
   document.getElementById("orderDetailStaff").textContent = o.staff ? `作成：${o.staff}さん` : "";
-  document.getElementById("orderDetailMemo").textContent = o.memo || "";
+  document.getElementById("orderDetailMemo").textContent = (o.expectedDate?"入荷予定日："+o.expectedDate+"　":"")+(o.memo||"");
 
-  const isOrdered = o.status === "ordered";
+  const isOrdered = ["ordered","part_received"].includes(o.status);
   const isReceived = o.status === "received";
   const isCancelled = o.status === "cancelled";
 
@@ -1836,10 +1845,10 @@ function openOrderDetailModal(id) {
     tr.innerHTML = `
       <td>${escapeHtml(item.productName)}</td>
       <td>${escapeHtml(item.code || "")}</td>
-      <td>${item.qty}${escapeHtml(item.unit || "")}</td>
+      <td>${item.qty}${escapeHtml(item.unit || "")}<br>累計入荷 ${item.receivedQty ?? (isReceived ? item.qty : 0)}／未入荷 ${isReceived?0:Math.max(0,Number(item.qty)-Number(item.receivedQty||0))}</td>
       <td>
         ${isOrdered
-          ? `<input type="number" class="order-received-qty" data-idx="${idx}" min="0" value="${item.receivedQty ?? item.qty}">`
+          ? `<input type="number" class="order-received-qty" data-idx="${idx}" min="0" max="${Math.max(0,Number(item.qty)-Number(item.receivedQty||0))}" value="0">`
           : `${item.receivedQty ?? (isReceived ? item.qty : "―")}${item.receivedQty != null || isReceived ? escapeHtml(item.unit || "") : ""}`}
       </td>
     `;
@@ -1849,7 +1858,7 @@ function openOrderDetailModal(id) {
 
   document.getElementById("orderMarkOrderedBtn").style.display = (o.status === "draft") ? "block" : "none";
   document.getElementById("orderMarkReceivedBtn").style.display = isOrdered ? "block" : "none";
-  document.getElementById("orderCancelBtn").style.display = (o.status === "draft" || o.status === "ordered") ? "block" : "none";
+  document.getElementById("orderCancelBtn").style.display = (["draft","ordered","part_received"].includes(o.status)) ? "block" : "none";
   document.getElementById("orderDetailDoneNote").style.display = isReceived ? "block" : "none";
   document.getElementById("orderDetailCancelledNote").style.display = isCancelled ? "block" : "none";
   document.getElementById("orderReceivedQtyHint").style.display = isOrdered ? "block" : "none";
@@ -1858,7 +1867,7 @@ function openOrderDetailModal(id) {
 }
 
 function closeOrderDetailModal() {
-  openOrderId = null;
+  openOrderId = null;incomingOrderDisplayed=null;
   document.getElementById("orderDetailOverlay").classList.remove("show");
 }
 
@@ -1893,8 +1902,8 @@ function handleOrderMarkOrdered() {
 function handleOrderCancel() {
   if (!inventoryWritesAllowed()) return;
   if (!openOrderId) return;
-  if (!confirm("この発注をキャンセルします。よろしいですか？")) return;
-  changeOrderStatus(db.collection(ORDERS_COLLECTION).doc(openOrderId), ["draft", "ordered"], {
+  if (!confirm("この発注の未入荷分をキャンセルします。入荷済みの在庫・履歴は残ります。よろしいですか？")) return;
+  changeOrderStatus(db.collection(ORDERS_COLLECTION).doc(openOrderId), ["draft", "ordered", "part_received"], {
     status: "cancelled",
     cancelledAt: firebase.firestore.FieldValue.serverTimestamp(),
     cancelledBy: currentStaffName
@@ -1925,6 +1934,7 @@ function inventoryItemsSignature(items) {
 
 // 伝票/発注、商品在庫、履歴をまとめて確定する。読み取りは書き込みより先。
 async function completeInventoryRecord(ref, displayed, enteredItems, isOrder, staff) {
+  if(isOrder)return commitIncomingReceipt("order",ref.id,enteredItems.map(i=>i.receivedQty),incomingRecordState(displayed),staff);
   const quantityField = isOrder ? "receivedQty" : "checkedQty";
   const quantities = enteredItems.map(item =>
     inventoryQuantity(item[quantityField], item.productName + "の数量"));
@@ -2000,7 +2010,7 @@ async function completeInventoryRecord(ref, displayed, enteredItems, isOrder, st
 
 function handleOrderMarkReceived() {
   if (!inventoryWritesAllowed()) return;
-  const o = allOrders.find(x => x.id === openOrderId);
+  const o = incomingOrderDisplayed?.id===openOrderId?incomingOrderDisplayed:null;
   const btn = document.getElementById("orderMarkReceivedBtn");
   if (!o || btn.disabled) return;
   let items;
@@ -2022,7 +2032,7 @@ function handleOrderMarkReceived() {
     showToast(err.message || "反映に失敗しました");
   }).finally(() => {
     btn.disabled = false;
-    btn.textContent = "入荷完了として記録する（在庫に反映）";
+    btn.textContent = "今回の入荷分を在庫に反映";
   });
 }
 
@@ -2592,6 +2602,7 @@ function applyWorkTableView(type) {
   const term=search.value.trim().normalize("NFKC").toLowerCase();
   const compare=(a,b)=>a.localeCompare(b,"ja",{numeric:true,sensitivity:"base"});
   rows.sort((a,b)=>{
+    if(type==="festival"&&["progress","progress-desc"].includes(sort.value)){const rank=sort.value==="progress-desc"?{done:0,partial:1,waiting:2,unset:3,legacy:4}:{waiting:0,partial:1,done:2,unset:3,legacy:4},delta=rank[festivalProgressKey(a)]-rank[festivalProgressKey(b)];return delta||compare(a.dataset.name,b.dataset.name);}
     if(sort.value==="stock-desc")return Number(b.dataset.stock)-Number(a.dataset.stock)||compare(a.dataset.name,b.dataset.name);
     if(sort.value==="category")return compare(a.dataset.category,b.dataset.category)||compare(a.dataset.name,b.dataset.name);
     if(sort.value==="code")return compare(a.dataset.code||"\uffff",b.dataset.code||"\uffff")||compare(a.dataset.name,b.dataset.name);
@@ -2602,8 +2613,10 @@ function applyWorkTableView(type) {
     body.appendChild(row);
     const matchesCategory=!category.value||row.dataset.category===category.value;
     const matchesText=!term||`${row.dataset.name} ${row.dataset.code}`.normalize("NFKC").toLowerCase().includes(term);
-    row.style.display=matchesCategory&&matchesText?"":"none";
-    if(matchesCategory&&matchesText)visible++;
+    const status=type==="festival"?document.getElementById("festivalProgressFilter").value:"";
+    const matchesStatus=!status||festivalProgressKey(row)===status;
+    row.style.display=matchesCategory&&matchesText&&matchesStatus?"":"none";
+    if(matchesCategory&&matchesText&&matchesStatus)visible++;
   });
   $w(`${type}FilterCount`).textContent=`${visible} / ${rows.length}件を表示`;
   if(type==="festival") renderFestivalPrepared();
@@ -2994,7 +3007,7 @@ let festivalFormBaseline=new Map();
 const festivalBatchRequests=new Map();
 const festivalEditableFields=["qty","batchQty","directQty","returnedQty","ngQty","price"];
 function festivalProgress(planned,posted){
-  if(!posted)return {label:planned?"未準備":"予定未設定",tone:"none",remaining:planned};
+  if(!posted)return {label:planned?"準備待ち":"予定未設定",tone:"none",remaining:planned};
   if(!planned)return {label:"準備済み（予定未設定）",tone:"over",remaining:0};
   if(posted<planned)return {label:"準備中",tone:"partial",remaining:planned-posted};
   return {label:posted===planned?"準備完了":"準備完了（予定超過）",tone:posted===planned?"done":"over",remaining:0};
@@ -3045,7 +3058,7 @@ function renderFestival(){
   body.innerHTML=source.map(raw=>{
     const i=festivalViewItem(raw,record),p=allProducts.find(p=>p.id===i.productId),stock=Number(p?.currentStock||0),progress=festivalProgress(i.qty,i.postedQty),n=festivalNumbers(i);
     const field=(name,v,lock=false,readOnly=false)=>`<input class="${name}" type="number" min="0" step="1" value="${v}" data-lock="${settled||lock?"1":"0"}" ${settled||lock?"disabled":""} ${readOnly?"readonly":""}>`;
-    return `<tr data-id="${safe(i.productId)}" data-code="${safe(i.code)}" data-name="${safe(i.name)}" data-category="${safe(categoryLabel(p?.category||i.category)||"未分類")}" data-stock="${stock}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${p?stock:"―"}</td><td>${field("qty",i.qty,legacy)}</td><td>${oldSettled?"―":field("completedQty",legacy?0:i.postedQty,false,!legacy)}</td><td class="festival-remaining">${progress.remaining}</td><td>${field("batchQty",legacy?0:i.pendingQty,legacy)}<button type="button" class="btn-secondary-inline festival-line-add" data-product="${safe(i.productId)}" ${settled||legacy?"disabled":""}>この数量を準備完了</button><button type="button" class="btn-secondary-inline festival-line-undo" data-product="${safe(i.productId)}" ${settled||legacy||!i.postedQty?"disabled":""}>完了数を訂正（減らす）</button></td><td><span class="festival-line-state festival-progress-${progress.tone}">${safe(legacy?"旧方式・切替待ち":progress.label)}</span></td><td>${field("directQty",i.directQty)}</td><td>${oldSettled?"―":field("returnedQty",i.returnedQty)}</td><td>${oldSettled?"―":field("ngQty",i.ngQty)}</td><td class="soldQty">${oldSettled?festivalLegacyNumbers(raw):n.sold}</td><td>${field("price",i.price)}</td><td class="salesAmount">${((oldSettled?festivalLegacyNumbers(raw):n.sold)*i.price).toLocaleString()}</td></tr>`;
+    return `<tr data-id="${safe(i.productId)}" data-code="${safe(i.code)}" data-name="${safe(i.name)}" data-category="${safe(categoryLabel(p?.category||i.category)||"未分類")}" data-stock="${stock}"><td>${safe(i.code)}</td><td>${safe(i.name)}</td><td>${p?stock:"―"}</td><td class="festival-incoming" title="予定日：${safe(incomingDateText(i.productId))}">${safe(incomingQtyText(i.productId))}<br>${safe(incomingDateText(i.productId))}</td><td>${field("qty",i.qty,legacy)}</td><td>${oldSettled?"―":field("completedQty",legacy?0:i.postedQty,false,!legacy)}</td><td class="festival-remaining">${progress.remaining}</td><td>${field("batchQty",legacy?0:i.pendingQty,legacy)}<button type="button" class="btn-secondary-inline festival-line-add" data-product="${safe(i.productId)}" ${settled||legacy?"disabled":""}>この数量を準備完了</button><button type="button" class="btn-secondary-inline festival-line-undo" data-product="${safe(i.productId)}" ${settled||legacy||!i.postedQty?"disabled":""}>完了数を訂正（減らす）</button></td><td><span class="festival-line-state festival-progress-${progress.tone}">${safe(legacy?"旧方式・切替待ち":progress.label)}</span></td><td>${field("directQty",i.directQty)}</td><td>${oldSettled?"―":field("returnedQty",i.returnedQty)}</td><td>${oldSettled?"―":field("ngQty",i.ngQty)}</td><td class="soldQty">${oldSettled?festivalLegacyNumbers(raw):n.sold}</td><td>${field("price",i.price)}</td><td class="salesAmount">${((oldSettled?festivalLegacyNumbers(raw):n.sold)*i.price).toLocaleString()}</td></tr>`;
   }).join("");
   labelTableCells(body);
   body.querySelectorAll("input").forEach(input=>input.oninput=()=>{updateFestivalRow(input.closest("tr"));renderFestivalPrepared();renderFestivalStockNotice();});
@@ -3251,6 +3264,8 @@ async function requireNoActiveReset(tx) {
 function resetStatus(message) { document.getElementById("pilotResetStatus").textContent = message; }
 async function collectInventoryResetPlan() {
   if (!auth.currentUser) throw Error("ログインしてください");
+  const incomingCheck=await db.collection(ORDERS_COLLECTION).get({source:"server"});
+  if(incomingCheck.docs.some(d=>incomingOpen(d.data(),"order")))throw Error("未入荷の通常発注・入荷待ちがあります。先に完了または未入荷分を取消してください");
   const disasterCheck=await db.collection(DISASTER_MOVEMENTS).get({source:"server"});
   if(disasterCheck.docs.some(d=>['disaster-sale-v1','disaster-purchase-v1'].includes(d.data().kind)&&['ordered','part_received'].includes(d.data().status)))throw Error("防災斡旋に未出荷注文・未入荷発注があります。先に完了または取消してください");
   const names = [COLLECTION,MOVEMENTS_COLLECTION,SLIPS_COLLECTION,FESTIVALS,STOCKTAKES];
@@ -4549,8 +4564,9 @@ function renderDisaster(){
   $w('dsSummary').innerHTML=disasterChannels.map(c=>{const rows=disasterRecords.filter(r=>r.kind==='disaster-sale-v1'&&r.channel===c&&r.status!=='cancelled');return `<tr><td>${safe(c)}</td><td>${rows.length}</td><td>${rows.filter(r=>r.status==='ordered').length}</td><td>${rows.filter(r=>r.status==='shipped').length}</td><td>¥${rows.reduce((n,r)=>n+Number(r.amount||0),0).toLocaleString()}</td></tr>`;}).join('');
 }
 function subscribeDisaster(){
+  incomingSources.disaster="loading";
   if(disasterUnsubscribe)disasterUnsubscribe();disasterRecords=[];renderDisaster();
-  disasterUnsubscribe=db.collection(DISASTER_MOVEMENTS).onSnapshot(snapshot=>{disasterRecords=snapshot.docs.map(d=>({id:d.id,...d.data()})).filter(d=>['disaster-sale-v1','disaster-purchase-v1'].includes(d.kind)).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));renderDisaster();phoneRefreshAvailability();},e=>{console.error(e);disasterStatus('防災斡旋データを取得できません。通信状態・権限を確認してください。',true);});
+  disasterUnsubscribe=db.collection(DISASTER_MOVEMENTS).onSnapshot(snapshot=>{disasterRecords=snapshot.docs.map(d=>({id:d.id,...d.data()})).filter(d=>['disaster-sale-v1','disaster-purchase-v1'].includes(d.kind)).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));renderDisaster();phoneRefreshAvailability();incomingSources.disaster="ready";refreshIncomingViews();},e=>{incomingSources.disaster="error";refreshIncomingViews();console.error(e);disasterStatus('防災斡旋データを取得できません。通信状態・権限を確認してください。',true);});
 }
 function disasterCsv(){const rows=[['商品コード','商品名','現在庫','月始祭等確保数','利用可能数','未出荷注文数','必要数','入荷予定数','過不足','不足数','入荷予定反映後過不足'],...disasterStockSummary(allProducts.filter(disasterEligible),disasterRecords).map(p=>[p.code,p.name,p.stock,p.reserved,p.available,p.sales,p.required,p.incoming,p.balance,p.shortage,p.afterBalance])];const blob=new Blob(['\uFEFF'+rows.map(r=>r.map(v=>csvCell(typeof v==="string"&&/^[=+@\-\t\r]/.test(String(v??''))?"'"+String(v??''):String(v??''))).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='防災用品_在庫集計.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function initDisasterOps(){
@@ -4797,7 +4813,7 @@ function initShippingPolicy() {
   renderShippingPolicy();
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-16-yamane-jan-v51";
+window.KOBUNSHA_APP_VERSION = "2026-11-17-incoming-jan-v52";
 // 在庫一覧：色別の商品・並び替え・選択印刷。既存の商品ID/JAN/コードは変更しない。
 function inventoryStockAudit() {
   return {stockUpdatedAt:firebase.firestore.FieldValue.serverTimestamp(),stockUpdatedBy:currentStaffName||""};
@@ -4871,6 +4887,150 @@ function initInventoryTools() {
 function appendSlipShortLink(host,id) {
   const link=document.createElement("a");link.className="slip-short-link";
   link.href=buildSlipUrl(id);link.textContent=buildSlipUrl(id);host.appendChild(link);
+}
+
+// 入荷予定は元の発注を参照する。予定の表示・登録では在庫を増やさない。
+const INCOMING_WAIT_KIND="incoming-wait-v1";
+function incomingAttr(value) {return escapeHtml(String(value??"" )).replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
+let incomingSources={orders:"loading",disaster:"loading"};
+let incomingOrderDisplayed=null;
+let incomingBusy=false,incomingEditingId=null,incomingEditingState=null,incomingCreateToken="";
+function incomingRecordState(record) {
+  return JSON.stringify([record.kind||"",record.status,record.revision||0,record.partner||record.party||"",record.expectedDate||"",record.memo||record.note||"",(record.items||[]).map(i=>[i.productId,i.qty,i.receivedQty??0,i.code||"",i.productName||"",i.unit||""])]);
+}
+function incomingOpen(record,source) {
+  return ["ordered","part_received"].includes(record.status) &&
+    (source==="disaster"?record.kind==="disaster-purchase-v1":record.kind!==PHONE_KIND&&record.type!=="phone-reception");
+}
+function incomingRows(orders=allOrders,disaster=disasterRecords) {
+  const rows=[],seen=new Set();
+  for(const [source,records] of [["order",orders],["disaster",disaster]])for(const record of records){
+    if(!incomingOpen(record,source))continue;
+    (record.items||[]).forEach((item,index)=>{
+      const key=JSON.stringify([source,record.id,index]);if(seen.has(key))return;seen.add(key);
+      const qty=Number(item.qty),received=Number(item.receivedQty??0);
+      if(!Number.isSafeInteger(qty)||!Number.isSafeInteger(received)||qty<0||received<0||received>qty){rows.push({source,record,item,index,key,error:true,remaining:0});return;}
+      const remaining=qty-received;if(!remaining)return;
+      rows.push({source,record,item,index,key,remaining,received,qty,expectedDate:record.expectedDate||"",supplier:record.partner||record.party||"",state:incomingRecordState(record)});
+    });
+  }
+  return rows;
+}
+let incomingCacheOrders=null,incomingCacheDisaster=null,incomingSummaryCache=new Map();
+function incomingSummary(productId) {
+  if(incomingCacheOrders!==allOrders||incomingCacheDisaster!==disasterRecords){
+    incomingCacheOrders=allOrders;incomingCacheDisaster=disasterRecords;incomingSummaryCache=new Map();
+    for(const r of incomingRows()){
+      const id=r.item.productId,summary=incomingSummaryCache.get(id)||{qty:0,dates:[],error:false};summary.qty+=r.remaining;summary.error=summary.error||r.error||!Number.isSafeInteger(summary.qty);
+      if(!r.error&&!summary.dates.includes(r.expectedDate||"未定"))summary.dates.push(r.expectedDate||"未定");incomingSummaryCache.set(id,summary);
+    }
+    for(const summary of incomingSummaryCache.values())summary.dates.sort((a,b)=>a==="未定"?1:b==="未定"?-1:a.localeCompare(b));
+  }
+  return {...(incomingSummaryCache.get(productId)||{qty:0,dates:[],error:false}),complete:Object.values(incomingSources).every(v=>v==="ready")};
+}
+function incomingQtyText(id) {
+  const s=incomingSummary(id);if(s.error)return "要確認";
+  return s.complete?s.qty.toLocaleString("ja-JP"):(s.qty?s.qty.toLocaleString("ja-JP")+"（集計未完了）":"読込中・未取得");
+}
+function incomingDateText(id) {
+  const s=incomingSummary(id);return (s.dates.join("、")||"―")+(s.complete?"":"（集計未完了）");
+}
+// 発注画面・入荷待ち欄の両方がこの関数へ入る。分納は今回分だけ加算する。
+async function commitIncomingReceipt(source,id,quantities,expectedState,staff=currentStaffName) {
+  if(!["order","disaster"].includes(source)||typeof id!=="string"||!id||id.includes("/"))throw Error("入荷元を確認してください");
+  if(!Array.isArray(quantities)||!quantities.length)throw Error("今回の入荷数量を入力してください");
+  const entered=quantities.map((q,n)=>inventoryQuantity(q,"今回入荷数"));
+  if(!entered.some(q=>q>0))throw Error("今回入荷数を1以上で入力してください（入荷しない明細は0）");
+  const ref=db.collection(source==="order"?ORDERS_COLLECTION:DISASTER_MOVEMENTS).doc(id);
+  return db.runTransaction(async tx=>{
+    await requireNoActiveReset(tx);
+    const doc=await tx.get(ref);if(!doc.exists)throw Error("発注が削除されています");const record=doc.data();
+    if(!incomingOpen(record,source)||incomingRecordState(record)!==expectedState)throw Error("入荷状況・予定内容が変わりました。最新の内容を確認してください");
+    if(!Array.isArray(record.items)||record.items.length!==entered.length)throw Error("明細が変わりました。開き直してください");
+    const items=record.items.map((i,n)=>{const qty=inventoryQuantity(i.qty,"予定数"),before=inventoryQuantity(i.receivedQty??0,"累計入荷数");if(before>qty||entered[n]>qty-before)throw Error("未入荷数を超えています："+i.productName);return {...i,receivedQty:before+entered[n]};});
+    const totals=new Map();for(let n=0;n<items.length;n++){if(!entered[n])continue;const i=items[n];if(typeof i.productId!=="string"||!i.productId||i.productId.includes("/"))throw Error("商品を確認してください");totals.set(i.productId,inventoryQuantity((totals.get(i.productId)||0)+entered[n],"合計入荷数"));}
+    if(totals.size+items.filter((_,n)=>entered[n]).length+1>490)throw Error("明細が多すぎます。分けて登録してください");
+    const products=await Promise.all([...totals].map(async ([productId,qty])=>{const productRef=db.collection(COLLECTION).doc(productId),p=await tx.get(productRef);if(!p.exists)throw Error("商品が削除されています："+productId);const next=inventoryStockQuantity(p.data().currentStock??0,"現在庫")+qty;inventoryStockQuantity(next,"反映後在庫");return {productId,ref:productRef,next};}));
+    const completed=items.every(i=>i.receivedQty===Number(i.qty));
+    for(const p of products)tx.update(p.ref,{currentStock:p.next,...inventoryStockAudit()});
+    items.forEach((i,n)=>{if(!entered[n])return;tx.set(db.collection(MOVEMENTS_COLLECTION).doc(`incoming-${source}-${id}-${n}-${i.receivedQty}`),{productId:i.productId,productCode:i.code||"",productName:i.productName||"",unit:i.unit||"個",type:"in",qty:entered[n],note:`${source==="disaster"?"防災発注":record.kind===INCOMING_WAIT_KIND?"入荷待ち":"発注"} ${record.orderNumber||record.reference||id}：今回 ${entered[n]}／累計 ${i.receivedQty}／未入荷 ${Number(i.qty)-i.receivedQty}`,incomingSource:source,incomingRecordId:id,incomingItemIndex:n,staff,createdAt:firebase.firestore.FieldValue.serverTimestamp()});});
+    tx.update(ref,{items,status:completed?"received":"part_received",revision:Number(record.revision||0)+1,lastReceivedAt:firebase.firestore.FieldValue.serverTimestamp(),lastReceivedBy:staff,...(completed?{receivedAt:firebase.firestore.FieldValue.serverTimestamp(),receivedBy:staff}:{})});
+    return {items,status:completed?"received":"part_received"};
+  });
+}
+async function saveIncomingManual(input,id,expectedState=null) {
+  const qty=inventoryQuantity(input.qty,"入荷予定数");if(!qty)throw Error("入荷予定数は1以上で入力してください");
+  if(input.expectedDate&&!s1ValidDate(input.expectedDate))throw Error("入荷予定日を確認してください");
+  const ref=db.collection(ORDERS_COLLECTION).doc(id),signature=JSON.stringify([input.productId,qty,input.expectedDate,input.supplier,input.note]);
+  return db.runTransaction(async tx=>{
+    await requireNoActiveReset(tx);const doc=await tx.get(ref),old=doc.exists?doc.data():null;
+    if(!expectedState&&old){if(old.incomingCreateState===signature)return id;throw Error("登録番号が重複しています。「新規入力」からやり直してください");}
+    if(expectedState&&(!old||old.kind!==INCOMING_WAIT_KIND||!incomingOpen(old,"order")||incomingRecordState(old)!==expectedState))throw Error("入荷待ちの内容が変わりました。最新の内容を確認してください");
+    if(old&&old.items[0].productId!==input.productId)throw Error("登録後の商品は変更できません。未入荷分を取消し、新しく登録してください");
+    if(typeof input.productId!=="string"||!input.productId||input.productId.includes("/"))throw Error("商品を選択してください");
+    const product=await tx.get(db.collection(COLLECTION).doc(input.productId));if(!product.exists)throw Error("商品が削除されています");
+    const p=product.data(),received=inventoryQuantity(old?.items?.[0]?.receivedQty??0,"累計入荷数");if(qty<received)throw Error("予定数を入荷済みの累計より少なくできません");
+    const data={kind:INCOMING_WAIT_KIND,orderNumber:old?.orderNumber||"入荷待ち-"+id.slice(-8),partner:input.supplier||"",expectedDate:input.expectedDate||"",memo:input.note||"",items:[{productId:input.productId,productName:p.name||"",code:p.code||"",unit:p.unit||"個",qty,receivedQty:received}],status:received===qty?"received":received?"part_received":"ordered",revision:Number(old?.revision||0)+1,updatedAt:firebase.firestore.FieldValue.serverTimestamp(),updatedBy:currentStaffName};
+    if(old)tx.update(ref,data);else tx.set(ref,{...data,incomingCreateState:signature,staff:currentStaffName,createdAt:firebase.firestore.FieldValue.serverTimestamp()});return id;
+  });
+}
+async function cancelIncomingManual(record) {
+  return db.runTransaction(async tx=>{await requireNoActiveReset(tx);const ref=db.collection(ORDERS_COLLECTION).doc(record.id),d=await tx.get(ref);if(!d.exists||d.data().kind!==INCOMING_WAIT_KIND||!incomingOpen(d.data(),"order")||incomingRecordState(d.data())!==incomingRecordState(record))throw Error("入荷状況が変わりました。最新の内容を確認してください");tx.update(ref,{status:"cancelled",revision:Number(d.data().revision||0)+1,cancelledAt:firebase.firestore.FieldValue.serverTimestamp(),cancelledBy:currentStaffName});});
+}
+function incomingStatus(message,error=false) {const e=document.getElementById("incomingStatus");e.textContent=message;e.className=error?"invoice-action-error":"invoice-action-info";}
+function incomingSetBusy(value) {incomingBusy=value;document.getElementById("incomingForm").disabled=value;document.getElementById("incomingNewBtn").disabled=value;document.getElementById("incomingRows").querySelectorAll("button,input").forEach(e=>e.disabled=value);}
+function incomingRefreshProducts() {
+  const select=document.getElementById("incomingProduct"),value=select.value,search=document.getElementById("incomingProductSearch").value.normalize("NFKC").trim().toLowerCase();
+  select.innerHTML='<option value="">商品・色を選択</option>'+allProducts.filter(p=>p.id===value||!search||[p.name,p.code,p.barcode].some(v=>String(v||"").normalize("NFKC").toLowerCase().includes(search))).map(p=>`<option value="${incomingAttr(p.id)}">${escapeHtml(p.code||"")} ${escapeHtml(p.name||"")}</option>`).join("");select.value=value;
+}
+function incomingNew() {
+  incomingEditingId=null;incomingEditingState=null;incomingCreateToken="incoming-"+crypto.randomUUID();
+  for(const id of ["incomingProduct","incomingProductSearch","incomingQty","incomingDate","incomingSupplier","incomingNote"])document.getElementById(id).value="";
+  document.getElementById("incomingProduct").disabled=false;document.getElementById("incomingSaveBtn").textContent="入荷待ちを登録（在庫は増えません）";incomingStatus("");incomingRefreshProducts();
+}
+function editIncomingManual(record) {
+  if(incomingBusy)return;incomingEditingId=record.id;incomingEditingState=incomingRecordState(record);const item=record.items[0];
+  document.getElementById("incomingProductSearch").value="";incomingRefreshProducts();document.getElementById("incomingProduct").value=item.productId;document.getElementById("incomingProduct").disabled=true;
+  document.getElementById("incomingQty").value=item.qty;document.getElementById("incomingDate").value=record.expectedDate||"";document.getElementById("incomingSupplier").value=record.partner||"";document.getElementById("incomingNote").value=record.memo||"";document.getElementById("incomingSaveBtn").textContent="予定内容を変更（在庫は変わりません）";
+  incomingStatus(`累計入荷済み：${item.receivedQty||0}${item.unit||"個"}。予定数は累計入荷数以上で入力してください。`);document.getElementById("incomingForm").scrollIntoView?.({block:"nearest"});
+}
+async function incomingSave() {
+  if(incomingBusy||!inventoryWritesAllowed())return;
+  const input={productId:document.getElementById("incomingProduct").value,qty:document.getElementById("incomingQty").value,expectedDate:document.getElementById("incomingDate").value,supplier:document.getElementById("incomingSupplier").value.trim(),note:document.getElementById("incomingNote").value.trim()};
+  incomingSetBusy(true);try{await saveIncomingManual(input,incomingEditingId||incomingCreateToken,incomingEditingState);incomingNew();incomingStatus("入荷待ちを保存しました。現在庫は変わりません。");}catch(e){incomingStatus(e.message||"保存結果を確認できません。再実行前に一覧を確認してください。",true);}finally{incomingSetBusy(false);document.getElementById("incomingProduct").disabled=!!incomingEditingId;renderIncomingList();}
+}
+function renderIncomingList(force=false) {
+  const host=document.getElementById("incomingRows");if(!host||incomingBusy)return;
+  const drafts=new Map([...host.querySelectorAll("tr")].map(r=>[r.dataset.key,{value:r.querySelector(".incoming-receive-qty")?.value||"",state:r.dataset.state}]));
+  const term=document.getElementById("incomingSearch").value.normalize("NFKC").trim().toLowerCase(),rows=incomingRows().filter(r=>!term||[r.item.code,r.item.productName,r.supplier,r.record.orderNumber,r.record.reference].some(v=>String(v||"").normalize("NFKC").toLowerCase().includes(term))).sort((a,b)=>(a.expectedDate||"9999").localeCompare(b.expectedDate||"9999")||String(a.item.code||"").localeCompare(String(b.item.code||""),"ja",{numeric:true}));
+  host.innerHTML=rows.map((r,n)=>{const d=drafts.get(r.key),stale=!force&&!!d?.value&&d.state!==r.state;return `<tr data-key="${incomingAttr(r.key)}" data-state="${incomingAttr(stale?d.state:r.state||"")}"><td>${r.source==="disaster"?"防災発注":r.record.kind===INCOMING_WAIT_KIND?"手入力の入荷待ち":"発注管理"}<br>${escapeHtml(r.record.orderNumber||r.record.reference||r.record.id)}</td><td>${escapeHtml(r.item.code||"")}<br>${incomingAttr(r.item.productName||"")}</td><td>${escapeHtml(r.supplier||"―")}<br>${escapeHtml(r.expectedDate||"未定")}</td><td>${r.qty??"―"}／${r.received??"―"}／<strong>${r.error?"要確認":r.remaining}</strong>${escapeHtml(r.item.unit||"個")}</td><td>${r.error?"数量に不整合があります。元の記録を確認してください。":`<input class="incoming-receive-qty" type="number" min="1" step="1" max="${r.remaining}" value="${incomingAttr(!force?d?.value||"":"")}" placeholder="今回入荷数" aria-label="${incomingAttr(r.item.productName||"")}の今回入荷数"><button type="button" class="btn-secondary-inline incoming-receive" data-index="${n}" ${stale?"disabled":""}>今回分を入庫・在庫に反映</button>${stale?'<p class="invoice-action-error">元の数量が更新されました。「一覧を更新」で確認してください。</p>':""}`}</td><td>${r.record.kind===INCOMING_WAIT_KIND?`<button type="button" class="btn-secondary-inline incoming-edit" data-index="${n}">予定を変更</button><button type="button" class="btn-secondary-inline incoming-cancel" data-index="${n}">未入荷分を取消</button>`:`<button type="button" class="btn-secondary-inline incoming-open" data-index="${n}">元の発注を開く</button>`}</td></tr>`;}).join("")||'<tr><td colspan="6">入荷待ちはありません。</td></tr>';
+  host.querySelectorAll(".incoming-receive").forEach(b=>b.onclick=async()=>{if(incomingBusy||!inventoryWritesAllowed())return;const r=rows[Number(b.dataset.index)],q=b.closest("tr").querySelector(".incoming-receive-qty").value;try{const qty=inventoryQuantity(q,"今回入荷数");if(!qty||qty>r.remaining)throw Error("今回入荷数を1以上、未入荷数以下で入力してください");if(!confirm(`${r.item.productName}\n今回 ${qty}${r.item.unit||"個"}を入庫して在庫へ加算します。よろしいですか？`))return;incomingSetBusy(true);const quantities=r.record.items.map((_,i)=>i===r.index?qty:0);await commitIncomingReceipt(r.source,r.record.id,quantities,r.state);b.closest("tr").querySelector(".incoming-receive-qty").value="";incomingStatus("今回の入荷分だけ在庫へ加算しました。未入荷分は引き続き入荷待ちです。");}catch(e){incomingStatus(e.message||"反映結果を確認できません。再実行前に履歴と残数を確認してください。",true);}finally{incomingSetBusy(false);renderIncomingList();}});
+  host.querySelectorAll(".incoming-edit").forEach(b=>b.onclick=()=>editIncomingManual(rows[Number(b.dataset.index)].record));
+  host.querySelectorAll(".incoming-cancel").forEach(b=>b.onclick=async()=>{if(incomingBusy||!inventoryWritesAllowed())return;const r=rows[Number(b.dataset.index)];if(!confirm(`${r.item.productName}の未入荷分 ${r.remaining}${r.item.unit||"個"}を取り消します。入荷済みの在庫は戻しません。よろしいですか？`))return;incomingSetBusy(true);try{await cancelIncomingManual(r.record);incomingStatus("未入荷分を取り消しました。入荷済みの在庫・履歴は残ります。");}catch(e){incomingStatus(e.message,true);}finally{incomingSetBusy(false);renderIncomingList();}});
+  host.querySelectorAll(".incoming-open").forEach(b=>b.onclick=()=>{const r=rows[Number(b.dataset.index)];if(r.source==="order")openOrderDetailModal(r.record.id);else{switchTab("disaster");const mode=document.getElementById("dsMode");if(disasterMode!=="purchase"){mode.value="purchase";mode.onchange();if(disasterMode!=="purchase")return;}document.getElementById("dsSearch").value=r.record.reference||r.record.party||"";renderDisaster();}});
+  document.getElementById("incomingCount").textContent=`未入荷明細：${rows.length}件（予定日にかかわらず全未入荷分を表示）`;
+}
+function refreshFestivalIncomingDisplay() {
+  const body=document.getElementById("festivalRows");if(!body)return;for(const row of body.querySelectorAll("tr")){const cell=row.querySelector(".festival-incoming");if(cell){cell.textContent=incomingQtyText(row.dataset.id)+"\n"+incomingDateText(row.dataset.id);cell.title="予定日："+incomingDateText(row.dataset.id);}}
+}
+function refreshIncomingViews() {
+  const node=document.getElementById("incomingLoadStatus");if(!node)return;
+  node.textContent=Object.values(incomingSources).every(v=>v==="ready")?"入荷予定数＝手入力の入荷待ち＋通常発注＋防災発注の未入荷残数。予定だけでは現在庫に含めません。":Object.values(incomingSources).some(v=>v==="error")?"入荷予定の一部を取得できません。通信・権限を確認し再読み込みしてください。集計は未完了です。":"入荷予定を読み込み中です。集計完了までお待ちください。";
+  renderIncomingList();renderProductList();refreshFestivalIncomingDisplay();
+}
+function initIncomingWait() {
+  document.getElementById("incomingNewBtn").addEventListener("click",incomingNew);document.getElementById("incomingSaveBtn").addEventListener("click",incomingSave);
+  document.getElementById("incomingProductSearch").addEventListener("input",incomingRefreshProducts);
+  document.getElementById("incomingProduct").addEventListener("change",()=>{const p=allProducts.find(p=>p.id===document.getElementById("incomingProduct").value);document.getElementById("incomingSupplier").value=p?.supplier||"";});
+  document.getElementById("incomingSearch").addEventListener("input",()=>renderIncomingList());document.getElementById("incomingRefreshBtn").addEventListener("click",()=>renderIncomingList(true));
+  document.getElementById("incomingShowBtn").addEventListener("click",()=>{const panel=document.getElementById("incomingPanel");panel.open=true;panel.scrollIntoView?.({block:"start"});document.getElementById("incomingProductSearch").focus();});
+  document.getElementById("festivalProgressFilter").addEventListener("change",()=>applyWorkTableView("festival"));
+  auth.onAuthStateChanged(user=>{incomingSources={orders:"loading",disaster:"loading"};if(!user){allOrders=[];incomingNew();}});incomingNew();
+}
+function festivalProgressKey(row) {
+  if(!festivalIsNew(festivalRecord)&&festivalRecord?.status==="prepared")return "legacy";
+  const planned=Number(row.querySelector(".qty")?.value||0),posted=Number(row.querySelector(".completedQty")?.value||0);
+  return posted>0?(planned>0&&posted<planned?"partial":"done"):(planned>0?"waiting":"unset");
 }
 
 init();

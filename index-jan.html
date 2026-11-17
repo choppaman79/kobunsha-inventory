@@ -1038,6 +1038,15 @@
     .slip-short-link {text-decoration:none;}
   }
 
+
+  .inventory-incoming {min-width:115px;max-width:190px;}
+  .inventory-incoming small {display:block;font-size:11px;line-height:1.4;font-weight:400;overflow-wrap:anywhere;}
+  .festival-incoming {min-width:100px;font-size:12px;white-space:pre-line;}
+  #incomingForm {min-width:0;padding:12px;margin:10px 0;}
+  #incomingForm p,#incomingPanel > p {font-size:12px;line-height:1.6;}
+  #incomingRows input {min-width:105px;max-width:170px;}
+  #incomingRows button {margin:4px 3px 4px 0;}
+  #incomingPanel .work-table {min-width:1050px;}
 </style>
 </head>
 <body>
@@ -1212,8 +1221,29 @@
         <button class="btn-secondary-inline" id="scanGlobalBtn2">📷 伝票をスキャン</button>
         <button class="btn-add" id="slipCreateOutBtn">＋ 出荷指示書を作成</button>
         <button class="btn-add btn-add-in" id="slipCreateInBtn">＋ 入荷伝票を作成</button>
+        <button type="button" class="btn-secondary-inline" id="incomingShowBtn">入荷待ち・入庫処理</button>
       </div>
       <div class="toolbar"><button class="btn-secondary-inline" id="slipSelectAllBtn">表示中をすべて選択</button><button class="btn-danger" id="slipDeleteBtn">選択した伝票を削除（0件）</button></div>
+      <details class="pilot-panel" id="incomingPanel" open>
+        <summary>入荷待ち・入庫処理（通常発注・防災発注と連動）</summary>
+        <p id="incomingLoadStatus" role="status" aria-live="polite">入荷予定を読み込み中です。</p>
+        <button type="button" class="btn-secondary-inline" id="incomingNewBtn">新規入力</button>
+        <fieldset id="incomingForm"><legend>手入力で入荷待ちを追加・変更</legend>
+          <p>発注管理・防災斡旋に登録済みの発注は自動表示されます。同じ入荷予定を追加登録しないでください。</p>
+          <div class="invoice-pdf-fields">
+            <div><label for="incomingProductSearch">商品検索</label><input type="text" id="incomingProductSearch" placeholder="商品コード・商品名・JANで検索"><label for="incomingProduct">商品・色</label><select id="incomingProduct"><option value="">商品・色を選択</option></select></div>
+            <div><label for="incomingQty">入荷予定数（総数・商品の単位）</label><input type="number" id="incomingQty" min="1" step="1" placeholder="例：10"></div>
+            <div><label for="incomingDate">入荷予定日（任意）</label><input type="date" id="incomingDate"></div>
+            <div><label for="incomingSupplier">仕入れ先（任意）</label><input type="text" id="incomingSupplier"></div>
+            <div><label for="incomingNote">備考（任意）</label><input type="text" id="incomingNote"></div>
+          </div>
+          <button type="button" class="btn-primary" id="incomingSaveBtn">入荷待ちを登録（在庫は増えません）</button>
+        </fieldset>
+        <p id="incomingStatus" role="status" aria-live="polite"></p>
+        <div class="toolbar"><input type="text" id="incomingSearch" placeholder="商品コード・商品名・仕入先・発注番号で検索"><button type="button" class="btn-secondary-inline" id="incomingRefreshBtn">一覧を更新（入力中の入荷数をクリア）</button><span id="incomingCount"></span></div>
+        <div class="work-scroll"><table class="work-table"><thead><tr><th>登録元／番号</th><th>商品コード・商品名</th><th>仕入れ先／入荷予定日</th><th>予定総数／累計入荷／未入荷</th><th>今回入荷数・入庫操作</th><th>予定の操作</th></tr></thead><tbody id="incomingRows"></tbody></table></div>
+        <p>例：予定10個 → 今回4個を入庫すると在庫に4個加算し、残り6個を入荷待ちとして残します。入荷済み・取消済みは元の発注履歴に残ります。「入荷伝票」や手動入庫で同じ入荷を重ねて登録しないでください。</p>
+      </details>
       <details class="pilot-panel" id="pdfInvoicePanel">
         <summary>手入力で出荷指示書を作成</summary>
         <p>初回はコードと名称を入力します。登録後は同じコードで検索できます。未登録のコードは「追加」、または伝票作成時に登録します。</p>
@@ -1318,10 +1348,11 @@
       <div class="work-filter">
         <label for="festivalCategory">ジャンル</label><select id="festivalCategory"><option value="">すべて</option></select>
         <input type="text" id="festivalSearch" placeholder="商品名・コードで検索" aria-label="月始祭の商品検索">
-        <label for="festivalSort">並び順</label><select id="festivalSort"><option value="name">商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">現在庫の多い順</option></select>
+        <label for="festivalSort">並び順</label><select id="festivalSort"><option value="progress">準備待ち→準備中→準備完了</option><option value="progress-desc">準備完了を先に</option><option value="name" selected>商品名順</option><option value="code">商品コード順</option><option value="category">ジャンル順</option><option value="stock-desc">現在庫の多い順</option></select>
+        <label for="festivalProgressFilter">準備状態</label><select id="festivalProgressFilter"><option value="">すべて</option><option value="waiting">準備待ち</option><option value="partial">準備中</option><option value="done">準備完了</option><option value="unset">予定未設定</option><option value="legacy">旧方式・切替待ち</option></select>
         <span id="festivalFilterCount" class="filter-count"></span>
       </div>
-      <div class="work-scroll" id="festivalMainTableWrap"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>準備（S1出）<br>予定数</th><th>累計完了数<br>（在庫反映済み）</th><th>残り数<br>（予定に対して）</th><th>今回準備数<br>・品目別操作</th><th>準備状態</th><th>直送<br>（在庫外）</th><th>月始祭戻り<br>（再販売可能）</th><th>月始祭戻り<br>NG品</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
+      <div class="work-scroll" id="festivalMainTableWrap"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>入荷予定<br>未入荷数／予定日</th><th>準備（S1出）<br>予定数</th><th>累計完了数<br>（在庫反映済み）</th><th>残り数<br>（予定に対して）</th><th>今回準備数<br>・品目別操作</th><th>準備状態</th><th>直送<br>（在庫外）</th><th>月始祭戻り<br>（再販売可能）</th><th>月始祭戻り<br>NG品</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
       <div id="festivalPreparedPanel"><h3>在庫反映済み準備分の一覧表</h3><p id="festivalPreparedCount">在庫へ反映済みの累計完了数がある商品を表示します。上のジャンル・検索条件が反映されます。</p><button type="button" class="btn-secondary-inline" id="festivalPreparedPrintBtn">実際準備完了分を印刷</button><div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>在庫反映済み累計</th><th>単位</th><th>状態</th></tr></thead><tbody id="festivalPreparedRows"></tbody></table></div></div>
       <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">入力を保存</button><button class="btn-primary" id="festivalCommitBtn" style="display:none;">実際準備完了を確定・在庫から減算</button><button class="btn-secondary-inline" id="festivalReturnBtn" style="display:none;">準備完了を取消・在庫へ戻す</button><button class="btn-primary" id="festivalSettleBtn">月始祭を精算・良品戻りを在庫へ加算</button></div>
     </section>
@@ -1368,6 +1399,7 @@
           <button class="chip order-filter-btn active" data-filter="all">すべて</button>
           <button class="chip order-filter-btn" data-filter="draft">未発注</button>
           <button class="chip order-filter-btn" data-filter="ordered">発注済み</button>
+          <button class="chip order-filter-btn" data-filter="part_received">一部入荷</button>
           <button class="chip order-filter-btn" data-filter="received">入荷済み</button>
           <button class="chip order-filter-btn" data-filter="cancelled">キャンセル</button>
         </div>
@@ -1707,8 +1739,8 @@
 
     <label for="orderPartner">仕入れ先</label>
     <input type="text" id="orderPartner" placeholder="仕入れ先を選択してください" readonly>
-    <label>メモ（任意）</label>
-    <input type="text" id="orderMemo" placeholder="納期の目安など">
+    <label for="orderExpectedDate">入荷予定日（任意）</label><input type="date" id="orderExpectedDate">
+    <label for="orderMemo">メモ（任意）</label><input type="text" id="orderMemo" placeholder="納期の目安など">
 
     <hr class="section-divider">
     <div id="orderSupplierPicker" class="supplier-picker"></div>
@@ -1757,11 +1789,11 @@
     <p id="orderDetailStaff" style="font-size:12px;color:#8a8272;margin:0 0 2px;"></p>
     <p id="orderDetailMemo" style="font-size:12px;color:#8a8272;margin:0 0 10px;"></p>
 
-    <p id="orderReceivedQtyHint" style="display:none;font-size:12px;color:#8a8272;margin:0 0 8px;">実際に入荷した数量を確認・修正してください</p>
+    <p id="orderReceivedQtyHint" style="display:none;font-size:12px;color:#8a8272;margin:0 0 8px;">今回入荷した数量だけ入力してください（入荷しない明細は0）。残りは入荷待ちとして残り、在庫へ加算するのは今回分だけです。</p>
 
     <table class="slip-detail-table">
       <thead>
-        <tr><th>商品名</th><th>コード</th><th>発注数量</th><th>入荷数量</th></tr>
+        <tr><th>商品名</th><th>コード</th><th>発注数量・入荷状況</th><th>今回入荷数／入荷済み累計</th></tr>
       </thead>
       <tbody id="orderDetailBody"></tbody>
     </table>
@@ -1774,7 +1806,7 @@
       <button class="btn-secondary" id="orderDetailPrintBtn">発注表を印刷</button>
       <button class="btn-secondary" id="orderCancelBtn" style="display:none;">発注をキャンセル</button>
       <button class="btn-primary" id="orderMarkOrderedBtn" style="display:none;">発注済みにする</button>
-      <button class="btn-primary" id="orderMarkReceivedBtn" style="display:none;">入荷完了として記録する（在庫に反映）</button>
+      <button class="btn-primary" id="orderMarkReceivedBtn" style="display:none;">今回の入荷分を在庫に反映</button>
     </div>
   </div>
 </div>
@@ -1810,9 +1842,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261116-yamane-jan-v51"></script>
+<script src="app-jan.js?v=20261117-incoming-jan-v52"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-16-yamane-jan-v51") {
+  if (window.KOBUNSHA_APP_VERSION !== "2026-11-17-incoming-jan-v52") {
     const notice = document.createElement("div");
     notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
     notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
