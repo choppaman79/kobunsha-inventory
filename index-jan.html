@@ -1047,6 +1047,66 @@
   #incomingRows input {min-width:105px;max-width:170px;}
   #incomingRows button {margin:4px 3px 4px 0;}
   #incomingPanel .work-table {min-width:1050px;}
+  /* 月始祭準備の画面表示：在庫一覧と同じ余白・見出し。印刷の用紙幅は従来のまま。 */
+  .festival-layout-hint {margin:8px 0;font-size:12px!important;}
+  @media screen {
+    #festivalMainTableWrap {overflow:auto;max-height:72vh;border:1px solid var(--line);border-radius:8px;isolation:isolate;}
+    #festivalMainTableWrap .work-table {width:2063px;min-width:2063px;max-width:none;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:14px;line-height:1.45;}
+    #tabFestival #festivalMainTableWrap .work-table th,
+    #tabFestival #festivalMainTableWrap .work-table tbody td {width:auto;min-width:0;padding:12px 10px;border:0;border-bottom:1px solid #e2ded6;vertical-align:middle;overflow-wrap:normal;word-break:normal;}
+    #festivalMainTableWrap .work-table thead th {height:58px;background:#314563;color:#fff;font-size:13px;line-height:1.5;text-align:center;white-space:normal;position:sticky;top:0;z-index:3;box-shadow:inset -1px 0 #52627b;}
+    #festivalMainTableWrap .work-table tbody tr {background:#fff;}
+    #festivalMainTableWrap .work-table tbody tr:nth-child(even) {background:#faf9f6;}
+    #festivalMainTableWrap .work-table tbody tr:hover {background:#eef2f7;}
+    #festivalMainTableWrap .work-table tbody td {height:66px;}
+    #festivalMainTableWrap .work-table tbody td:nth-child(1) {white-space:nowrap;font-variant-numeric:tabular-nums;}
+    #festivalMainTableWrap .work-table tbody td:nth-child(2) {font-weight:700;color:var(--indigo-deep);overflow-wrap:anywhere;text-align:left;}
+    #festivalMainTableWrap .work-table tbody td:nth-child(3) {font-size:18px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums;}
+    #festivalMainTableWrap .work-table tbody td:nth-child(4) {font-size:12px;text-align:center;line-height:1.55;overflow-wrap:anywhere;}
+    #festivalMainTableWrap .work-table tbody td:nth-child(5),
+    #festivalMainTableWrap .work-table tbody td:nth-child(6),
+    #festivalMainTableWrap .work-table tbody td:nth-child(7),
+    #festivalMainTableWrap .work-table tbody td:nth-child(n+10) {text-align:right;font-variant-numeric:tabular-nums;}
+    #festivalMainTableWrap .work-table tbody td:nth-child(8) {white-space:nowrap;}
+    #festivalMainTableWrap .work-table tbody td:nth-child(9) {text-align:center;}
+    #festivalMainTableWrap .work-table input,
+    #festivalMainTableWrap .work-table input[type=number] {width:100%;min-width:0;height:34px;margin:0;padding:6px 7px;font-size:14px;line-height:20px;text-align:right;}
+    #festivalMainTableWrap .work-table .batchQty {display:inline-block;width:64px;vertical-align:middle;}
+    #festivalMainTableWrap .work-table .festival-line-add,
+    #festivalMainTableWrap .work-table .festival-line-undo {display:inline-flex;width:auto;max-width:none;min-height:34px;margin:0 0 0 6px;padding:7px 8px;align-items:center;justify-content:center;vertical-align:middle;white-space:nowrap;word-break:keep-all;font-size:12px;line-height:18px;}
+    #festivalMainTableWrap .work-table .festival-line-state {white-space:nowrap;font-size:13px;padding:5px 8px;}
+    /* 横に動かしても商品を確認できるよう、コードと商品名を固定。 */
+    #festivalMainTableWrap .work-table th:nth-child(1),
+    #festivalMainTableWrap .work-table td:nth-child(1) {position:sticky;left:0;}
+    #festivalMainTableWrap .work-table th:nth-child(2),
+    #festivalMainTableWrap .work-table td:nth-child(2) {position:sticky;left:90px;}
+    #festivalMainTableWrap .work-table tbody td:nth-child(-n+2) {z-index:2;background:#fff;}
+    #festivalMainTableWrap .work-table tbody tr:nth-child(even) td:nth-child(-n+2) {background:#faf9f6;}
+    #festivalMainTableWrap .work-table tbody tr:hover td:nth-child(-n+2) {background:#eef2f7;}
+    #festivalMainTableWrap .work-table thead th:nth-child(-n+2) {z-index:4;background:#314563;}
+    #festivalMainTableWrap .work-table th:nth-child(2),
+    #festivalMainTableWrap .work-table td:nth-child(2) {box-shadow:2px 0 0 #e2ded6;}
+    #festivalMainTableWrap .work-table col:nth-child(1) {width:90px;}
+    #festivalMainTableWrap .work-table col:nth-child(2) {width:280px;}
+    #festivalMainTableWrap .work-table col:nth-child(3) {width:88px;}
+    #festivalMainTableWrap .work-table col:nth-child(4) {width:160px;}
+    #festivalMainTableWrap .work-table col:nth-child(5) {width:95px;}
+    #festivalMainTableWrap .work-table col:nth-child(6) {width:110px;}
+    #festivalMainTableWrap .work-table col:nth-child(7) {width:95px;}
+    #festivalMainTableWrap .work-table col:nth-child(8) {width:390px;}
+    #festivalMainTableWrap .work-table col:nth-child(9) {width:135px;}
+    #festivalMainTableWrap .work-table col:nth-child(10) {width:85px;}
+    #festivalMainTableWrap .work-table col:nth-child(11) {width:115px;}
+    #festivalMainTableWrap .work-table col:nth-child(12) {width:115px;}
+    #festivalMainTableWrap .work-table col:nth-child(13) {width:85px;}
+    #festivalMainTableWrap .work-table col:nth-child(14) {width:100px;}
+    #festivalMainTableWrap .work-table col:nth-child(15) {width:120px;}
+  }
+  @media screen and (max-width:700px) {
+    #festivalMainTableWrap .work-table th:nth-child(2) {left:auto;}
+    #festivalMainTableWrap .work-table tbody td:nth-child(2) {position:static;}
+  }
+
 </style>
 </head>
 <body>
@@ -1352,7 +1412,8 @@
         <label for="festivalProgressFilter">準備状態</label><select id="festivalProgressFilter"><option value="">すべて</option><option value="waiting">準備待ち</option><option value="partial">準備中</option><option value="done">準備完了</option><option value="unset">予定未設定</option><option value="legacy">旧方式・切替待ち</option></select>
         <span id="festivalFilterCount" class="filter-count"></span>
       </div>
-      <div class="work-scroll" id="festivalMainTableWrap"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>入荷予定<br>未入荷数／予定日</th><th>準備（S1出）<br>予定数</th><th>累計完了数<br>（在庫反映済み）</th><th>残り数<br>（予定に対して）</th><th>今回準備数<br>・品目別操作</th><th>準備状態</th><th>直送<br>（在庫外）</th><th>月始祭戻り<br>（再販売可能）</th><th>月始祭戻り<br>NG品</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
+      <p class="festival-layout-hint">右側の項目は表を横にスクロールして確認できます。商品コード・商品名は左側に固定しています。</p>
+      <div class="work-scroll" id="festivalMainTableWrap"><table class="work-table"><colgroup><col><col><col><col><col><col><col><col><col><col><col><col><col><col><col></colgroup><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>入荷予定<br>未入荷数／予定日</th><th>準備（S1出）<br>予定数</th><th>累計完了数<br>（在庫反映済み）</th><th>残り数<br>（予定に対して）</th><th>今回準備数<br>・品目別操作</th><th>準備状態</th><th>直送<br>（在庫外）</th><th>月始祭戻り<br>（再販売可能）</th><th>月始祭戻り<br>NG品</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
       <div id="festivalPreparedPanel"><h3>在庫反映済み準備分の一覧表</h3><p id="festivalPreparedCount">在庫へ反映済みの累計完了数がある商品を表示します。上のジャンル・検索条件が反映されます。</p><button type="button" class="btn-secondary-inline" id="festivalPreparedPrintBtn">実際準備完了分を印刷</button><div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>在庫反映済み累計</th><th>単位</th><th>状態</th></tr></thead><tbody id="festivalPreparedRows"></tbody></table></div></div>
       <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">入力を保存</button><button class="btn-primary" id="festivalCommitBtn" style="display:none;">実際準備完了を確定・在庫から減算</button><button class="btn-secondary-inline" id="festivalReturnBtn" style="display:none;">準備完了を取消・在庫へ戻す</button><button class="btn-primary" id="festivalSettleBtn">月始祭を精算・良品戻りを在庫へ加算</button></div>
     </section>
