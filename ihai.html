@@ -9,12 +9,13 @@
 <section id="login"><h2>ログイン</h2><form id="loginForm"><div class="field"><label for="loginName">名前</label><input id="loginName" value="迫" readonly autocomplete="username"></div><div class="field"><label for="password">パスワード</label><input id="password" type="password" autocomplete="current-password" required></div><button id="loginBtn" class="primary" type="submit">ログインする</button><p class="hint">在庫管理システムと同じパスワードを入力してください。</p></form></section>
 <div id="app" hidden>
 <div class="counts"><div class="count">未完了<strong id="pendingCount">—</strong></div><div class="count">消込済<strong id="completedCount">—</strong></div></div>
+<section id="excelSection"><div class="topline"><h2 style="margin:0">Excelから一括登録</h2><button id="excelTemplate" type="button">入力用Excelをダウンロード</button></div><p class="hint">1行目に「伝票番号」「名前」、2行目以降にデータを入れてください。取り込んだ記録は「未完了」になります。</p><p class="hint">伝票番号の列はExcelで「文字列」にすると、先頭の0を保持できます。</p><div class="grid" style="margin-top:18px"><div class="field"><label for="excelFile">Excelファイル（.xlsx / .xls）</label><input id="excelFile" type="file" accept=".xlsx,.xls"></div><div class="field"><label for="excelSheet">取り込むシート</label><select id="excelSheet" disabled><option>ファイルを選択してください</option></select></div><button id="excelPreview" type="button" disabled>内容を確認する</button></div><p class="hint">1回1,000行・10MBまで。登録済みの伝票番号は上書きしません。</p><div id="excelResults" hidden><p id="excelSummary" class="message" role="status" style="margin-top:18px"></p><div class="tablewrap" style="max-height:340px"><table><thead><tr><th>Excel行</th><th>伝票番号</th><th>名前</th><th>確認結果</th></tr></thead><tbody id="excelRows"></tbody></table></div><p class="hint">空欄や不備のある行、Excel内で伝票番号が重複している行は除外します。プレビューだけでは登録されません。</p><div class="actions" style="margin-top:16px"><button id="excelImport" type="button" class="primary" disabled>新規の行を登録する</button><button id="excelStop" type="button" hidden>処理を停止する</button><button id="excelClear" type="button">確認を閉じる</button></div><p id="excelProgress" class="hint" role="status" aria-live="polite"></p></div></section>
 <section><h2>新しく登録する</h2><form id="registerForm" class="grid"><div class="field"><label for="slip">伝票番号</label><input id="slip" maxlength="80" autocomplete="off" required placeholder="例：001234"></div><div class="field"><label for="person">名前</label><input id="person" maxlength="100" autocomplete="off" required placeholder="お名前を入力"></div><button class="primary write" type="submit">登録する</button></form><p class="hint">伝票番号の先頭の「0」も保存されます。全角の英数字は半角にそろえます。</p></section>
 <section><div class="topline"><h2 style="margin:0">引き取り状況</h2><span id="connection" class="connection" role="status">接続を確認しています…</span></div><div class="filters"><div><label for="search">伝票番号・名前で検索</label><input id="search" type="search" placeholder="番号や名前の一部を入力" autocomplete="off"></div><div><label for="filter">表示する状況</label><select id="filter"><option value="pending">未完了</option><option value="completed">消込済</option><option value="all">すべて</option></select></div></div><p class="hint" id="shown"></p><div class="tablewrap"><table><thead><tr><th>伝票番号</th><th>名前</th><th>状況</th><th>引取日時</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div><p class="hint">位牌を引き取ったら「引取済にする」を押してください。履歴は消えません。</p></section>
 </div></main>
 <dialog id="confirmDialog"><h2 id="confirmTitle"></h2><p id="confirmText" style="white-space:pre-wrap;overflow-wrap:anywhere"></p><form id="confirmForm"><div id="renameField" class="field" hidden><label for="newName">正しい名前</label><input id="newName" maxlength="100"></div><div class="actions"><button id="confirmOk" class="primary" type="submit">実行する</button><button id="confirmCancel" type="button">やめる</button></div></form></dialog>
 <dialog id="historyDialog"><div class="topline"><h2 id="historyTitle">操作履歴</h2><button id="historyClose">閉じる</button></div><div id="historyContent"></div></dialog>
-<footer>弘文社 · 位牌引き取り管理 · 2026.11.17</footer>
+<footer>弘文社 · 位牌引き取り管理 · Excel取込版 2026.11.17</footer>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
@@ -40,7 +41,7 @@ const IhaiCore = (() => {
     await db.runTransaction(async tx => {
       const snapshot = await tx.get(ref);
       const old = snapshot.exists ? snapshot.data() : null;
-      if (action === 'register' && old) throw new Error('この伝票番号は登録済みです。検索してご確認ください。');
+      if (action === 'register' && old) { const error = new Error('この伝票番号は登録済みです。検索してご確認ください。'); error.code = 'ihai/duplicate'; throw error; }
       if (action !== 'register' && !old) throw new Error('対象の記録が見つかりません。再読み込みしてください。');
       if (old && old.revision !== expectedRevision) throw new Error('別の画面で更新されています。最新の表示を確認してから再操作してください。');
       if (!['register', 'complete', 'reopen', 'rename'].includes(action)) throw new Error('操作が正しくありません。');
@@ -66,10 +67,173 @@ const IhaiCore = (() => {
 })();
 if (typeof module !== 'undefined') module.exports = IhaiCore;
 
+const IhaiExcel = (() => {
+  const MAX_ROWS = 1000;
+  function prepare(XLSX, workbook, sheetName, existingRecords) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet || !sheet['!ref']) throw new Error('選択したシートにデータがありません。');
+    const range = XLSX.utils.decode_range(sheet['!fullref'] || sheet['!ref']);
+    if (range.e.r > MAX_ROWS) throw new Error('1回に取り込めるのは、見出し行を除いて1,000行までです。Excelを分けてください。');
+    if (range.e.c > 99) throw new Error('Excelは100列以内にしてください。必要な列は「伝票番号」「名前」の2列です。');
+    const cell = (r,c) => sheet[XLSX.utils.encode_cell({r,c})];
+    const displayed = c => c ? String(c.w != null ? c.w : XLSX.utils.format_cell(c) || '').trim() : '';
+    const heading = c => displayed(c).normalize('NFKC').replace(/\s/g,'');
+    const columns = { slip:[], name:[] };
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      if (heading(cell(0,c)) === '伝票番号') columns.slip.push(c);
+      if (['名前','氏名'].includes(heading(cell(0,c)))) columns.name.push(c);
+    }
+    if (columns.slip.length !== 1 || columns.name.length !== 1) throw new Error('1行目に「伝票番号」「名前」（または「氏名」）の見出しを1つずつ入れてください。');
+    const existing = new Map(existingRecords.map(r=>[IhaiCore.validate(r.slip,r.name).id,r]));
+    const rows = [];
+    for (let r = 1; r <= range.e.r; r++) {
+      const a = cell(r,columns.slip[0]), b = cell(r,columns.name[0]);
+      const slip = displayed(a), name = displayed(b);
+      if (!slip && !name && !a?.f && !b?.f) continue;
+      const entry = { row:r+1, slip, name, status:'new', detail:'新規登録します' };
+      try {
+        if (a?.f || b?.f) throw new Error('数式を値に貼り付け直してください。');
+        if ([a,b].some(c=>c && !['s','str','n','z'].includes(c.t))) throw new Error('文字列または番号を入力してください。');
+        if (a?.t === 'n' && (!Number.isSafeInteger(a.v) || a.v < 0 || a.v >= 1e15)) throw new Error('伝票番号は文字列で入力してください（16桁以上の数値や小数は不可）。');
+        if (a?.t === 'n' && a.z && XLSX.SSF.is_date(a.z)) throw new Error('伝票番号が日付形式です。文字列に直してください。');
+        const v = IhaiCore.validate(slip,name); Object.assign(entry,v);
+        const old = existing.get(v.id);
+        if (old) { entry.status='existing'; entry.detail=old.name === v.name ? '登録済みのため取り込みません' : '登録済み（名前が異なります）。上書きしません'; }
+      } catch (err) { entry.status='invalid'; entry.detail=err.message; }
+      rows.push(entry);
+    }
+    if (!rows.length) throw new Error('取り込むデータがありません。2行目以降に伝票番号と名前を入力してください。');
+    const groups = new Map();
+    for (const row of rows.filter(r=>r.status==='new')) { if (!groups.has(row.id)) groups.set(row.id,[]); groups.get(row.id).push(row); }
+    for (const group of groups.values()) if (group.length > 1) for (const row of group) { row.status='duplicate'; row.detail='Excel内で伝票番号が重複しています。重複した行はすべて除外します'; }
+    return rows;
+  }
+  async function commit(rows, save, canContinue, progress) {
+    const targets = rows.filter(r=>r.status==='new'); let attempted = 0;
+    for (const row of targets) {
+      if (!canContinue()) return { stopped:true, attempted, total:targets.length };
+      try { await save(row); row.status='imported'; row.detail='未完了として登録しました'; }
+      catch (err) {
+        if (err.code === 'ihai/duplicate') { row.status='existing'; row.detail='別の画面で登録済みのため取り込みません'; }
+        else { row.status='failed'; row.detail=err.code === 'permission-denied' ? '保存権限がありません' : '保存を確認できません。最新の一覧を確認してから再読み込みしてください'; attempted++; progress(row,attempted,targets.length); return { stopped:true, attempted, total:targets.length }; }
+      }
+      attempted++; progress(row,attempted,targets.length);
+    }
+    return { stopped:false, attempted, total:targets.length };
+  }
+  return { MAX_ROWS, prepare, commit };
+})();
+if (typeof module !== 'undefined') module.exports = IhaiExcel;
+
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
   let auth, db, user = null, records = [], ready = false, busy = false, unsubscribe, historyUnsubscribe, epoch = 0, pendingAction;
+  let excelWorkbook = null, excelRows = [], excelParsing = false, excelLoading = 0, excelStopped = false, excelNeedsReview = false, xlsxPromise;
+  function loadExcelLibrary() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (!xlsxPromise) xlsxPromise = new Promise((resolve,reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+      let settled = false;
+      const done = error => { if (settled) return; settled=true; clearTimeout(timer); if (error) { script.remove(); xlsxPromise=null; reject(error); } else resolve(window.XLSX); };
+      const timer=setTimeout(()=>done(new Error('Excel機能の読み込みがタイムアウトしました。通信を確認して再操作してください。')),20000);
+      script.onload=()=>done(window.XLSX ? null : new Error('Excel機能を読み込めませんでした。'));
+      script.onerror=()=>done(new Error('Excel機能を読み込めませんでした。通信を確認して再操作してください。'));
+      document.head.append(script);
+    });
+    return xlsxPromise;
+  }
+  function excelControls() {
+    $('excelFile').disabled = busy || excelParsing;
+    $('excelSheet').disabled = busy || excelParsing || !excelWorkbook;
+    $('excelPreview').disabled = busy || excelParsing || !excelWorkbook || !ready;
+    $('excelTemplate').disabled = busy || excelParsing;
+    $('excelClear').disabled = busy || excelParsing;
+    $('excelImport').disabled = busy || excelParsing || !ready || excelNeedsReview || !excelRows.some(r=>r.status==='new');
+  }
+  function excelRender() {
+    const count = status => excelRows.filter(r=>r.status===status).length;
+    $('excelResults').hidden = !excelRows.length;
+    $('excelSummary').textContent = `新規 ${count('new')}件 ／ 登録済 ${count('existing')}件 ／ Excel内重複 ${count('duplicate')}件 ／ 不備 ${count('invalid')}件 ／ 取込完了 ${count('imported')}件 ／ 保存未確認 ${count('failed')}件`;
+    $('excelRows').replaceChildren();
+    for (const row of excelRows) {
+      const tr=document.createElement('tr');
+      for (const value of [row.row,row.slip,row.name,row.detail]) { const td=document.createElement('td'); td.textContent=value; td.style.overflowWrap='anywhere'; tr.append(td); }
+      $('excelRows').append(tr);
+    }
+    $('excelImport').textContent = `新規${count('new')}件を登録する`;
+    excelControls();
+  }
+  function excelReset() {
+    excelLoading++; excelWorkbook=null; excelRows=[]; excelParsing=false; excelStopped=true; excelNeedsReview=false;
+    $('excelFile').value=''; $('excelSheet').replaceChildren(); $('excelProgress').textContent=''; $('excelStop').hidden=true; excelRender();
+  }
+  function excelPreview() {
+    if (!ready || busy || !excelWorkbook) return;
+    try {
+      excelRows=IhaiExcel.prepare(window.XLSX,excelWorkbook,$('excelSheet').value,records); excelNeedsReview=false;
+      $('excelProgress').textContent='内容を確認し、「新規の行を登録する」を押してください。登録済みの状態と履歴は維持します。'; excelRender();
+    } catch (err) { excelRows=[]; excelRender(); message(err.message,true); }
+  }
+  $('excelFile').addEventListener('change', async () => {
+    const file=$('excelFile').files[0]; const token=++excelLoading, currentEpoch=epoch;
+    excelWorkbook=null; excelRows=[]; excelNeedsReview=false; $('excelSheet').replaceChildren(); $('excelProgress').textContent=''; excelRender();
+    if (!file) return;
+    if (!/\.(xlsx|xls)$/i.test(file.name)) { message('Excelファイル（.xlsx / .xls）を選択してください。',true); return; }
+    if (file.size>10*1024*1024) { message('10MB以下のExcelファイルを選択してください。',true); return; }
+    excelParsing=true; excelControls(); message('Excelを読み込んでいます…');
+    try {
+      const XLSX=await loadExcelLibrary(); const bytes=await file.arrayBuffer();
+      if (token!==excelLoading || currentEpoch!==epoch) return;
+      const book=XLSX.read(bytes,{type:'array',cellNF:true,cellText:true,cellFormula:true,cellHTML:false,sheetRows:1002});
+      if (!book.SheetNames.length) throw new Error('Excelにシートがありません。');
+      excelWorkbook=book;
+      book.SheetNames.forEach(name=>{const option=document.createElement('option');option.value=name;option.textContent=name;$('excelSheet').append(option);});
+      message('Excelを読み込みました。取り込むシートを選び、内容を確認してください。');
+      excelPreview();
+    } catch (err) { if (token===excelLoading && currentEpoch===epoch) message(`Excelを読み込めませんでした。${err.message || 'ファイルの形式をご確認ください。'}`,true); }
+    finally { if (token===excelLoading) { excelParsing=false; excelControls(); } }
+  });
+  $('excelSheet').addEventListener('change', () => { excelRows=[]; excelRender(); $('excelProgress').textContent=''; });
+  $('excelPreview').onclick=excelPreview;
+  $('excelClear').onclick=()=>{excelRows=[];excelRender();$('excelProgress').textContent='';};
+  $('excelStop').onclick=()=>{excelStopped=true;$('excelStop').disabled=true;$('excelProgress').textContent='現在の1件の保存を確認してから停止します。';};
+  $('excelTemplate').onclick=async()=>{
+    excelParsing=true; excelControls();
+    try {
+      const XLSX=await loadExcelLibrary(), sheet=XLSX.utils.aoa_to_sheet([['伝票番号','名前']]);
+      sheet['!cols']=[{wch:24},{wch:28}];
+      const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'位牌引取');XLSX.writeFile(book,'ihai-import-template.xlsx');
+      message('入力用Excelをダウンロードしました。2行目以降に入力してください。伝票番号の列は「文字列」に設定してください。');
+    } catch(err) { message(errorText(err),true); }
+    finally { excelParsing=false; excelControls(); }
+  };
+  $('excelImport').onclick=()=>{
+    if (!ready || busy || excelNeedsReview || !excelRows.some(r=>r.status==='new')) return;
+    pendingAction={action:'import'}; $('confirmTitle').textContent='Excelから一括登録';
+    $('confirmText').textContent=`新規${excelRows.filter(r=>r.status==='new').length}件を「未完了」として登録します。\n登録済み・重複・不備の行は取り込みません。\n\n表示した内容で登録しますか？`;
+    $('renameField').hidden=true;$('newName').required=false;$('confirmDialog').showModal();
+  };
+  async function excelCommit() {
+    if (!ready || busy || !navigator.onLine || excelNeedsReview) { message('最新の接続状態を確認し、内容確認からやり直してください。',true); return; }
+    busy=true;excelStopped=false;const currentEpoch=epoch, currentUser=user;
+    $('confirmDialog').close();$('excelStop').hidden=false;$('excelStop').disabled=false;
+    $('excelProgress').textContent='登録を開始しています…';render();
+    const unload=e=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',unload);
+    try {
+      const result=await IhaiExcel.commit(excelRows,
+        row=>IhaiCore.save(db,currentUser,row,'register',undefined,()=>firebase.firestore.FieldValue.serverTimestamp()),
+        ()=>!excelStopped && navigator.onLine && currentEpoch===epoch && IhaiCore.isOwner(user),
+        (row,n,total)=>{if(currentEpoch===epoch){$('excelProgress').textContent=`${n} / ${total}件を処理しました。`;excelRender();}});
+      if (currentEpoch!==epoch) return;
+      excelNeedsReview=true;
+      const saved=excelRows.filter(r=>r.status==='imported').length;
+      $('excelProgress').textContent=`${result.stopped ? '処理を停止しました。' : '取り込みが完了しました。'}取込完了 ${saved}件。${result.stopped ? '登録済みの記録は保存されています。最新の一覧を確認し、「内容を確認する」から再確認してください。' : '登録した記録は一覧の「未完了」で確認できます。'}`;
+      message(result.stopped ? '取り込みを停止しました。確認結果をご覧ください。' : `Excelから${saved}件を登録しました。`,result.stopped);
+    } catch(err) { if(currentEpoch===epoch){excelNeedsReview=true;message(errorText(err),true);} }
+    finally { window.removeEventListener('beforeunload',unload);busy=false;$('excelStop').hidden=true;render();excelRender(); }
+  }
   const titles = { register: '登録', complete: '引取済にする（消込）', reopen: '未完了に戻す', rename: '名前を訂正する' };
   const fmt = v => v && typeof v.toDate === 'function' ? new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }).format(v.toDate()) : '—';
   function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); $('message').hidden = !text; }
@@ -106,6 +270,7 @@ if (typeof module !== 'undefined') module.exports = IhaiCore;
       }); operations.append(actions); tr.append(operations); $('rows').append(tr);
     });
     document.querySelectorAll('.write').forEach(b => b.disabled = !ready || busy);
+    excelControls();
   }
   async function perform(input, action, revision) {
     if (!ready || busy || !navigator.onLine) { message('接続が確認できてから操作してください。', true); return false; }
@@ -149,6 +314,7 @@ if (typeof module !== 'undefined') module.exports = IhaiCore;
   $('confirmDialog').addEventListener('cancel', e => { if (busy) e.preventDefault(); });
   $('confirmForm').onsubmit = async e => {
     e.preventDefault(); const p = pendingAction; if (!p) return;
+    if (p.action==='import') { await excelCommit(); return; }
     const input = { slip:p.record.slip, name:p.action === 'rename' ? $('newName').value : p.record.name };
     const ok = await perform(input,p.action,p.record.revision); if (ok) $('confirmDialog').close();
     else if ($('confirmDialog').open) { $('confirmDialog').close(); } // 再度最新の行から操作
@@ -177,7 +343,7 @@ if (typeof module !== 'undefined') module.exports = IhaiCore;
     if (!window.firebase || !firebase.apps.length) throw new Error('Firebase設定を読み込めません。既存の firebase-config.js と同じフォルダーに ihai.html を配置してください。');
     auth = firebase.auth(); db = firebase.firestore();
     auth.onAuthStateChanged(async nextUser => {
-      epoch++; if (unsubscribe) unsubscribe(); unsubscribe = null; closeDialogs();
+      epoch++; if (unsubscribe) unsubscribe(); unsubscribe = null; closeDialogs(); excelReset();
       ready = false; records = []; user = null; $('app').hidden = true; $('logout').hidden = true; $('login').hidden = false; render();
       if (!nextUser) return;
       if (!IhaiCore.isOwner(nextUser)) { message('この画面は迫様専用です。迫様のアカウントでログインしてください。',true); return; }
