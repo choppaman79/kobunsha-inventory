@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -823,8 +824,6 @@
   .supplier-picker-row:nth-child(even) { background:#f9f7f2; }
   .supplier-picker-row small { display:block; color:#6b6357; }
   .supplier-picker-row input { margin:0; min-width:0; }
-  .order-edit-qty { display:flex !important; align-items:center; gap:5px; margin:0 !important; white-space:nowrap; }
-  .order-edit-qty input { width:78px; margin:0; }
   .verify-scanner-box { background:#f3f6f8; border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:12px; }
   .verify-scanner-box .scanner-input { max-width:none; margin:9px 0 4px !important; }
   .verify-scanner-box p { margin:6px 0; font-size:13px; line-height:1.5; }
@@ -1050,52 +1049,52 @@
   /* 月始祭準備の画面表示：在庫一覧と同じ余白・見出し。印刷の用紙幅は従来のまま。 */
   .festival-layout-hint {margin:8px 0;font-size:12px!important;}
   @media screen {
-    #festivalMainTableWrap {overflow:auto;max-height:72vh;border:1px solid var(--line);border-radius:8px;isolation:isolate;}
-    #festivalMainTableWrap .work-table {width:1903px;min-width:1903px;max-width:none;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:14px;line-height:1.45;}
+    #festivalMainTableWrap {--festival-code-width:136px;overflow:auto;max-height:72vh;border:1px solid var(--line);border-radius:8px;isolation:isolate;}
+    #festivalMainTableWrap .work-table {width:1843px;min-width:1843px;max-width:none;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:14px;line-height:1.45;}
     #tabFestival #festivalMainTableWrap .work-table th,
     #tabFestival #festivalMainTableWrap .work-table tbody td {width:auto;min-width:0;padding:12px 10px;border:0;border-bottom:1px solid #e2ded6;vertical-align:middle;overflow-wrap:normal;word-break:normal;}
-    #festivalMainTableWrap .work-table thead th {height:58px;background:#314563;color:#fff;font-size:13px;line-height:1.5;text-align:center;white-space:normal;position:sticky;top:0;z-index:3;box-shadow:inset -1px 0 #52627b;}
+    #festivalMainTableWrap .work-table thead th {height:58px;background:#314563;color:#fff;font-size:13px;line-height:1.5;text-align:center;white-space:normal;word-break:normal;overflow-wrap:anywhere;position:sticky;top:0;z-index:3;box-shadow:inset -1px 0 #52627b;}
     #festivalMainTableWrap .work-table tbody tr {background:#fff;}
     #festivalMainTableWrap .work-table tbody tr:nth-child(even) {background:#faf9f6;}
     #festivalMainTableWrap .work-table tbody tr:hover {background:#eef2f7;}
     #festivalMainTableWrap .work-table tbody td {height:66px;}
-    #festivalMainTableWrap .work-table tbody td:nth-child(1) {white-space:nowrap;font-variant-numeric:tabular-nums;}
-    #festivalMainTableWrap .work-table tbody td:nth-child(2) {font-weight:700;color:var(--indigo-deep);overflow-wrap:anywhere;text-align:left;}
+    #tabFestival #festivalMainTableWrap .work-table tbody td:nth-child(1) {overflow-wrap:anywhere;font-variant-numeric:tabular-nums;}
+    #tabFestival #festivalMainTableWrap .work-table tbody td:nth-child(2) {font-weight:700;color:var(--indigo-deep);overflow-wrap:anywhere;text-align:left;}
     #festivalMainTableWrap .work-table tbody td:nth-child(3) {font-size:18px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums;}
-    #festivalMainTableWrap .work-table tbody td:nth-child(4) {font-size:12px;text-align:center;line-height:1.55;overflow-wrap:anywhere;}
+    #tabFestival #festivalMainTableWrap .work-table tbody td:nth-child(4) {font-size:12px;text-align:center;line-height:1.55;overflow-wrap:anywhere;}
     #festivalMainTableWrap .work-table tbody td:nth-child(5),
     #festivalMainTableWrap .work-table tbody td:nth-child(6),
     #festivalMainTableWrap .work-table tbody td:nth-child(7),
     #festivalMainTableWrap .work-table tbody td:nth-child(n+10) {text-align:right;font-variant-numeric:tabular-nums;}
-    #tabFestival #festivalMainTableWrap .work-table tbody td:nth-child(8) {white-space:normal;overflow:hidden;}
+    #tabFestival #festivalMainTableWrap .work-table tbody td:nth-child(8) {white-space:normal;}
     #festivalMainTableWrap .work-table tbody td:nth-child(9) {text-align:center;}
     #tabFestival #festivalMainTableWrap .work-table input,
     #tabFestival #festivalMainTableWrap .work-table input[type=number] {width:100%;min-width:0;height:34px;margin:0;padding:6px 7px;font-size:14px;line-height:20px;text-align:right;}
-    #tabFestival #festivalMainTableWrap .work-table input.batchQty[type=number] {display:inline-block;width:56px;min-width:56px;max-width:56px;vertical-align:middle;}
+    #tabFestival #festivalMainTableWrap .work-table input.batchQty[type=number] {display:block;width:78px;max-width:100%;margin-inline:auto;}
     #tabFestival #festivalMainTableWrap .work-table .festival-line-add,
     #tabFestival #festivalMainTableWrap .work-table .festival-line-undo {min-width:0;min-height:32px;padding:6px 8px;align-items:center;justify-content:center;vertical-align:middle;word-break:normal;font-size:12px;line-height:18px;box-sizing:border-box;}
-    #tabFestival #festivalMainTableWrap .work-table .festival-line-add {display:inline-flex;width:144px;max-width:calc(100% - 62px);margin:0 0 0 6px;white-space:normal;overflow-wrap:anywhere;}
-    #tabFestival #festivalMainTableWrap .work-table .festival-line-undo {display:flex;width:206px;max-width:100%;margin:6px 0 0;white-space:normal;overflow-wrap:anywhere;}
+    #tabFestival #festivalMainTableWrap .work-table .festival-line-add {display:flex;width:100%;margin:6px 0 0;white-space:normal;overflow-wrap:anywhere;}
+    #tabFestival #festivalMainTableWrap .work-table .festival-line-undo {display:flex;width:100%;margin:6px 0 0;white-space:normal;overflow-wrap:anywhere;}
     #tabFestival #festivalMainTableWrap .work-table .festival-line-state {max-width:100%;white-space:normal;overflow-wrap:anywhere;font-size:13px;line-height:1.4;padding:5px 8px;}
     /* 横に動かしても商品を確認できるよう、コードと商品名を固定。 */
     #festivalMainTableWrap .work-table th:nth-child(1),
     #festivalMainTableWrap .work-table td:nth-child(1) {position:sticky;left:0;}
     #festivalMainTableWrap .work-table th:nth-child(2),
-    #festivalMainTableWrap .work-table td:nth-child(2) {position:sticky;left:90px;}
+    #festivalMainTableWrap .work-table td:nth-child(2) {position:sticky;left:var(--festival-code-width);}
     #festivalMainTableWrap .work-table tbody td:nth-child(-n+2) {z-index:2;background:#fff;}
     #festivalMainTableWrap .work-table tbody tr:nth-child(even) td:nth-child(-n+2) {background:#faf9f6;}
     #festivalMainTableWrap .work-table tbody tr:hover td:nth-child(-n+2) {background:#eef2f7;}
     #festivalMainTableWrap .work-table thead th:nth-child(-n+2) {z-index:4;background:#314563;}
     #festivalMainTableWrap .work-table th:nth-child(2),
     #festivalMainTableWrap .work-table td:nth-child(2) {box-shadow:2px 0 0 #e2ded6;}
-    #festivalMainTableWrap .work-table col:nth-child(1) {width:90px;}
-    #festivalMainTableWrap .work-table col:nth-child(2) {width:280px;}
+    #festivalMainTableWrap .work-table col:nth-child(1) {width:var(--festival-code-width);}
+    #festivalMainTableWrap .work-table col:nth-child(2) {width:260px;}
     #festivalMainTableWrap .work-table col:nth-child(3) {width:88px;}
     #festivalMainTableWrap .work-table col:nth-child(4) {width:160px;}
     #festivalMainTableWrap .work-table col:nth-child(5) {width:95px;}
     #festivalMainTableWrap .work-table col:nth-child(6) {width:110px;}
     #festivalMainTableWrap .work-table col:nth-child(7) {width:95px;}
-    #festivalMainTableWrap .work-table col:nth-child(8) {width:230px;}
+    #festivalMainTableWrap .work-table col:nth-child(8) {width:144px;}
     #festivalMainTableWrap .work-table col:nth-child(9) {width:135px;}
     #festivalMainTableWrap .work-table col:nth-child(10) {width:85px;}
     #festivalMainTableWrap .work-table col:nth-child(11) {width:115px;}
@@ -1193,6 +1192,46 @@
   #tabDisaster #dsBulkWrap col:nth-child(2) {width:320px;}
   #tabDisaster #dsBulkWrap th:nth-child(2),#tabDisaster #dsBulkWrap td:nth-child(2) {left:140px;}
   @media screen and (max-width:700px) {#tabDisaster #dsBulkWrap th:nth-child(2) {left:auto;}#tabDisaster #dsBulkWrap tbody td:nth-child(2) {position:static;}}
+  @media screen {
+    #festivalMainTableWrap:focus-visible,
+    #tabDisaster .ds-table-wrap:focus-visible,
+    .order-detail-scroll:focus-visible {outline:3px solid var(--indigo);outline-offset:3px;}
+    #tabOrders .order-list-grid {min-width:680px;}
+    #tabOrders .order-list-scroll[hidden] {display:none;}
+    #tabOrders .order-list-grid tbody tr {cursor:pointer;}
+    .order-entry-scroll {margin-top:14px;max-height:36vh;}
+    .order-entry-grid.inventory-grid {min-width:440px;}
+    .order-entry-grid .inventory-name {min-width:140px;}
+    .order-list-grid td,.order-entry-grid td {overflow-wrap:anywhere;vertical-align:middle;}
+    .order-list-grid .order-item-count,.order-entry-grid .order-item-count {text-align:right;font-variant-numeric:tabular-nums;}
+    .order-list-grid .order-item-count,.order-list-grid .slip-status {white-space:nowrap;}
+    .order-entry-grid .order-editor-qty {width:76px;margin:0;text-align:right;}
+    .order-list-grid .order-open-button,.order-entry-grid .slip-item-remove {white-space:nowrap;margin:0;}
+    #orderDetailOverlay .order-detail-scroll {overflow:auto;max-height:38vh;border:1px solid var(--line);border-radius:8px;}
+    #orderDetailOverlay .slip-detail-table {display:table;min-width:480px;border-collapse:separate;border-spacing:0;margin:0;}
+    #orderDetailOverlay .slip-detail-table thead {display:table-header-group;}
+    #orderDetailOverlay .slip-detail-table tbody {display:table-row-group;}
+    #orderDetailOverlay .slip-detail-table tbody tr {display:table-row;padding:0;}
+    #orderDetailOverlay .slip-detail-table tbody td {display:table-cell;}
+    #orderDetailOverlay .slip-detail-table tbody td::before {display:none;}
+    #orderDetailOverlay .slip-detail-table th {white-space:normal;}
+    #orderDetailOverlay .slip-detail-table th {position:sticky;top:0;z-index:1;background:#314563;color:#fff;text-align:left;line-height:1.45;}
+    #orderDetailOverlay .slip-detail-table td {overflow-wrap:anywhere;line-height:1.45;}
+    #orderDetailOverlay .slip-detail-table tbody tr:nth-child(even) {background:#faf9f6;}
+    #orderDetailOverlay .slip-detail-table tbody tr:hover {background:#eef2f7;}
+    #orderDetailOverlay .order-received-qty {max-width:100%;margin:0;}
+    #tabDisaster .ds-table-wrap {border-radius:8px;background:#fff;}
+    #tabDisaster .ds-table-wrap .work-table th {padding:12px 10px;white-space:normal;box-shadow:inset -1px 0 #52627b;}
+    #tabDisaster #dsBulkWrap .ds-inline-name {font-weight:700;line-height:1.5;overflow-wrap:anywhere;}
+    #tabDisaster #dsBulkWrap .ds-inline-variant {text-overflow:ellipsis;}
+    #tabDisaster #dsBulkWrap .work-table tbody td:nth-child(-n+2) {background:#fff;}
+    #tabDisaster #dsBulkWrap .work-table tbody tr:nth-child(even) td:nth-child(-n+2) {background:#faf9f6;}
+    #tabDisaster #dsBulkWrap .work-table tbody tr:hover td:nth-child(-n+2) {background:#eef2f7;}
+    #tabDisaster #dsBulkWrap .work-table .ds-bulk-selected td:nth-child(-n+2) {background:#eef5f0;}
+    #tabDisaster #dsBulkWrap .work-table .ds-bulk-invalid td:nth-child(-n+2) {background:#fff0ed;}
+    #tabDisaster #dsLedgerWrap td:nth-child(4),#tabDisaster #dsCartWrap td:nth-child(4),#tabDisaster #dsCartWrap td:nth-child(5) {text-align:right;font-variant-numeric:tabular-nums;}
+    .ds-bulk-toolbar > :is(input[type=search], button) {max-width:100%;}
+  }
 </style>
 </head>
 <body>
@@ -1498,8 +1537,8 @@
         <label for="festivalProgressFilter">準備状態</label><select id="festivalProgressFilter"><option value="">すべて</option><option value="waiting">準備待ち</option><option value="partial">準備中</option><option value="done">準備完了</option><option value="unset">予定未設定</option><option value="legacy">旧方式・切替待ち</option></select>
         <span id="festivalFilterCount" class="filter-count"></span>
       </div>
-      <p class="festival-layout-hint">右側の項目は表を横にスクロールして確認できます。商品コード・商品名は左側に固定しています。</p>
-      <div class="work-scroll" id="festivalMainTableWrap"><table class="work-table"><colgroup><col><col><col><col><col><col><col><col><col><col><col><col><col><col><col></colgroup><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>入荷予定<br>未入荷数／予定日</th><th>準備（S1出）<br>予定数</th><th>累計完了数<br>（在庫反映済み）</th><th>残り数<br>（予定に対して）</th><th>今回準備数<br>・品目別操作</th><th>準備状態</th><th>直送<br>（在庫外）</th><th>月始祭戻り<br>（再販売可能）</th><th>月始祭戻り<br>NG品</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
+      <p class="festival-layout-hint">右側の項目は表を横にスクロールして確認できます。広い画面では商品コードと商品名、狭い画面では商品コードを左側に固定します。</p>
+      <div class="work-scroll" id="festivalMainTableWrap" tabindex="0" aria-label="月始祭の準備一覧"><table class="work-table"><colgroup><col><col><col><col><col><col><col><col><col><col><col><col><col><col><col></colgroup><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>入荷予定<br>未入荷数／予定日</th><th>準備（S1出）<br>予定数</th><th>累計完了数<br>（在庫反映済み）</th><th>残り数<br>（予定に対して）</th><th>今回準備数<br>・品目別操作</th><th>準備状態</th><th>直送<br>（在庫外）</th><th>月始祭戻り<br>（再販売可能）</th><th>月始祭戻り<br>NG品</th><th>売上数</th><th>単価</th><th>売上金額</th></tr></thead><tbody id="festivalRows"></tbody></table></div>
       <div id="festivalPreparedPanel"><h3>在庫反映済み準備分の一覧表</h3><p id="festivalPreparedCount">在庫へ反映済みの累計完了数がある商品を表示します。上のジャンル・検索条件が反映されます。</p><button type="button" class="btn-secondary-inline" id="festivalPreparedPrintBtn">実際準備完了分を印刷</button><div class="work-scroll"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>分類</th><th>在庫反映済み累計</th><th>単位</th><th>状態</th></tr></thead><tbody id="festivalPreparedRows"></tbody></table></div></div>
       <div class="work-actions"><button class="btn-secondary-inline" id="festivalSaveBtn">入力を保存</button><button class="btn-primary" id="festivalCommitBtn" style="display:none;">実際準備完了を確定・在庫から減算</button><button class="btn-secondary-inline" id="festivalReturnBtn" style="display:none;">準備完了を取消・在庫へ戻す</button><button class="btn-primary" id="festivalSettleBtn">月始祭を精算・良品戻りを在庫へ加算</button></div>
     </section>
@@ -1534,11 +1573,11 @@
           </div><button type="button" class="btn-secondary-inline" id="dsPackSave">入数・箱単価を商品に保存</button><button type="button" class="btn-secondary-inline" id="dsAddLine">個別の明細を追加</button>
         </details>
         <h3>登録予定の明細</h3><p>入力内容を「明細へ反映」で確認できます。下の登録ボタンでも、明細行の最新の数量・単価をまとめて反映して保存します。数量が空欄・両方0の行は登録しません。</p>
-        <div class="work-scroll ds-table-wrap" id="dsCartWrap"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>箱・ばら</th><th>基準数量</th><th>金額</th><th>操作</th></tr></thead><tbody id="dsCart"></tbody></table></div>
+        <div class="work-scroll ds-table-wrap" id="dsCartWrap" tabindex="0" aria-label="登録予定の明細一覧"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>箱・ばら</th><th>基準数量</th><th>金額</th><th>操作</th></tr></thead><tbody id="dsCart"></tbody></table></div>
         <button type="button" class="btn-primary" id="dsSave">注文を登録</button>
       </fieldset>
       <h3>登録した注文・発注</h3><div class="toolbar"><label for="dsChannelFilter">区分</label><select id="dsChannelFilter"><option value="">すべて</option><option>斡旋防災</option><option>売掛</option><option>ネット</option><option>前受</option><option>代引き</option><option>お供え</option></select><input id="dsSearch" type="search" placeholder="相手先・番号・商品で検索"></div>
-      <div class="work-scroll ds-table-wrap" id="dsLedgerWrap"><table class="work-table"><thead><tr><th>登録日時・番号</th><th>区分・相手先</th><th>明細・数量</th><th>金額・予定日</th><th>状態・備考</th><th>操作</th></tr></thead><tbody id="dsLedger"></tbody></table></div>
+      <div class="work-scroll ds-table-wrap" id="dsLedgerWrap" tabindex="0" aria-label="登録した注文・発注の一覧"><table class="work-table"><thead><tr><th>登録日時・番号</th><th>区分・相手先</th><th>明細・数量</th><th>金額・予定日</th><th>状態・備考</th><th>操作</th></tr></thead><tbody id="dsLedger"></tbody></table></div>
       <h3>商品別の在庫・必要数</h3><p>新方式の月始祭準備完了分は現在庫から減算済みです。準備確保数は旧方式の未精算分です。利用可能数は旧確保数を除き、必要数＝旧確保数＋未出荷注文数、過不足＝現在庫－必要数（＋は余り／－は不足）です。予定数だけでは在庫は動きません。</p><button type="button" class="btn-secondary-inline" id="dsCsv">在庫集計CSV</button>
       <div class="work-scroll ds-table-wrap" id="dsStockWrap"><table class="work-table"><thead><tr><th>コード</th><th>商品名</th><th>現在庫</th><th>月始祭等準備数</th><th>利用可能数</th><th>未出荷注文数</th><th>必要数</th><th>入荷予定数</th><th>過不足</th><th>不足数</th><th>入荷予定反映後過不足</th></tr></thead><tbody id="dsStock"></tbody></table></div>
       <h3>区分別集計</h3><div class="work-scroll ds-table-wrap" id="dsSummaryWrap"><table class="work-table"><thead><tr><th>区分</th><th>注文件数</th><th>未出荷件数</th><th>出荷済件数</th><th>注文金額（取消除く）</th></tr></thead><tbody id="dsSummary"></tbody></table></div>
@@ -1574,7 +1613,12 @@
         <button class="btn-secondary-inline" id="orderNotifyBtn">🔕 ブラウザ通知を有効にする</button>
         <button class="btn-add" id="orderCreateBtn">＋ 発注を作成</button>
       </div>
-      <div class="slip-list" id="orderList"></div>
+      <div class="inventory-table-scroll order-list-scroll" tabindex="0" aria-label="発注一覧">
+        <table class="inventory-grid order-list-grid">
+          <thead><tr><th scope="col">発注番号</th><th scope="col">仕入先</th><th scope="col">作成日時</th><th scope="col">品目数</th><th scope="col">状態</th><th scope="col">操作</th></tr></thead>
+          <tbody id="orderList"></tbody>
+        </table>
+      </div>
       <div class="empty-state" id="orderEmptyState" style="display:none;">発注がありません</div>
     </section>
   </main>
@@ -1935,7 +1979,12 @@
       <button type="button" class="btn-secondary" id="orderItemAddBtn" style="flex:1;">追加</button>
     </div>
 
-    <div class="slip-items-editor" id="orderItemsEditor" style="margin-top:14px;"></div>
+    <div class="inventory-table-scroll order-entry-scroll" tabindex="0" aria-label="発注品目の入力明細">
+      <table class="inventory-grid order-entry-grid">
+        <thead><tr><th scope="col">商品コード</th><th scope="col">商品名</th><th scope="col">発注数</th><th scope="col">単位</th><th scope="col">操作</th></tr></thead>
+        <tbody id="orderItemsEditor"></tbody>
+      </table>
+    </div>
 
     <div class="modal-actions">
       <button class="btn-secondary" id="orderCreateCancelBtn">キャンセル</button>
@@ -1958,12 +2007,14 @@
 
     <p id="orderReceivedQtyHint" style="display:none;font-size:12px;color:#8a8272;margin:0 0 8px;">今回入荷した数量だけ入力してください（入荷しない明細は0）。残りは入荷待ちとして残り、在庫へ加算するのは今回分だけです。</p>
 
-    <table class="slip-detail-table">
-      <thead>
-        <tr><th>商品名</th><th>コード</th><th>発注数量・入荷状況</th><th>今回入荷数／入荷済み累計</th></tr>
-      </thead>
-      <tbody id="orderDetailBody"></tbody>
-    </table>
+    <div class="order-detail-scroll" tabindex="0" aria-label="発注表の入荷明細">
+      <table class="slip-detail-table">
+        <thead>
+          <tr><th scope="col">商品名</th><th scope="col">コード</th><th scope="col">発注数量・入荷状況</th><th scope="col">今回入荷数／入荷済み累計</th></tr>
+        </thead>
+        <tbody id="orderDetailBody"></tbody>
+      </table>
+    </div>
 
     <p id="orderDetailDoneNote" style="display:none;font-size:13px;color:var(--ok-text);font-weight:600;margin-top:12px;">この発注は入荷済みです（在庫反映済み）</p>
     <p id="orderDetailCancelledNote" style="display:none;font-size:13px;color:var(--warn-text);font-weight:600;margin-top:12px;">この発注はキャンセルされました</p>
@@ -2003,20 +2054,43 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 
 <!-- Phase2追加: エクセル取込用 / QRコード生成用ライブラリ -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <!-- Phase3追加: スマホカメラでのQRコード読み取り用ライブラリ -->
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app-jan.js?v=20261117-disaster-inline-jan-v55"></script>
 <script>
-  if (window.KOBUNSHA_APP_VERSION !== "2026-11-17-disaster-inline-jan-v55") {
-    const notice = document.createElement("div");
-    notice.textContent = "画面とプログラムの版が一致しません。GitHubの app-jan.js も最新版に置き換えて再読み込みしてください。";
-    notice.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#a3392b;color:#fff;padding:12px;text-align:center;font-size:14px;";
-    document.body.appendChild(notice);
-  }
+  // 脚本ファイルの取得失敗と、取得後の初期化エラーを区別する。
+  (() => {
+    const expected = "2026-11-18-slip-startup-jan-v57";
+    const appScript = document.createElement("script");
+    const report = message => {
+      const notice = document.getElementById("loginError");
+      notice.setAttribute("role", "alert");
+      notice.textContent = message;
+    };
+    appScript.src = "app-jan.js?v=" + expected;
+    appScript.onerror = () => report(location.protocol === "file:"
+      ? "GitHub PagesのJAN版を開いてください。HTMLファイル単体ではアプリを起動できません。"
+      : "app-jan.js を読み込めません。GitHub Pagesの公開元に index-jan.html と同じ場所・ファイル名で app-jan.js があるか確認してください。");
+    appScript.onload = () => {
+      if (typeof window.firebase?.auth !== "function" || typeof window.firebase?.firestore !== "function") {
+        report("Firebaseを読み込めません。ネット接続を確認して再読み込みしてください。");
+      } else if (!window.firebase.apps?.length) {
+        report("Firebaseの設定が見つかりません。公開元の firebase-config.js を確認してください。");
+      } else if (window.KOBUNSHA_APP_VERSION && window.KOBUNSHA_APP_VERSION !== expected) {
+        report("画面とプログラムの版が違います。index-jan.html と app-jan.js を同じ版にそろえ、Ctrl+Shift+Rで再読み込みしてください。");
+      } else if (!window.KOBUNSHA_APP_READY) {
+        report("在庫管理アプリを起動できませんでした。両ファイルを同じ版にそろえ、Ctrl+Shift+Rで再読み込みしてください。");
+      }
+    };
+    document.body.appendChild(appScript);
+  })();
 </script>
 </body>
 </html>
+
+
+
+
