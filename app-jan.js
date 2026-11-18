@@ -1,3 +1,4 @@
+
 // ===================== 設定 =====================
 const MEMBERS = ["仙波","山崎","田中","落合","川野","迫","佐藤","二神","森重","小鷹","山根","熊澤"];
 const CATEGORIES = ["神具","仏具","神向き用品","チェーン","防災用品","清掃用品","その他"];
@@ -295,6 +296,7 @@ function showApp(user) {
   document.getElementById("whoAmI").textContent = `${name} さん`;
   subscribeProducts();
   subscribeMovements();
+  handlePendingHash();
   subscribeSlips();
   subscribeOrders();
   subscribeDisaster();
@@ -663,15 +665,38 @@ function handlePendingHash() {
       history.replaceState(null, "", location.pathname);
       openMoveModal(p.id);
     }
-  } else if (sm) {
-    const id = decodeURIComponent(sm[1]);
-    const s = allSlips.find(x => x.id === id);
-    if (s) {
-      pendingHashHandled = true;
-      history.replaceState(null, "", location.pathname);
-      switchTab("slips");
-      openSlipDetailModal(s.id);
+  } else if (sm && auth.currentUser) {
+    pendingHashHandled = true;
+    void openScannedSlip(decodeURIComponent(sm[1]), hash);
+  }
+}
+
+let slipOpenRequest = 0;
+async function openScannedSlip(id, sourceHash) {
+  const user = auth.currentUser;
+  if (!user) return;
+  if (!id || id.length > 200 || id.includes("/") || id === "." || id === "..") {
+    showToast("伝票のリンクが正しくありません");
+    return;
+  }
+  const request = ++slipOpenRequest;
+  const stillActive = () => request === slipOpenRequest && auth.currentUser === user && (!sourceHash || location.hash === sourceHash);
+  try {
+    if (!allSlips.some(s => s.id === id)) {
+      const record = await db.collection(SLIPS_COLLECTION).doc(id).get();
+      if (!stillActive()) return;
+      if (!allSlips.some(s => s.id === id)) {
+        if (!record.exists) return showToast("該当する伝票が見つかりません");
+        allSlips = [{...record.data(), id}, ...allSlips];
+      }
     }
+    if (!stillActive()) return;
+    if (document.getElementById("tabSlips").style.display === "none") switchTab("slips");
+    openSlipDetailModal(id);
+    if (sourceHash) history.replaceState(null, "", location.pathname + location.search);
+  } catch (err) {
+    console.error(err);
+    if (stillActive()) showToast("伝票を開けませんでした。通信状態を確認して再度お試しください");
   }
 }
 
@@ -1244,7 +1269,7 @@ function openSlipDetailModal(id) {
 
   const qrBox = document.getElementById("slipQrBox");
   qrBox.innerHTML = "";
-  new QRCode(qrBox, { text: buildSlipUrl(id), width: 64, height: 64, correctLevel: QRCode.CorrectLevel.M });
+  renderSlipQr(qrBox, id);
   const qrLabel = document.createElement("div");
   qrLabel.style.cssText = "font-size:clamp(9px,2.4vw,10.5px);color:#8a8272;margin-top:2px;";
   qrLabel.textContent = s.slipNumber || "";
@@ -1348,7 +1373,8 @@ function printSlipSheet(mode) {
 
   const qrHost = document.getElementById("printSheetQr");
   if (qrHost) {
-    new QRCode(qrHost, { text: buildSlipUrl(s.id), width: 64, height: 64, correctLevel: QRCode.CorrectLevel.M });appendSlipShortLink(qrHost,s.id);
+    renderSlipQr(qrHost, s.id);
+    appendSlipShortLink(qrHost, s.id);
   }
   document.body.classList.add("slip-print");
   document.body.classList.remove("label-print", "work-print");
@@ -1599,23 +1625,23 @@ function renderOrderList(filter) {
   const supplier = document.getElementById("orderSupplierSelect").value;
   if (supplier) items = items.filter(o => o.partner === supplier);
 
-  listEl.innerHTML = "";
+  listEl.replaceChildren();
+  listEl.closest(".order-list-scroll").hidden = items.length === 0;
   emptyEl.style.display = items.length === 0 ? "block" : "none";
 
   items.forEach(o => {
-    const row = document.createElement("div");
-    row.className = "slip-row";
+    const row = document.createElement("tr");
     const dt = o.createdAt && o.createdAt.toDate ? formatDateTime(o.createdAt.toDate()) : "―";
     const statusClass = o.status === "received" ? "done" : (o.status === "cancelled" ? "cancelled" : "");
     row.innerHTML = `
-      <div class="slip-main">
-        <div class="slip-top">
-          <span class="slip-number">${escapeHtml(o.orderNumber || "")}</span>
-          <span class="slip-status ${statusClass}">${ORDER_STATUS_LABEL[o.status] || o.status}</span>
-        </div>
-        <div class="history-meta">${escapeHtml(o.partner || "仕入先未設定")}　/　${dt}　/　品目数：${(o.items || []).length}</div>
-      </div>
+      <td class="slip-number">${escapeHtml(o.orderNumber || "―")}</td>
+      <td class="inventory-product-name">${escapeHtml(o.partner || "仕入先未設定")}</td>
+      <td>${dt}</td>
+      <td class="order-item-count">${(o.items || []).length}</td>
+      <td><span class="slip-status ${statusClass}">${escapeHtml(ORDER_STATUS_LABEL[o.status] || o.status || "―")}</span></td>
+      <td><button type="button" class="btn-secondary-inline order-open-button">詳細</button></td>
     `;
+    row.querySelector(".order-open-button").setAttribute("aria-label", (o.orderNumber || "発注") + "の詳細を開く");
     row.addEventListener("click", () => openOrderDetailModal(o.id));
     listEl.appendChild(row);
   });
@@ -1744,18 +1770,20 @@ function renderOrderItemsEditor() {
   const wrap = document.getElementById("orderItemsEditor");
   wrap.innerHTML = "";
   if (currentOrderItems.length === 0) {
-    wrap.innerHTML = `<p style="font-size:12px;color:#8a8272;">まだ品目がありません</p>`;
+    wrap.innerHTML = `<tr><td colspan="5">まだ品目がありません</td></tr>`;
     return;
   }
   currentOrderItems.forEach((item, idx) => {
-    const row = document.createElement("div");
-    row.className = "slip-item-row";
+    const row = document.createElement("tr");
     row.innerHTML = `
-      <div class="slip-item-name">${escapeHtml(item.productName)}${item.code ? "（" + escapeHtml(item.code) + "）" : ""}</div>
-      <label class="order-edit-qty">発注数<input type="number" class="order-editor-qty" data-idx="${idx}" min="1" step="1" value="${Number(item.qty)}"></label>
-      <span>${escapeHtml(item.unit || "")}</span>
-      <button type="button" class="slip-item-remove" data-idx="${idx}">×</button>
+      <td>${escapeHtml(item.code || "―")}</td>
+      <td class="inventory-name inventory-product-name">${escapeHtml(item.productName)}</td>
+      <td class="order-item-count"><input type="number" class="order-editor-qty" data-idx="${idx}" min="1" step="1" value="${Number(item.qty)}"></td>
+      <td>${escapeHtml(item.unit || "")}</td>
+      <td><button type="button" class="slip-item-remove" data-idx="${idx}">削除</button></td>
     `;
+    row.querySelector(".order-editor-qty").setAttribute("aria-label", item.productName + "の発注数");
+    row.querySelector(".slip-item-remove").setAttribute("aria-label", item.productName + "を削除");
     wrap.appendChild(row);
   });
   wrap.querySelectorAll(".slip-item-remove").forEach(btn => {
@@ -2165,10 +2193,8 @@ function handleScanResult(text) {
     closeScanModal();
     if (p) openMoveModal(p.id); else showToast("該当する商品が見つかりません");
   } else if (type === "slip") {
-    const s = allSlips.find(x => x.id === id);
-    stopScanCamera();
     closeScanModal();
-    if (s) { switchTab("slips"); openSlipDetailModal(s.id); } else showToast("該当する伝票が見つかりません");
+    void openScannedSlip(id);
   } else {
     document.getElementById("scanError").textContent = "認識できませんでした。もう一度お試しください。";
     scanRAF = requestAnimationFrame(scanTick);
@@ -2374,8 +2400,7 @@ function handleScannerWedgeInput(inputEl, mode) {
     const p = allProducts.find(x => x.id === id);
     if (p) openMoveModal(p.id); else showToast("該当する商品が見つかりません");
   } else if (type === "slip") {
-    const s = allSlips.find(x => x.id === id);
-    if (s) { switchTab("slips"); openSlipDetailModal(s.id); } else showToast("該当する伝票が見つかりません");
+    void openScannedSlip(id);
   } else {
     showToast("認識できませんでした");
   }
@@ -3962,10 +3987,15 @@ function applyInspectionPaperSize(){
 }
 window.addEventListener("beforeprint",applyInspectionPaperSize);
 window.addEventListener("afterprint",clearInspectionPaperSize);
+function setInspectionTitle(heading, productName, details) {
+  // 商品名末尾の色名まで先に表示し、検品数量は次の行に置く。
+  const name = String(productName || "").replace(/\s+/g, " ").trim();
+  heading.append(name, document.createElement("br"), details);
+}
 function appendInspectionCard(host,s,u) {
   const item=s.items[u.itemIndex],card=document.createElement("div");card.className="inspection-jan-card";
   const heading=document.createElement("div");heading.className="inspection-jan-heading";
-  heading.textContent=`${item.code||""} ${item.productName}　${u.unitIndex}/${item.plannedQty}（1個分）${u.used?"【検品済み】":""}`;
+  setInspectionTitle(heading, `${item.code||""} ${item.productName||""}`, `${u.unitIndex}/${item.plannedQty}（1個分）${u.used?"【検品済み】":""}`);
   card.appendChild(heading);if(item.remark){const instruction=document.createElement("div");instruction.className="inspection-jan-note";instruction.textContent="指定："+item.remark;card.appendChild(instruction);}card.appendChild(makeInspectionSvg(u.code));
   const note=document.createElement("div");note.className="inspection-jan-note";note.textContent="検品専用・販売不可 ／ 商品JANと組み合わせて1回だけ使用";card.appendChild(note);host.appendChild(card);
 }
@@ -3978,7 +4008,7 @@ async function printOutgoingInspectionSheet(slipId) {
   const cards=document.createElement("div");cards.className="inspection-jan-cards";
   inspectionLedger(s).filter(u=>shippingRequiresInspection(s.items[u.itemIndex])).forEach(u=>appendInspectionCard(cards,s,u));sheet.appendChild(cards);sheet.appendChild(instruction);
   const qrHost=document.getElementById("printSheetQr");
-  if(qrHost){new QRCode(qrHost,{text:buildSlipUrl(s.id),width:64,height:64,correctLevel:QRCode.CorrectLevel.M});appendSlipShortLink(qrHost,s.id);}
+  if(qrHost){renderSlipQr(qrHost,s.id);appendSlipShortLink(qrHost,s.id);}
   clearLabelPaperSize();document.body.classList.remove("label-print","work-print","order-print","prepared-print");document.body.classList.add("slip-print");
   applyInspectionPaperSize();setTimeout(()=>window.print(),150);
 }
@@ -3988,7 +4018,8 @@ async function printOutgoingInspectionLabels(slipId) {
   if(!printable.length)throw Error("JAN検品対象がありません。出荷指示書をご利用ください");
   for(const u of printable){
     const item=s.items[u.itemIndex],cell=document.createElement("div");cell.className="brother-pick-label inspection-jan-label";
-    const title=document.createElement("div");title.textContent=`${item.productName}　${u.unitIndex}/${item.plannedQty}${item.remark?"　指定："+item.remark:""}${u.used?" 検品済み":""}`;
+    const title=document.createElement("div");
+    setInspectionTitle(title, item.productName, `${u.unitIndex}/${item.plannedQty}${item.remark?"　指定："+item.remark:""}${u.used?" 検品済み":""}`);
     cell.appendChild(title);cell.appendChild(makeInspectionSvg(u.code));
     const note=document.createElement("div");note.textContent=`検品専用・販売不可　${s.slipNumber||""}`;cell.appendChild(note);grid.appendChild(cell);
   }
@@ -4815,7 +4846,7 @@ function initShippingPolicy() {
   renderShippingPolicy();
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-17-disaster-bulk-jan-v53";
+window.KOBUNSHA_APP_VERSION = "2026-11-18-slip-startup-jan-v57";
 // 在庫一覧：色別の商品・並び替え・選択印刷。既存の商品ID/JAN/コードは変更しない。
 function inventoryStockAudit() {
   return {stockUpdatedAt:firebase.firestore.FieldValue.serverTimestamp(),stockUpdatedBy:currentStaffName||""};
@@ -4885,6 +4916,11 @@ function initInventoryTools() {
   for(const id of ["inventorySort","inventorySortDirection"])document.getElementById(id).addEventListener("change",renderProductList);
   document.getElementById("inventoryPrintBtn").addEventListener("click",printSelectedInventory);
   window.addEventListener("afterprint",clearInventoryPrint);
+}
+function renderSlipQr(host, id) {
+  if (typeof QRCode === "function") {
+    new QRCode(host, {text: buildSlipUrl(id), width: 64, height: 64, correctLevel: QRCode.CorrectLevel.M});
+  }
 }
 function appendSlipShortLink(host,id) {
   const link=document.createElement("a");link.className="slip-short-link";
@@ -5044,7 +5080,7 @@ function dsBulkDefaults(p){
   return {id:p.id,mode:disasterMode,product:{...p},masterState:disasterMasterState(p),boxes:"",loose:"",pack:String(pack),unitPrice:String(purchase?(p.purchasePrice??""):price),boxPrice:String(purchase?(p.disasterPurchaseBoxPrice??""):(p.disasterBoxPrice??price*pack))};
 }
 function dsBulkSelected(d){return [d.boxes,d.loose].some(v=>String(v??"").trim()!==""&&Number(v)!==0);}
-function dsBulkHasDrafts(){return dsBulkDrafts.size>0;}
+function dsBulkHasDrafts(){return dsBulkDrafts.size>0||dsInlineHasInput();}
 function dsBulkItem(d,products=allProducts){
   if(!dsBulkSelected(d))return null;
   const p=products.find(p=>p.id===d.id);
@@ -5057,6 +5093,7 @@ function dsBulkItem(d,products=allProducts){
   return {productId:p.id,productName:p.name||"",code:String(p.code||""),unit:p.unit||"個",...q,unitPrice,boxPrice,amount,receivedQty:0,masterState:d.masterState};
 }
 function collectDsBulkItems(){
+  dsInlineCheck();
   const items=[];let total=0;
   for(const d of dsBulkDrafts.values()){
     try{const item=dsBulkItem(d);if(!item)continue;items.push(item);total+=item.amount;if(total>Number.MAX_SAFE_INTEGER)throw Error("合計金額が大きすぎます");}
@@ -5067,24 +5104,13 @@ function collectDsBulkItems(){
 }
 function applyDsBulk(quiet=false){
   if(disasterBusy)return false;
-  try{const items=collectDsBulkItems();disasterCart=items;renderDisasterCart();if(!quiet)disasterStatus(`${items.length}商品の入力を明細へ反映しました。相手先・数量・金額を確認して登録してください。在庫はまだ変わりません。`);return true;}
+  try{dsInlineCheck();const items=collectDsBulkItems();disasterCart=items;renderDisasterCart();if(!quiet)disasterStatus(`${items.length}商品の入力を明細へ反映しました。相手先・数量・金額を確認して登録してください。在庫はまだ変わりません。`);return true;}
   catch(e){disasterStatus(e.message,true);return false;}
 }
 function dsBulkUpdateLabels(){
   const purchase=disasterMode==="purchase";
   $w("dsBulkUnitTitle").textContent=purchase?"仕入ばら単価（円）":"販売ばら単価（円）";
   $w("dsBulkBoxTitle").textContent=purchase?"仕入箱単価（円）":"販売箱単価（円）";
-}
-function dsBulkLoadCart(){
-  dsBulkDrafts=new Map();
-  for(const i of disasterCart){const p=allProducts.find(p=>p.id===i.productId)||{id:i.productId,name:i.productName,code:i.code,unit:i.unit};dsBulkDrafts.set(i.productId,{...dsBulkDefaults(p),product:{...p},masterState:i.masterState??disasterMasterState(p),boxes:String(i.boxQty),loose:String(i.looseQty),pack:String(i.packSize),unitPrice:String(i.unitPrice),boxPrice:String(i.boxPrice)});}
-  dsBulkFingerprint="";renderDsBulk();
-}
-function dsBulkReset(){dsBulkDrafts=new Map();dsBulkRendered=new Map();dsBulkFingerprint="";$w("dsBulkSearch").value="";$w("dsBulkOnly").checked=false;renderDsBulk();}
-function dsBulkDisplayProducts(){
-  const products=allProducts.filter(disasterEligible).map(p=>({...p}));
-  for(const d of dsBulkDrafts.values())if(!products.some(p=>p.id===d.id))products.push({...d.product,id:d.id});
-  return products.sort((a,b)=>String(a.code||"").localeCompare(String(b.code||""),"ja",{numeric:true})||String(a.name||"").localeCompare(String(b.name||""),"ja")||a.id.localeCompare(b.id));
 }
 function dsBulkResult(d){
   try{const item=dsBulkItem(d);return {item,error:""};}catch(e){return {item:null,error:e.message};}
@@ -5098,63 +5124,105 @@ function dsBulkUpdateRow(row){
   row.classList.toggle("ds-bulk-invalid",!!result.error);row.classList.toggle("ds-bulk-selected",dsBulkSelected(d));
   const p=allProducts.find(p=>p.id===d.id);refresh.hidden=!p||!disasterEligible(p)||d.masterState===disasterMasterState(p);
 }
-function dsBulkSummary(){
-  let count=0,amount=0,errors=0;
-  for(const d of dsBulkDrafts.values()){if(!dsBulkSelected(d))continue;count++;const r=dsBulkResult(d);if(r.error){errors++;continue;}amount+=r.item.amount;}
-  $w("dsBulkSummary").textContent=`入力済み ${count}商品 ／ ${errors?`金額未確定・要確認 ${errors}商品`:"合計金額 ¥"+amount.toLocaleString("ja-JP")}（検索で隠れている入力分も含みます）`;
-}
-function filterDsBulk(){
-  const term=$w("dsBulkSearch").value.normalize("NFKC").trim().toLowerCase(),only=$w("dsBulkOnly").checked;let visible=0,total=0;
-  for(const row of $w("dsBulkRows").querySelectorAll("tr[data-product]")){
-    total++;const d=dsBulkDrafts.get(row.dataset.product)||dsBulkRendered.get(row.dataset.product),match=(!term||[d.product.code,d.product.name,d.product.barcode].some(v=>String(v||"").normalize("NFKC").toLowerCase().includes(term)))&&(!only||dsBulkSelected(d));row.hidden=!match;if(match)visible++;
-  }
-  $w("dsBulkCount").textContent=`表示 ${visible} / ${total}商品`;
-}
-function dsBulkClearProduct(id){
-  dsBulkDrafts.delete(id);disasterCart=disasterCart.filter(i=>i.productId!==id);renderDisasterCart();renderDsBulk();
-}
 function dsBulkRefreshProduct(id){
   const p=allProducts.find(p=>p.id===id);if(!p||!disasterEligible(p))return disasterStatus("防災用品の商品情報がありません。数量をクリアしてください。",true);
   const old=dsBulkDrafts.get(id)||dsBulkRendered.get(id);if(!old)return;
   if(!confirm("数量は保持し、入数・ばら単価・箱単価を現在の商品情報に入れ替えます。変更後の数量・金額を確認してください。よろしいですか？"))return;
-  dsBulkDrafts.set(id,{...dsBulkDefaults(p),boxes:old.boxes,loose:old.loose});renderDsBulk();
+  dsBulkDrafts.set(id,{...dsBulkDefaults(p),boxes:old.boxes,loose:old.loose});for(const r of dsInlineRows)if(r.id===id){r.code=String(p.code||"");r.error="";}renderDsBulk();
+}
+let dsInlineRows=[],dsInlineSequence=0;
+function dsCodeNormalize(value){return String(value??'').normalize('NFKC').trim();}
+function dsInlineNew(code='',id=''){return {key:String(++dsInlineSequence),code,id,error:''};}
+function dsInlineHasInput(){return dsInlineRows.some(r=>dsCodeNormalize(r.code));}
+function dsInlineCheck(){
+  for(const r of dsInlineRows)if(dsCodeNormalize(r.code)&&!r.id)throw Error(`商品コード「${r.code}」：${r.error||'商品・色を選択してください'}`);
+}
+function dsBulkLoadCart(){
+  dsBulkDrafts=new Map();dsInlineRows=[];
+  for(const i of disasterCart){const p=allProducts.find(p=>p.id===i.productId)||{id:i.productId,name:i.productName,code:i.code,unit:i.unit};dsBulkDrafts.set(i.productId,{...dsBulkDefaults(p),product:{...p},masterState:i.masterState??disasterMasterState(p),boxes:String(i.boxQty),loose:String(i.looseQty),pack:String(i.packSize),unitPrice:String(i.unitPrice),boxPrice:String(i.boxPrice)});dsInlineRows.push(dsInlineNew(String(i.code||p.code||''),i.productId));}
+  dsBulkFingerprint='';renderDsBulk();
+}
+function dsBulkReset(){dsBulkDrafts=new Map();dsBulkRendered=new Map();dsInlineRows=[dsInlineNew()];dsBulkFingerprint='';$w('dsBulkSearch').value='';$w('dsBulkOnly').checked=false;renderDsBulk();}
+function dsInlineMatches(r){const code=dsCodeNormalize(r.code);return code?allProducts.filter(p=>disasterEligible(p)&&dsCodeNormalize(p.code)===code):[];}
+function dsInlineResolve(r,row,choice=''){
+  const matches=dsInlineMatches(r),p=matches.length===1?matches[0]:matches.find(p=>p.id===(choice||r.id));
+  const duplicate=p&&dsInlineRows.some(other=>other!==r&&other.id===p.id),next=p&&!duplicate?p.id:'';
+  if(r.id!==next){if(r.id)dsBulkDrafts.delete(r.id);r.id=next;if(p&&next)dsBulkDrafts.set(next,dsBulkDefaults(p));}
+  r.error=duplicate?'同じ商品が他の行にあります。数量を1行にまとめてください。':!dsCodeNormalize(r.code)?'':!matches.length?'在庫一覧に一致する防災用品がありません。':!p?'色・商品を選択してください。':'';
+  if(row)dsInlinePaint(r,row);dsBulkSummary();return !!r.id;
+}
+function dsInlinePaint(r,row){
+  const d=dsBulkDrafts.get(r.id),p=allProducts.find(p=>p.id===r.id)||d?.product,matches=dsInlineMatches(r),chooser=row.querySelector('.ds-inline-variant');
+  if(r.id)row.dataset.product=r.id;else delete row.dataset.product;
+  chooser.innerHTML='<option value="">色・商品を選択してください</option>'+matches.map(p=>`<option value="${dsBulkAttr(p.id)}">${safe(p.name||'商品名未登録')}</option>`).join('');chooser.hidden=matches.length<2;chooser.value=r.id||'';
+  row.querySelector('.ds-inline-name').textContent=p?.name||'コードから自動表示';
+  row.querySelector('.ds-bulk-stock').textContent=p?Number(p.currentStock||0).toLocaleString('ja-JP')+(p.unit||'個'):'―';
+  for(const key of dsBulkFields){const input=row.querySelector(`input[data-field="${key}"]`);input.disabled=!d;input.value=d?.[key]??'';}
+  const status=row.querySelector('.ds-inline-status');status.textContent=r.error||(!dsCodeNormalize(r.code)?'商品コードを入力してください':r.id?'商品一覧と一致しました':'商品を確認してください');
+  status.className='ds-inline-status '+(r.error?'invoice-code-missing':'invoice-code-found');
+  if(d)dsBulkUpdateRow(row);else{row.querySelector('.ds-bulk-error').hidden=true;row.querySelector('.ds-bulk-total').textContent='―';row.querySelector('.ds-bulk-amount').textContent='―';row.querySelector('.ds-bulk-refresh').hidden=true;row.classList.remove('ds-bulk-selected','ds-bulk-invalid');}
+}
+function dsBulkSummary(){
+  let count=0,amount=0,errors=dsInlineRows.filter(r=>dsCodeNormalize(r.code)&&!r.id).length;
+  for(const d of dsBulkDrafts.values()){if(!dsBulkSelected(d))continue;count++;const r=dsBulkResult(d);if(r.error){errors++;continue;}amount+=r.item.amount;}
+  $w('dsBulkSummary').textContent=`入力済み ${count}商品 ／ ${errors?`金額未確定・要確認 ${errors}行`:'合計金額 ¥'+amount.toLocaleString('ja-JP')}（絞り込みで隠れている入力分も含みます）`;
+}
+function filterDsBulk(){
+  const term=$w('dsBulkSearch').value.normalize('NFKC').trim().toLowerCase(),only=$w('dsBulkOnly').checked;let visible=0;
+  for(const row of $w('dsBulkRows').querySelectorAll('tr[data-entry]')){
+    const r=dsInlineRows.find(r=>r.key===row.dataset.entry),d=dsBulkDrafts.get(r.id),p=allProducts.find(p=>p.id===r.id)||d?.product;
+    // 未解決のコード・空行は、入力と修正ができるよう常に表示する。
+    const match=!r.id||((!term||[r.code,p?.name,p?.barcode].some(v=>String(v||'').normalize('NFKC').toLowerCase().includes(term)))&&(!only||(d&&dsBulkSelected(d))));row.hidden=!match;if(match)visible++;
+  }
+  $w('dsBulkCount').textContent=`表示 ${visible} / ${dsInlineRows.length}行`;
+}
+function dsBulkClearProduct(id){dsBulkDrafts.delete(id);dsInlineRows=dsInlineRows.filter(r=>r.id!==id);disasterCart=disasterCart.filter(i=>i.productId!==id);renderDisasterCart();renderDsBulk();}
+function dsInlineDelete(key){
+  if(disasterBusy)return;const r=dsInlineRows.find(r=>r.key===key);if(!r)return;
+  if(r.id){dsBulkClearProduct(r.id);return;}dsInlineRows=dsInlineRows.filter(r=>r.key!==key);renderDsBulk();
+}
+function dsInlineAdd(){
+  if(disasterBusy)return;let r=dsInlineRows.find(r=>!dsCodeNormalize(r.code)&&!r.id);if(!r){r=dsInlineNew();dsInlineRows.push(r);}renderDsBulk();
+  for(const row of $w('dsBulkRows').querySelectorAll('tr[data-entry]'))if(row.dataset.entry===r.key){row.scrollIntoView?.({block:'nearest'});row.querySelector('input[data-field="code"]').focus();}
 }
 function renderDsBulk(){
-  const body=$w("dsBulkRows");if(!body)return;
-  const active=document.activeElement,focused=active?.closest?.("#dsBulkRows tr"),focus=focused?{id:focused.dataset.product,field:active.dataset.field}:null;
-  const products=dsBulkDisplayProducts();dsBulkRendered=new Map();
-  body.innerHTML=products.map(p=>{
-    const d=dsBulkDrafts.get(p.id)||dsBulkDefaults(p);dsBulkRendered.set(p.id,d);
-    const field=(key,label,min=0)=>`<input type="number" data-field="${key}" min="${min}" step="${key==="unitPrice"||key==="boxPrice"?"any":"1"}" value="${dsBulkAttr(d[key])}" aria-label="${dsBulkAttr(p.name)}の${label}" placeholder="${key==="boxes"||key==="loose"?"0":"必須"}">`;
-    return `<tr data-product="${dsBulkAttr(p.id)}"><td>${safe(p.code||"―")}</td><td><strong>${safe(p.name||"商品名未登録")}</strong><small class="ds-bulk-error" role="status" hidden></small></td><td class="ds-bulk-stock">${Number(p.currentStock||0).toLocaleString("ja-JP")}${safe(p.unit||"個")}</td><td>${field("pack","1箱の入数",1)}</td><td>${field("boxes","箱数")}</td><td>${field("loose","ばら数")}</td><td>${field("unitPrice","ばら単価")}</td><td>${field("boxPrice","箱単価")}</td><td class="ds-bulk-total">―</td><td class="ds-bulk-amount">―</td><td><button type="button" class="btn-secondary-inline ds-bulk-clear">入力をクリア</button><button type="button" class="btn-secondary-inline ds-bulk-refresh" hidden>商品情報更新</button></td></tr>`;
-  }).join("")||'<tr><td colspan="11">防災用品の商品がありません。在庫一覧でカテゴリー「防災用品」の商品を登録してください。</td></tr>';
-  for(const row of body.querySelectorAll("tr[data-product]")){
-    row.querySelectorAll("input[data-field]").forEach(input=>{
-      input.addEventListener("input",()=>{const d={...(dsBulkDrafts.get(row.dataset.product)||dsBulkRendered.get(row.dataset.product))};row.querySelectorAll("input[data-field]").forEach(e=>d[e.dataset.field]=e.value);dsBulkDrafts.set(row.dataset.product,d);dsBulkUpdateRow(row);dsBulkSummary();});
-      input.addEventListener("keydown",event=>{if(event.key!=="Enter")return;event.preventDefault();const rows=[...body.querySelectorAll("tr[data-product]")].filter(r=>!r.hidden),next=rows[rows.indexOf(row)+1];next?.querySelector(`input[data-field="${input.dataset.field}"]`)?.focus();});
-    });
-    row.querySelector(".ds-bulk-clear").onclick=()=>{if(!disasterBusy)dsBulkClearProduct(row.dataset.product);};
-    row.querySelector(".ds-bulk-refresh").onclick=()=>{if(!disasterBusy)dsBulkRefreshProduct(row.dataset.product);};dsBulkUpdateRow(row);
+  const body=$w('dsBulkRows');if(!body)return;
+  const active=document.activeElement,focused=active?.closest?.('#dsBulkRows tr'),focus=focused?{key:focused.dataset.entry,field:active.dataset.field,start:active.selectionStart,end:active.selectionEnd}:null;
+  // 外部の既存明細操作で追加された商品も同じ入力行へ復元する。
+  for(const d of dsBulkDrafts.values())if(!dsInlineRows.some(r=>r.id===d.id))dsInlineRows.push(dsInlineNew(String(d.product.code||''),d.id));
+  dsInlineRows=dsInlineRows.filter(r=>!r.id||dsBulkDrafts.has(r.id));if(!dsInlineRows.length)dsInlineRows=[dsInlineNew()];
+  dsBulkRendered=new Map(dsBulkDrafts);body.replaceChildren();
+  const make=(tag,cls)=>{const n=document.createElement(tag);if(cls)n.className=cls;return n;};
+  for(const r of dsInlineRows){
+    const row=make('tr');row.dataset.entry=r.key;const fields={};
+    const cell=()=>{const td=make('td');row.appendChild(td);return td;};
+    const input=(td,key,label,type='text')=>{const n=make('input');n.type=type;n.dataset.field=key;n.setAttribute('aria-label',label);n.placeholder=label;td.appendChild(n);fields[key]=n;return n;};
+    const codeCell=cell();input(codeCell,'code','商品コード').value=r.code;fields.code.autocomplete='off';codeCell.appendChild(make('small','ds-inline-status'));
+    const nameCell=cell();nameCell.appendChild(make('div','ds-inline-name'));const chooser=make('select','ds-inline-variant');chooser.setAttribute('aria-label','色・商品を選択');nameCell.appendChild(chooser);const error=make('small','ds-bulk-error');error.setAttribute('role','status');nameCell.appendChild(error);
+    const stock=cell();stock.className='ds-bulk-stock';
+    for(const [key,label]of [['pack','1箱の入数'],['boxes','箱数'],['loose','ばら数'],['unitPrice','ばら単価'],['boxPrice','箱単価']]){const n=input(cell(),key,label,'number');n.min=key==='pack'?'1':'0';n.step=['unitPrice','boxPrice'].includes(key)?'any':'1';}
+    cell().className='ds-bulk-total';cell().className='ds-bulk-amount';const actions=cell();const remove=make('button','btn-secondary-inline ds-bulk-clear');remove.type='button';remove.textContent='削除';remove.onclick=()=>dsInlineDelete(r.key);actions.appendChild(remove);
+    const refresh=make('button','btn-secondary-inline ds-bulk-refresh');refresh.type='button';refresh.textContent='商品情報更新';refresh.onclick=()=>{if(!disasterBusy&&r.id)dsBulkRefreshProduct(r.id);};actions.appendChild(refresh);
+    fields.code.addEventListener('input',()=>{if(disasterBusy)return;r.code=fields.code.value;dsInlineResolve(r,row);});
+    fields.code.addEventListener('keydown',event=>{if(event.key!=='Enter'||event.isComposing)return;event.preventDefault();if(dsInlineResolve(r,row))fields[fields.unitPrice.value===''?'unitPrice':'boxes'].focus();else if(!chooser.hidden)chooser.focus();});
+    chooser.addEventListener('change',()=>{if(!disasterBusy)dsInlineResolve(r,row,chooser.value);});
+    for(const key of dsBulkFields){fields[key].addEventListener('input',()=>{if(disasterBusy||!r.id)return;const d={...dsBulkDrafts.get(r.id)};for(const f of dsBulkFields)d[f]=fields[f].value;dsBulkDrafts.set(r.id,d);dsBulkUpdateRow(row);dsBulkSummary();});fields[key].addEventListener('keydown',event=>{if(event.key!=='Enter'||event.isComposing)return;event.preventDefault();if(key==='boxes'){fields.loose.focus();return;}if(key==='loose'){try{dsInlineCheck();if(!dsBulkItem(dsBulkDrafts.get(r.id)))throw Error('箱数・ばら数を入力してください');dsInlineAdd();}catch(e){disasterStatus(e.message,true);}return;}fields.boxes.focus();});}
+    body.appendChild(row);dsInlinePaint(r,row);
   }
   dsBulkFingerprint=JSON.stringify(allProducts.filter(disasterEligible).map(p=>[p.id,disasterMasterState(p)]));dsBulkUpdateLabels();filterDsBulk();dsBulkSummary();
-  if(focus)for(const row of body.querySelectorAll("tr[data-product]"))if(row.dataset.product===focus.id)row.querySelector(`input[data-field="${focus.field}"]`)?.focus();
+  if(focus)for(const row of body.querySelectorAll('tr[data-entry]'))if(row.dataset.entry===focus.key){const n=row.querySelector(`input[data-field="${focus.field}"]`);n?.focus();if(typeof focus.start==='number'&&n?.type==='text')n.setSelectionRange?.(focus.start,focus.end);}
 }
 function refreshDsBulk(){
-  const fingerprint=JSON.stringify(allProducts.filter(disasterEligible).map(p=>[p.id,disasterMasterState(p)]));
-  if(fingerprint!==dsBulkFingerprint){renderDsBulk();return;}
-  for(const row of $w("dsBulkRows").querySelectorAll("tr[data-product]")){const p=allProducts.find(p=>p.id===row.dataset.product);if(p)row.querySelector(".ds-bulk-stock").textContent=Number(p.currentStock||0).toLocaleString("ja-JP")+(p.unit||"個");}
+  const fingerprint=JSON.stringify(allProducts.filter(disasterEligible).map(p=>[p.id,disasterMasterState(p)]));if(fingerprint!==dsBulkFingerprint){renderDsBulk();return;}
+  for(const row of $w('dsBulkRows').querySelectorAll('tr[data-product]')){const p=allProducts.find(p=>p.id===row.dataset.product);if(p)row.querySelector('.ds-bulk-stock').textContent=Number(p.currentStock||0).toLocaleString('ja-JP')+(p.unit||'個');}
 }
-function focusDsBulkProduct(id){
-  $w("dsBulkSearch").value="";$w("dsBulkOnly").checked=false;filterDsBulk();
-  for(const row of $w("dsBulkRows").querySelectorAll("tr[data-product]"))if(row.dataset.product===id){row.scrollIntoView?.({block:"nearest"});row.querySelector('input[data-field="boxes"]')?.focus();break;}
-  disasterStatus("上の一括入力表で数量・単価を変更してください。登録ボタンを押すと入力内容をまとめて反映して保存します。");
-}
+function focusDsBulkProduct(id){$w('dsBulkSearch').value='';$w('dsBulkOnly').checked=false;filterDsBulk();for(const row of $w('dsBulkRows').querySelectorAll('tr[data-product]'))if(row.dataset.product===id){row.scrollIntoView?.({block:'nearest'});row.querySelector('input[data-field="boxes"]').focus();break;}}
 function initDsBulkTools(){
-  $w("dsBulkSearch").addEventListener("input",filterDsBulk);$w("dsBulkOnly").addEventListener("change",filterDsBulk);$w("dsBulkApply").addEventListener("click",()=>applyDsBulk());
-  $w("dsBulkClearAll").addEventListener("click",()=>{if(disasterBusy||!confirm("入力中の商品数量・単価をクリアします。相手先・番号などは保持します。よろしいですか？"))return;disasterCart=[];renderDisasterCart();dsBulkReset();});
+  $w('dsInlineAdd').addEventListener('click',dsInlineAdd);
+  $w('dsBulkSearch').addEventListener('input',filterDsBulk);$w('dsBulkOnly').addEventListener('change',filterDsBulk);$w('dsBulkApply').addEventListener('click',()=>applyDsBulk());
+  $w('dsBulkClearAll').addEventListener('click',()=>{if(disasterBusy||!confirm('入力中の明細をクリアします。相手先・番号などは保持します。よろしいですか？'))return;disasterCart=[];renderDisasterCart();dsBulkReset();});
 }
 
-init();
 
 // 店内用EAN-13。商品ID・既存商品コードとは別に、重複しない番号を予約する。
 const BARCODE_REGISTRY = "inventory_barcode_registry";
@@ -5377,3 +5445,10 @@ async function exportPosProducts() {
   } catch (err) { barcodeError(err); }
   finally { btn.disabled = false; }
 }
+
+init();
+window.KOBUNSHA_APP_READY = true;
+
+
+
+
