@@ -78,6 +78,7 @@ function init() {
   initBarcodeTransferTools();
   initPhoneReception();
   initShippingPolicy();
+  initSlipUpgrade();
 
   document.getElementById("loginBtn").addEventListener("click", handleLogin);
   document.getElementById("logoutBtn").addEventListener("click", () => auth.signOut());
@@ -305,7 +306,7 @@ function showApp(user) {
 }
 
 // ===================== タブ切り替え =====================
-function switchTab(tab) {
+function switchTab(tab, options={}) {
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   document.getElementById("tabList").style.display = tab === "list" ? "block" : "none";
   document.getElementById("tabRegister").style.display = tab === "register" ? "block" : "none";
@@ -317,7 +318,7 @@ function switchTab(tab) {
   if (tab === "stocktake" && $w("stocktakeDate")) loadStocktake();
   if (tab === "festival" && $w("festivalMonth")) loadFestival();
   if (tab === "history") renderHistoryList();
-  if (tab === "slips") { document.getElementById("incomingPanel").open=false; renderSlipList("all"); }
+  if (tab === "slips") { document.getElementById("incomingPanel").open=false; if(options.skipList)slipListDeferred=true;else{slipListDeferred=false;renderSlipList("all");} }
   if (tab === "orders") { renderLowStockAlert(); renderOrderList(getActiveOrderFilter()); }
   // ハンディスキャナーがすぐ使えるよう、該当タブの入力欄に自動でフォーカス
   if (tab === "list") setTimeout(() => document.getElementById("scannerInput").focus(), 50);
@@ -690,7 +691,7 @@ async function openScannedSlip(id, sourceHash) {
       }
     }
     if (!stillActive()) return;
-    if (document.getElementById("tabSlips").style.display === "none") switchTab("slips");
+    if (document.getElementById("tabSlips").style.display === "none") switchTab("slips",{skipList:true});
     openSlipDetailModal(id);
     if (sourceHash) history.replaceState(null, "", location.pathname + location.search);
   } catch (err) {
@@ -982,11 +983,12 @@ function handleExcelImport() {
 function subscribeSlips() {
   db.collection(SLIPS_COLLECTION).orderBy("createdAt", "desc").onSnapshot(snapshot => {
     allSlips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    rebuildSlipBarcodeIndex();
     renderManualCodeLists();
     phoneRefreshAvailability();
     [...slipSelected].forEach(id => { if (!allSlips.some(s => s.id === id)) slipSelected.delete(id); });
     if (document.getElementById("tabSlips").style.display !== "none") {
-      renderSlipList(getActiveSlipFilter());
+      if(document.getElementById("slipDetailOverlay").classList.contains("show"))slipListDeferred=true;else renderSlipList(getActiveSlipFilter());
     }
     if(openSlipId)syncInspectionCounts();
     handlePendingHash();
@@ -1039,6 +1041,8 @@ function renderSlipList(filter) {
 
 // ---- 伝票の新規作成 ----
 function openSlipCreateModal(type) {
+  resetSlipEditMode();
+  document.getElementById("slipDeliveryDate").value="";document.getElementById("slipDeliveryTime").value="";
   currentSlipItems = [];
   document.getElementById("slipCreateType").value = type;
   document.getElementById("slipCreateTitle").textContent = type === "in" ? "入荷伝票を作成" : "出荷伝票を作成";
@@ -1115,7 +1119,9 @@ function handleSlipItemCodeLookup() {
   errorEl.textContent = "";
   if (!code) return;
 
-  const p = allProducts.find(x => (x.code || "").trim().toLowerCase() === code.toLowerCase());
+  const matches=allProducts.filter(x=>String(x.code||"").normalize("NFKC").trim().toLowerCase()===code.normalize("NFKC").toLowerCase());
+  if(matches.length>1){errorEl.textContent="同じコードの色違いがあります。商品名から選ぶ欄で色・商品を選択してください";document.getElementById("slipItemProduct").value="";clearSelectedProductCard();document.getElementById("slipItemProduct").closest("details").open=true;document.getElementById("slipItemProduct").focus();return;}
+  const p=matches[0];
   if (!p) {
     errorEl.textContent = `商品コード「${code}」に該当する商品が見つかりません`;
     clearSelectedProductCard();
@@ -1180,7 +1186,7 @@ function renderSlipItemsEditor() {
       </div>
       <button type="button" class="slip-item-remove" data-idx="${idx}">×</button>
     `;
-    wrap.appendChild(row);
+    appendSlipEditControls(row,item);wrap.appendChild(row);
   });
   wrap.querySelectorAll(".slip-item-remove").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -1200,6 +1206,7 @@ function generateSlipNumber(type) {
 }
 
 async function handleSlipCreateSave() {
+  if(slipEditingId)return saveSlipEdit();
   if (!inventoryWritesAllowed()) return;
   if (!currentSlipItems.length) return showToast("商品を追加してください");
   const type = document.getElementById("slipCreateType").value;
@@ -1228,6 +1235,7 @@ async function handleSlipCreateSave() {
       warehouse:document.getElementById("slipWarehouse").value.trim(),
       orderNo:document.getElementById("slipOrderNo").value.trim(),
       memo:document.getElementById("slipMemo").value.trim(),
+      deliveryDate:document.getElementById("slipDeliveryDate").value,deliveryTime:document.getElementById("slipDeliveryTime").value.trim(),
       status:"draft", items, staff:currentStaffName,
       createdAt:firebase.firestore.FieldValue.serverTimestamp()
     };
@@ -1272,7 +1280,8 @@ function openSlipDetailModal(id) {
   const qrLabel = document.createElement("div");
   qrLabel.style.cssText = "font-size:clamp(9px,2.4vw,10.5px);color:#8a8272;margin-top:2px;";
   qrLabel.textContent = s.slipNumber || "";
-  qrBox.appendChild(qrLabel);appendSlipShortLink(qrBox,id);
+  qrBox.appendChild(qrLabel);
+  document.getElementById("slipDetailEditBtn").hidden=!slipCanEdit(s);
 
   const tbody = document.getElementById("slipDetailBody");
   tbody.innerHTML = "";
@@ -1324,6 +1333,7 @@ function openSlipDetailModal(id) {
 function closeSlipDetailModal() {
   setSlipScannerMode(false);
   openSlipId = null;
+  flushDeferredSlipList();
   pendingSlipScanCode = null;
   document.getElementById("slipDetailOverlay").classList.remove("show");
 }
@@ -1358,12 +1368,11 @@ function companyLetterheadHtml() {
   `;
 }
 
-function printSlipSheet(mode) {
+async function printSlipSheet(mode) {
   if(mode==="check" && allSlips.find(x=>x.id===openSlipId)?.type==="out" && (allSlips.find(x=>x.id===openSlipId)?.status==="draft" || [1,2].includes(allSlips.find(x=>x.id===openSlipId)?.inspectionVersion))) {
     return printOutgoingInspectionSheet(openSlipId).catch(e=>showToast(e.message||"出荷指示書を作成できませんでした"));
   }
-  const s = allSlips.find(x => x.id === openSlipId);
-  if (!s) return;
+  const id=openSlipId;let s;try{s=await ensureSlipBarcode(id);}catch(e){showToast(e.message);return;}if(openSlipId!==id)return;
   clearInspectionPaperSize();
   const sheet = document.getElementById("slipPrintSheet");
   delete sheet.dataset.inspection;
@@ -1373,7 +1382,7 @@ function printSlipSheet(mode) {
   const qrHost = document.getElementById("printSheetQr");
   if (qrHost) {
     renderSlipQr(qrHost, s.id);
-    appendSlipShortLink(qrHost, s.id);
+
   }
   document.body.classList.add("slip-print");
   document.body.classList.remove("label-print", "work-print");
@@ -2173,6 +2182,7 @@ function handleScanResult(text) {
     return;
   }
 
+  if(isSlipBarcodeCandidate(text)){closeScanModal();void openSlipBarcode(text);return;}
   let { type, id } = parsed;
   if (type === "unknown") {
     const productId = resolveScannedProductId(text);
@@ -2371,6 +2381,7 @@ function handleSlipItemScan(productId, itemIndex = null) {
 
 // ===================== Phase3.5: ハンディスキャナー（キーボード入力）対応 =====================
 function handleScannerWedgeInput(inputEl, mode) {
+  clearTimeout(slipWedgeTimers.get(inputEl));slipWedgeTimers.delete(inputEl);
   const text = inputEl.value.trim();
   inputEl.value = "";
   if (!text) return;
@@ -2384,6 +2395,7 @@ function handleScannerWedgeInput(inputEl, mode) {
     return;
   }
 
+  if(isSlipBarcodeCandidate(text)){void openSlipBarcode(text);inputEl.focus();return;}
   let { type, id } = parsed;
   if (type === "unknown") {
     const productId = resolveScannedProductId(text);
@@ -4028,6 +4040,7 @@ function appendInspectionCard(host,s,u) {
   const note=document.createElement("div");note.className="inspection-jan-note";note.textContent="検品専用・販売不可 ／ 商品JANと組み合わせて1回だけ使用";card.appendChild(note);host.appendChild(card);
 }
 async function printOutgoingInspectionSheet(slipId) {
+  await ensureSlipBarcode(slipId);
   const s=await ensureSlipInspection(slipId);
   if(openSlipId!==slipId)return;
   const sheet=document.getElementById("slipPrintSheet");
@@ -4036,7 +4049,7 @@ async function printOutgoingInspectionSheet(slipId) {
   const cards=document.createElement("div");cards.className="inspection-jan-cards";
   inspectionLedger(s).filter(u=>shippingRequiresInspection(s.items[u.itemIndex])).forEach(u=>appendInspectionCard(cards,s,u));sheet.appendChild(cards);sheet.appendChild(instruction);
   const qrHost=document.getElementById("printSheetQr");
-  if(qrHost){renderSlipQr(qrHost,s.id);appendSlipShortLink(qrHost,s.id);}
+  if(qrHost)renderSlipQr(qrHost,s.id);
   clearLabelPaperSize();document.body.classList.remove("label-print","work-print","order-print","prepared-print");document.body.classList.add("slip-print");
   applyInspectionPaperSize();setTimeout(()=>window.print(),150);
 }
@@ -4879,7 +4892,7 @@ function initShippingPolicy() {
   renderShippingPolicy();
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-19-slip-usability-jan-v58";
+window.KOBUNSHA_APP_VERSION = "2026-11-19-slip-edit-barcode-jan-v59";
 // 在庫一覧：色別の商品・並び替え・選択印刷。既存の商品ID/JAN/コードは変更しない。
 function inventoryStockAudit() {
   return {stockUpdatedAt:firebase.firestore.FieldValue.serverTimestamp(),stockUpdatedBy:currentStaffName||""};
@@ -4950,16 +4963,6 @@ function initInventoryTools() {
   document.getElementById("inventoryPrintBtn").addEventListener("click",printSelectedInventory);
   window.addEventListener("afterprint",clearInventoryPrint);
 }
-function renderSlipQr(host, id) {
-  if (typeof QRCode === "function") {
-    new QRCode(host, {text: buildSlipUrl(id), width: 64, height: 64, correctLevel: QRCode.CorrectLevel.M});
-  }
-}
-function appendSlipShortLink(host,id) {
-  const link=document.createElement("a");link.className="slip-short-link";
-  link.href=buildSlipUrl(id);link.textContent=buildSlipUrl(id);host.appendChild(link);
-}
-
 // 入荷予定は元の発注を参照する。予定の表示・登録では在庫を増やさない。
 const INCOMING_WAIT_KIND="incoming-wait-v1";
 function incomingAttr(value) {return escapeHtml(String(value??"" )).replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
@@ -5341,6 +5344,7 @@ async function ensureProductBarcode(id, requested, changes, transfer) {
     }
     if (!validEan13(code)) throw Error("バーコードは検査数字を含む正しい13桁で入力してください");
     const allocated = await tx.get(registry.doc(code));
+    if(allocated.exists && allocated.data().kind==="slip")throw Error("この番号は伝票呼出専用です。商品には設定できません");
     if(allocated.exists && allocated.data().kind==="inspection")throw Error("この番号は検品専用です。商品用バーコードには設定できません");
     if (allocated.exists && allocated.data().productId !== id) {
       const ownerId = allocated.data().productId;
@@ -5477,6 +5481,124 @@ async function exportPosProducts() {
     showToast("汎用CSVを出力しました。POSに合わせて列を対応付けてください");
   } catch (err) { barcodeError(err); }
   finally { btn.disabled = false; }
+}
+
+// 伝票の社内JANと未確定伝票の編集。商品JAN・個数検品JANとは台帳の用途を分ける。
+let slipBarcodeIndex=new Map(),slipBarcodeJobs=new Map(),slipListDeferred=false,slipWedgeTimers=new Map();
+let slipEditingId=null,slipEditingState=null,slipEditingRecord=null;
+function rebuildSlipBarcodeIndex(){slipBarcodeIndex=new Map(allSlips.filter(s=>validEan13(s.slipBarcode||'')).map(s=>[s.slipBarcode,s.id]));}
+function cacheSlipRecord(record){const old=allSlips.find(s=>s.id===record.id);if(old)Object.assign(old,record);else allSlips.unshift(record);if(validEan13(record.slipBarcode||''))slipBarcodeIndex.set(record.slipBarcode,record.id);return record;}
+function ensureSlipBarcode(id){
+  const cached=allSlips.find(s=>s.id===id);if(cached&&validEan13(cached.slipBarcode||'')){slipBarcodeIndex.set(cached.slipBarcode,id);return Promise.resolve(cached);}
+  if(slipBarcodeJobs.has(id))return slipBarcodeJobs.get(id);
+  const user=auth.currentUser;const job=(async()=>{
+    if(!inventoryWritesAllowed())throw Error('現在は伝票番号を発行できません');
+    const ref=db.collection(SLIPS_COLLECTION).doc(id),registry=db.collection(BARCODE_REGISTRY),counterRef=registry.doc('_slip_sequence');
+    const record=await db.runTransaction(async tx=>{
+      await requireNoActiveReset(tx);const doc=await tx.get(ref);if(!doc.exists)throw Error('伝票が見つかりません');const s=doc.data();
+      if(validEan13(s.slipBarcode||''))return {...s,id};
+      const counter=await tx.get(counterRef);let next=counter.exists?Number(counter.data().next):1;
+      if(!Number.isSafeInteger(next)||next<1)throw Error('伝票バーコードの採番設定を確認してください');
+      let code='';for(let attempt=0;attempt<100&&next<=9999999999;attempt++){
+        const body='28'+String(next++).padStart(10,'0'),candidate=body+eanCheckDigit(body),used=await tx.get(registry.doc(candidate));
+        if(!used.exists&&!allProducts.some(p=>p.barcode===candidate||(p.barcodeAliases||[]).includes(candidate))){code=candidate;break;}
+      }
+      if(!code)throw Error('伝票バーコードを発行できません。管理者に確認してください');
+      tx.set(registry.doc(code),{kind:'slip',slipId:id,createdAt:stamp()});tx.set(counterRef,{next});tx.update(ref,{slipBarcode:code,slipBarcodeFormat:'EAN13'});
+      return {...s,id,slipBarcode:code,slipBarcodeFormat:'EAN13'};
+    });if(auth.currentUser!==user)throw Error('ログイン状態が変わりました');return cacheSlipRecord(record);
+  })().finally(()=>{if(slipBarcodeJobs.get(id)===job)slipBarcodeJobs.delete(id);});slipBarcodeJobs.set(id,job);return job;
+}
+function drawSlipBarcode(host,s){
+  host.replaceChildren();const svg=makeInspectionSvg(s.slipBarcode);svg.setAttribute('aria-label','伝票呼出用JAN '+s.slipBarcode);svg.setAttribute('width','39.78mm');svg.setAttribute('height','20.4mm');host.appendChild(svg);
+  const label=document.createElement('small');label.className='slip-barcode-caption';label.textContent='伝票呼出用JAN（社内専用）';host.appendChild(label);
+}
+function renderSlipQr(host,id){
+  host.dataset.slipId=id;const s=allSlips.find(s=>s.id===id);if(s&&validEan13(s.slipBarcode||'')){drawSlipBarcode(host,s);return;}
+  host.textContent='伝票JANを準備中…';void ensureSlipBarcode(id).then(s=>{if(host.dataset.slipId===id&&(!host.id||host.id!=='slipQrBox'||openSlipId===id))drawSlipBarcode(host,s);}).catch(e=>{if(host.dataset.slipId===id)host.textContent=e.message||'伝票JANを準備できませんでした';});
+}
+function isSlipBarcodeCandidate(text){return /^28\d{11}$/.test(text)&&validEan13(text)&&(slipBarcodeIndex.has(text)||!resolveScannedProductId(text));}
+async function openSlipBarcode(code){
+  const user=auth.currentUser;if(!user)return;const request=++slipOpenRequest;
+  try{
+    let id=slipBarcodeIndex.get(code);
+    if(!id){const registry=await db.collection(BARCODE_REGISTRY).doc(code).get();if(auth.currentUser!==user||request!==slipOpenRequest)return;if(!registry.exists||registry.data().kind!=='slip')throw Error('伝票呼出用JANが見つかりません');id=registry.data().slipId;if(typeof id!=='string'||!id||id.includes('/'))throw Error('伝票の関連付けを確認してください');slipBarcodeIndex.set(code,id);}
+    if(auth.currentUser===user&&request===slipOpenRequest)await openScannedSlip(id);
+  }catch(e){if(auth.currentUser===user&&request===slipOpenRequest)showToast(e.message||'伝票を開けません。通信状態を確認してください');}
+}
+function flushDeferredSlipList(){if(!slipListDeferred)return;slipListDeferred=false;if($w('tabSlips').style.display!=='none')renderSlipList(getActiveSlipFilter());}
+function slipEditState(s){
+  const normalize=v=>Array.isArray(v)?v.map(normalize):v&&typeof v==='object'?normalizeObject(typeof v.toJSON==='function'?v.toJSON():v):v;
+  const normalizeObject=v=>Object.fromEntries(Object.keys(v).sort().map(k=>[k,normalize(v[k])]));
+  const {id,createdAt,updatedAt,inspectionUpdatedAt,...content}=s;return JSON.stringify(normalize(content));
+}
+function slipCanEdit(s){return !!s&&s.status==='draft';}
+function resetSlipEditMode(){
+  slipEditingId=null;slipEditingState=null;slipEditingRecord=null;
+  $w('slipCreateSaveBtn').textContent='伝票を作成する';$w('slipSourceNumber').readOnly=false;$w('saveDestinationMaster').disabled=false;$w('slipEditNotice').hidden=true;
+}
+async function openSlipEditor(id){
+  if(!inventoryWritesAllowed())return;const user=auth.currentUser,fromDetail=openSlipId===id;
+  try{
+    const record=await ensureSlipBarcode(id);if(auth.currentUser!==user||fromDetail&&openSlipId!==id)return;if(!slipCanEdit(record))throw Error('確定済みの伝票は編集できません');
+    closeSlipDetailModal();openSlipCreateModal(record.type);
+    slipEditingId=id;slipEditingRecord=structuredClone(record);slipEditingState=slipEditState(record);
+    currentSlipItems=record.items.map(i=>({...i}));
+    const fields={slipPartner:record.partner,slipPartnerAddress:record.partnerAddress,slipPartnerTel:record.partnerTel,slipShipTo:record.shipTo,slipPostingDate:record.postingDate,slipTransactionType:record.transactionType,slipWarehouse:record.warehouse,slipOrderNo:record.orderNo||record.customerOrderNo,slipMemo:record.memo,slipSourceNumber:record.sourceSlipNumber||record.slipNumber,slipHandlingCode:record.handlingCode,slipTransactionName:record.transactionTypeName,slipDestinationCode:record.destinationCode,slipDeliveryDate:record.deliveryDate,slipDeliveryTime:record.deliveryTime};
+    for(const [key,value] of Object.entries(fields))$w(key).value=value||'';
+    clearTimeout(destinationLookupTimer);destinationLookupGeneration++;$w('saveDestinationMaster').checked=false;$w('saveDestinationMaster').disabled=true;
+    $w('slipSourceNumber').readOnly=true;$w('slipCreateTitle').textContent='未確定の伝票を編集';$w('slipCreateSaveBtn').textContent='変更を保存';
+    $w('slipEditNotice').hidden=false;$w('slipEditNotice').textContent='伝票番号・伝票JANは保持します。変更を保存すると検品結果をリセットします。保存後は指示書・検品シールを再印刷し、検品をやり直してください。在庫数は変わりません。出荷先台帳の内容は変更しません。';
+    renderSlipItemsEditor();
+  }catch(e){showToast(e.message||'伝票を編集できません');}
+}
+function appendSlipEditControls(row,item){
+  if(!slipEditingId)return;const wrap=document.createElement('div');wrap.className='slip-edit-item-fields';
+  for(const [key,label,type]of [['plannedQty','数量','number'],['unitPrice','単価','number'],['remark','摘要','text']]){const holder=document.createElement('label');holder.textContent=label;const input=document.createElement('input');input.type=type;input.value=String(item[key]??'');input.setAttribute('aria-label',(item.productName||'商品')+'の'+label);if(type==='number'){input.min=key==='plannedQty'?'1':'0';input.step=key==='plannedQty'?'1':'any';}input.addEventListener('input',()=>{item[key]=input.value;const summary=row.querySelector('.slip-item-price');if(summary)summary.textContent=`数量：${item.plannedQty}${item.unit||''}　単価：¥${Number(item.unitPrice||0).toLocaleString('ja-JP')}　金額：¥${(Number(item.unitPrice||0)*Number(item.plannedQty||0)).toLocaleString('ja-JP')}`;const note=row.querySelector('.slip-item-remark');if(note)note.textContent=item.remark?'摘要：'+item.remark:'';});holder.appendChild(input);wrap.appendChild(holder);}row.appendChild(wrap);
+}
+function collectSlipEdit(){
+  const value=id=>$w(id).value.trim();
+  if(!currentSlipItems.length)throw Error('商品を1件以上入力してください');
+  const items=currentSlipItems.map(i=>{const qty=inventoryQuantity(i.plannedQty,'数量'),price=String(i.unitPrice??'').trim();if(!qty)throw Error('数量は1以上で入力してください');if(!/^\d+(\.\d+)?$/.test(price)||!Number.isFinite(Number(price))||Number(price)>1e12)throw Error('単価を0以上で入力してください');return {...i,plannedQty:qty,unitPrice:Number(price),remark:String(i.remark||''),checkedQty:0,checked:false};});
+  if(new Set(items.map(i=>i.productId)).size!==items.length)throw Error('同じ商品は1行にまとめてください');
+  const date=value('slipPostingDate'),delivery=value('slipDeliveryDate');if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||delivery&&!/^\d{4}-\d{2}-\d{2}$/.test(delivery))throw Error('計上日・配達指定日を確認してください');
+  return {items,partner:value('slipPartner'),partnerAddress:value('slipPartnerAddress'),partnerTel:value('slipPartnerTel'),shipTo:value('slipShipTo'),destinationCode:slipEditingRecord.type==='out'?normalizeDestinationCode(value('slipDestinationCode')):'',handlingCode:value('slipHandlingCode'),postingDate:date,transactionType:value('slipTransactionType'),transactionTypeName:value('slipTransactionName'),warehouse:value('slipWarehouse'),orderNo:value('slipOrderNo'),customerOrderNo:value('slipOrderNo'),memo:value('slipMemo'),deliveryDate:delivery,deliveryTime:value('slipDeliveryTime')};
+}
+async function commitSlipEdit(id,expected,changes){
+  if(!inventoryWritesAllowed())throw Error('現在は更新できません');
+  if(!Array.isArray(changes.items)||!changes.items.length||changes.items.length>300)throw Error('商品は1〜300行で入力してください');
+  const items=changes.items.map(i=>{const qty=inventoryQuantity(i.plannedQty,'数量'),price=String(i.unitPrice??'').trim();if(!qty||typeof i.productId!=='string'||!i.productId||i.productId.includes('/'))throw Error('商品と数量を確認してください');if(!/^\d+(\.\d+)?$/.test(price)||!Number.isFinite(Number(price))||Number(price)>1e12)throw Error('単価を確認してください');return {productId:i.productId,productName:String(i.productName||''),code:String(i.code||''),unit:String(i.unit||'個'),plannedQty:qty,unitPrice:Number(price),remark:String(i.remark||''),checkedQty:0,checked:false};});
+  if(new Set(items.map(i=>i.productId)).size!==items.length)throw Error('同じ商品は1行にまとめてください');
+  const keys=['partner','partnerAddress','partnerTel','shipTo','destinationCode','handlingCode','postingDate','transactionType','transactionTypeName','warehouse','orderNo','customerOrderNo','memo','deliveryDate','deliveryTime'];
+  changes={...Object.fromEntries(keys.map(k=>[k,String(changes[k]??'').trim()])),items};
+  const ref=db.collection(SLIPS_COLLECTION).doc(id);
+  const record=await db.runTransaction(async tx=>{
+    await requireNoActiveReset(tx);const doc=await tx.get(ref);if(!doc.exists)throw Error('伝票が削除されています');const s=doc.data();
+    if(!slipCanEdit(s))throw Error('この伝票は確定済みのため編集できません');if(slipEditState({...s,id})!==expected)throw Error('編集中に伝票が更新されました。開き直して確認してください');
+    const products=await Promise.all(changes.items.map(i=>tx.get(db.collection(COLLECTION).doc(i.productId))));if(products.some(p=>!p.exists))throw Error('削除された商品があります。商品を選び直してください');
+    const items=changes.items.map((i,n)=>{const p=products[n].data();return {...i,productName:p.name||i.productName,code:p.code||'',unit:p.unit||'個',checkedQty:0,checked:false};});
+    if(s.type==='out')inspectionPlan(items,products.map(p=>shippingPaperBox(p.data())));
+    const oldUnits=s.inspectionUnits||[],reads=await Promise.all(oldUnits.map(u=>tx.get(db.collection(BARCODE_REGISTRY).doc(u.code))));
+    for(let n=0;n<reads.length;n++)if(reads[n].exists){const u=reads[n].data();if(u.kind!=='inspection'||u.slipId!==id)throw Error('検品番号台帳の関連付けを確認してください');}
+    const result={...s,...changes,items,revision:Number(s.revision||0)+1,updatedAt:stamp(),updatedBy:currentStaffName};
+    for(const key of ['inspectionVersion','inspectionRequired','inspectionPlan','inspectionUnits','inspectionUpdatedAt'])delete result[key];
+    reads.forEach((doc,n)=>{if(doc.exists)tx.update(db.collection(BARCODE_REGISTRY).doc(oldUnits[n].code),{void:true,used:true,voidedAt:stamp()});});
+    tx.set(ref,result);return {...result,id};
+  });return cacheSlipRecord(record);
+}
+async function saveSlipEdit(){
+  const button=$w('slipCreateSaveBtn');if(!slipEditingId||button.disabled||!inventoryWritesAllowed())return;
+  let changes;try{changes=collectSlipEdit();}catch(e){return showToast(e.message);}
+  if(!confirm('伝票の変更を保存します。検品結果はリセットされます。旧指示書・検品シールは使用せず、再印刷して検品し直してください。よろしいですか？'))return;
+  button.disabled=true;const id=slipEditingId;
+  try{await commitSlipEdit(id,slipEditingState,changes);closeSlipCreateModal();resetSlipEditMode();openSlipDetailModal(id);showToast('伝票を更新しました。再印刷して検品し直してください。在庫数は変わりません。');}
+  catch(e){showToast(e.message||'保存できません。伝票を開き直して確認してください');}finally{button.disabled=false;}
+}
+function initSlipUpgrade(){
+  $w('slipDetailEditBtn').addEventListener('click',()=>void openSlipEditor(openSlipId));
+  for(const id of ['scannerInput','scannerInputSlips']){const input=$w(id);input.addEventListener('input',()=>{clearTimeout(slipWedgeTimers.get(input));const text=input.value.trim();if(isSlipBarcodeCandidate(text))slipWedgeTimers.set(input,setTimeout(()=>{slipWedgeTimers.delete(input);if(input.value.trim()===text)handleScannerWedgeInput(input,'global');},50));});}
+
+  auth.onAuthStateChanged(()=>{slipBarcodeIndex.clear();slipBarcodeJobs.clear();resetSlipEditMode();});
 }
 
 init();

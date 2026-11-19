@@ -1247,6 +1247,17 @@
   .slip-delete-actions {display:flex;flex-wrap:wrap;justify-content:flex-end;gap:12px;margin-top:18px;}
   .slip-delete-actions button {width:auto;max-width:100%;margin:0;}
   @media(max-width:600px) {#tabSlips .slip-entry-actions {grid-template-columns:1fr;}#pdfInvoicePreview {font-size:16px;padding:12px;}}
+
+  .slip-formal-header-qr {width:180px;min-width:180px;}
+  #slipQrBox,#printSheetQr {min-width:160px;}
+  #slipQrBox svg,#printSheetQr svg {display:block;width:39.78mm;max-width:none;height:20.4mm;background:white;}
+  .slip-barcode-caption {display:block;font-size:10px;color:#283a50;line-height:1.5;}
+  .slip-edit-item-fields {display:grid;grid-template-columns:90px 110px minmax(120px,1fr);gap:8px;flex-basis:100%;}
+  .slip-edit-item-fields input {width:100%;min-width:0;box-sizing:border-box;margin:4px 0 0;}
+  #slipCreateOverlay .slip-item-row {flex-wrap:wrap;}
+  #slipDetailEditBtn[hidden],#slipEditNotice[hidden] {display:none;}
+  @media screen and (max-width:600px){.slip-formal-header {grid-template-columns:1fr;}.slip-formal-header-qr,.slip-formal-companybox {justify-self:start;}}
+  @media(max-width:600px){.slip-edit-item-fields {grid-template-columns:1fr 1fr;}.slip-edit-item-fields label:last-child {grid-column:1/-1;}}
 </style>
 </head>
 <body>
@@ -1418,7 +1429,7 @@
         </div>
         <div class="spacer"></div>
         <input type="text" id="scannerInputSlips" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄">
-        <button class="btn-secondary-inline" id="scanGlobalBtn2">📷 伝票をスキャン</button>
+        <button class="btn-secondary-inline" id="scanGlobalBtn2">📷 旧QRをスキャン</button>
       </div>
       <div class="slip-entry-actions" aria-label="入荷・出荷の入力操作"><button type="button" class="btn-secondary-inline" id="incomingShowBtn">入荷待ち・入庫処理</button><button class="btn-add" id="slipCreateOutBtn">＋ 出荷指示書を作成</button><button class="btn-add btn-add-in" id="slipCreateInBtn">＋ 入荷伝票を作成</button></div>
       <div class="toolbar"><button class="btn-secondary-inline" id="slipSelectAllBtn">表示中をすべて選択</button><button class="btn-danger" id="slipDeleteBtn">選択した伝票を削除（0件）</button></div>
@@ -1770,6 +1781,7 @@
 <!-- ===================== 伝票作成モーダル (Phase2) ===================== -->
 <div class="modal-overlay" id="slipCreateOverlay">
   <div class="modal" style="max-width:480px;">
+    <p id="slipEditNotice" class="invoice-action-info" role="status" hidden></p>
     <h2 id="slipCreateTitle">伝票を作成</h2>
     <span class="slip-type-badge" id="slipCreateTypeBadge"></span>
     <input type="hidden" id="slipCreateType" value="out">
@@ -1818,6 +1830,8 @@
     </div>
 
     <label for="slipTransactionName">取引区分名（任意）</label><input type="text" id="slipTransactionName" placeholder="例：未決済取扱">
+    <label for="slipDeliveryDate">配達指定日（任意）</label><input type="date" id="slipDeliveryDate">
+    <label for="slipDeliveryTime">指定時間（任意）</label><input type="text" id="slipDeliveryTime">
     <label>備考（任意）</label>
     <input type="text" id="slipMemo" placeholder="納品場所や便名など">
 
@@ -1867,7 +1881,7 @@
         <h2 id="slipDetailTitle" style="margin:0;">伝票</h2>
         <div class="slip-formal-header-qr">
           <div id="slipQrBox"></div>
-          <span class="slip-formal-header-qr-label">↑ スキャンでこの画面を開けます</span>
+          <span class="slip-formal-header-qr-label">伝票JANをハンディスキャナーで読み取り</span>
         </div>
         <div class="slip-formal-companybox">
           <div>住所　東京都府中市八幡町1-4-3</div>
@@ -1947,6 +1961,7 @@
     <div id="slipPrintSheet" class="print-sheet"></div>
 
     <div class="modal-actions no-print" style="flex-wrap:wrap;">
+      <button type="button" class="btn-secondary" id="slipDetailEditBtn" hidden>伝票を編集</button>
       <button class="btn-secondary" id="slipDetailCloseBtn">閉じる</button>
       <button class="btn-secondary" id="slipDetailPrintCheckBtn">🔍 検品表</button>
       <button class="btn-secondary" id="slipDetailPrintDeliveryBtn">📦 納品書</button>
@@ -2085,7 +2100,7 @@
 <script>
   // 脚本ファイルの取得失敗と、取得後の初期化エラーを区別する。
   (() => {
-    const expected = "2026-11-19-slip-usability-jan-v58";
+    const expected = "2026-11-19-slip-edit-barcode-jan-v59";
     const appScript = document.createElement("script");
     const report = message => {
       const notice = document.getElementById("loginError");
