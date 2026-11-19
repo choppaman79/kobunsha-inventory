@@ -317,7 +317,7 @@ function switchTab(tab) {
   if (tab === "stocktake" && $w("stocktakeDate")) loadStocktake();
   if (tab === "festival" && $w("festivalMonth")) loadFestival();
   if (tab === "history") renderHistoryList();
-  if (tab === "slips") renderSlipList("all");
+  if (tab === "slips") { document.getElementById("incomingPanel").open=false; renderSlipList("all"); }
   if (tab === "orders") { renderLowStockAlert(); renderOrderList(getActiveOrderFilter()); }
   // ハンディスキャナーがすぐ使えるよう、該当タブの入力欄に自動でフォーカス
   if (tab === "list") setTimeout(() => document.getElementById("scannerInput").focus(), 50);
@@ -2669,13 +2669,41 @@ function toggleVisibleSelection(selector, selected) {
   updateBulkButton(); updateSelectionButtons();
   showToast(allChecked ? `${boxes.length}件の選択を解除しました` : `${boxes.length}件を選択しました`);
 }
+// 伝票削除は、対象の内容を確認してから確定する。在庫数は変更しない。
+let slipDeleteConfirmBusy=false;
+function slipDeletionSummary(s){
+  const date=s.postingDate||(s.createdAt?.toDate?formatDateTime(s.createdAt.toDate()):'―');
+  return [`${s.type==='in'?'入荷伝票':'出荷伝票'}　伝票番号：${s.slipNumber||s.sourceSlipNumber||'未設定'}`,`計上日／作成日：${date}　状態：${s.status==='done'?'入出荷完了':'未確定'}`,`出荷先：${[s.destinationCode,s.shipTo].filter(Boolean).join(' ')||'―'}`,`取扱先／仕入れ先：${[s.handlingCode,s.partner].filter(Boolean).join(' ')||'―'}`,`受注番号：${s.orderNo||s.customerOrderNo||'―'}`,`伝票ID：${s.id}`, ...(s.items||[]).map(i=>`${i.code||''} ${i.productName||i.name||'商品名未設定'}　${i.plannedQty??i.qty??0}${i.unit||'個'}${i.unitPrice!=null?'　単価 ¥'+Number(i.unitPrice).toLocaleString('ja-JP'):''}`)].join('\n');
+}
+function confirmSlipDeletion(records){
+  const dialog=$w('slipDeleteDialog'),title=$w('slipDeleteTitle'),content=$w('slipDeleteContents'),question=$w('slipDeleteQuestion');
+  title.textContent=`削除する伝票の確認（${records.length}件）`;
+  question.textContent=records.length===1?'この伝票を削除します。よろしいですか？':`表示した${records.length}件の伝票を削除します。よろしいですか？`;
+  content.replaceChildren();for(const record of records){const block=document.createElement('pre');block.className='slip-delete-record';block.textContent=slipDeletionSummary(record);content.appendChild(block);}
+  if(typeof dialog.showModal!=='function')return Promise.resolve(confirm(records.map(slipDeletionSummary).join('\n\n')+'\n\n'+question.textContent+'\n伝票の削除では現在庫数は変更されません。'));
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=value=>{if(settled)return;settled=true;dialog.removeEventListener('cancel',cancel);dialog.removeEventListener('close',closed);$w('slipDeleteConfirmBtn').onclick=null;$w('slipDeleteCancelBtn').onclick=null;if(dialog.open)dialog.close();resolve(value);};
+    const cancel=event=>{event.preventDefault();finish(false);},closed=()=>finish(false);
+    $w('slipDeleteConfirmBtn').onclick=()=>finish(true);$w('slipDeleteCancelBtn').onclick=()=>finish(false);
+    dialog.addEventListener('cancel',cancel);dialog.addEventListener('close',closed);dialog.showModal();$w('slipDeleteCancelBtn').focus();
+  });
+}
 async function deleteSelectedRecords(collection, selected, records, label) {
   if (!inventoryWritesAllowed()) return;
   const ids = [...selected].filter(id => records.some(record => record.id === id));
   if (!ids.length) return showToast("削除する項目を選択してください");
-  const typed = prompt(`${label}を${ids.length}件削除します。履歴・伝票の削除では現在庫数は変更されません。確認のため件数「${ids.length}」を入力してください。`);
-  if (typed !== String(ids.length)) return;
+  const isSlip=collection===SLIPS_COLLECTION;
+  if(isSlip&&slipDeleteConfirmBusy)return;
+  const chosen=isSlip?ids.map(id=>records.find(r=>r.id===id)):[],states=new Map(chosen.map(r=>[r.id,JSON.stringify(r)]));
   try {
+    if(isSlip){slipDeleteConfirmBusy=true;$w('slipDeleteBtn').disabled=true;if(!await confirmSlipDeletion(chosen))return;
+      if(!inventoryWritesAllowed())return;
+      if(ids.some(id=>{const current=allSlips.find(r=>r.id===id);return !current||JSON.stringify(current)!==states.get(id);})){showToast('確認中に伝票の内容が変わりました。内容を確認し直してから削除してください');return;}
+    }else{
+      const typed=prompt(`${label}を${ids.length}件削除します。履歴・伝票の削除では現在庫数は変更されません。確認のため件数「${ids.length}」を入力してください。`);
+      if(typed!==String(ids.length))return;
+    }
     for (let i=0; i<ids.length; i+=400) {
       const batch=db.batch(), chunk=ids.slice(i,i+400);
       chunk.forEach(id => batch.delete(db.collection(collection).doc(id)));
@@ -2683,6 +2711,7 @@ async function deleteSelectedRecords(collection, selected, records, label) {
     }
     updateSelectionButtons(); showToast(`${ids.length}件を削除しました`);
   } catch(err) { console.error(err); showToast("削除が途中で止まりました。選択状態を確認してください"); }
+  finally{if(isSlip){slipDeleteConfirmBusy=false;$w('slipDeleteBtn').disabled=false;}}
 }
 async function bulkDeleteProducts() {
   if (!inventoryWritesAllowed()) return;
@@ -3401,7 +3430,7 @@ function clearInventoryFormsForReset() {
   setSlipScannerMode(false);
 }
 function initPilotTools() {
-  document.getElementById("searchBox").value="紙製御み霊箱";
+  document.getElementById("searchBox").value="";
   document.getElementById("destinationLookupBtn").addEventListener("click",lookupShippingDestination);
   const code=document.getElementById("slipDestinationCode");
   code.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();clearTimeout(destinationLookupTimer);lookupShippingDestination();}});
@@ -3430,7 +3459,7 @@ function initPilotTools() {
       inventoryControlReady=true;inventoryResetLocked=doc.exists&&doc.data().state==="resetting";
       shippingAllEnabled=doc.exists&&doc.data().shippingAllEnabled===true;renderShippingPolicy();
       if(inventoryResetLocked&&!wasLocked)clearInventoryFormsForReset();
-      document.getElementById("pilotOperationMessage").textContent=inventoryResetLocked?"現在、在庫の初期化中です。完了するまで通常操作を停止してください。":"出荷の運用状態は下の「出荷・在庫連動の運用設定」を確認してください。初期検索は「紙製御み霊箱」です。";
+      document.getElementById("pilotOperationMessage").textContent=inventoryResetLocked?"現在、在庫の初期化中です。完了するまで通常操作を停止してください。":"出荷の運用状態は下の「出荷・在庫連動の運用設定」を確認してください。商品検索は空欄で開始します。";
     },err=>{console.error(err);inventoryControlReady=false;shippingAllEnabled=false;renderShippingPolicy();document.getElementById("pilotOperationMessage").textContent="運用設定を読み込めません。READMEの追加ルールを確認してください。";});
   });
 }
@@ -4435,8 +4464,8 @@ async function lookupManualCode(kind){
   try{
     const result=await resolveManualCode(kind,code);
     if(generation!==manualLookupEpoch[kind]||invoiceText(input.value).toUpperCase()!==code)return;
-    if(signature!==JSON.stringify(ids.map(id=>document.getElementById(id).value))){manualLookupMessage(kind,'検索中に手入力されたため上書きしていません。必要なら「検索」を押してください。');return;}
-    if(!result.data){manualLookupMessage(kind,'未登録です。名称を入力し「追加」、または伝票作成時に登録できます。');return;}
+    if(signature!==JSON.stringify(ids.map(id=>document.getElementById(id).value))){manualLookupMessage(kind,'検索中に手入力されたため上書きしていません。再検索する場合はコードを入力し直してください。');return;}
+    if(!result.data){manualLookupMessage(kind,'未登録です。名称を手入力してください。伝票作成時にコードと名称を登録します。');return;}
     const name=manualMasterName(kind,result.data);
     if(!name)throw Error('登録名称が空です。台帳の内容を確認してください');
     input.value=code;document.getElementById(c.name).value=name;
@@ -4509,8 +4538,13 @@ function initManualShipping(){
       manualLookupMessage(kind,'');if(input.value.trim())manualLookupTimers[kind]=setTimeout(()=>lookupManualCode(kind),350);
     });
     input.addEventListener('change',()=>{clearTimeout(manualLookupTimers[kind]);if(input.value.trim())lookupManualCode(kind);});
-    document.getElementById('manual-'+kind+'-lookup').addEventListener('click',()=>{clearTimeout(manualLookupTimers[kind]);lookupManualCode(kind);});
-    document.getElementById('manual-'+kind+'-add').addEventListener('click',()=>addManualCode(kind));
+    if(kind==='trade'){
+      document.getElementById('manual-'+kind+'-lookup').addEventListener('click',()=>{clearTimeout(manualLookupTimers[kind]);lookupManualCode(kind);});
+      document.getElementById('manual-'+kind+'-add').addEventListener('click',()=>addManualCode(kind));
+    }else{
+      input.addEventListener('keydown',async event=>{if(event.key!=='Enter'||event.isComposing)return;event.preventDefault();clearTimeout(manualLookupTimers[kind]);await lookupManualCode(kind);if(document.activeElement===input)document.getElementById(c.name).focus();});
+      document.getElementById(c.name).addEventListener('keydown',event=>{if(event.key!=='Enter'||event.isComposing)return;event.preventDefault();document.getElementById(kind==='handling'?'pdfInvoiceSourceNo':'pdfInvoicePostingDate').focus();});
+    }
   }
   auth.onAuthStateChanged(user=>{manualCacheGeneration++;manualCodeCache=[];renderManualCodeLists();if(user)refreshManualCodeLists();});
 }
@@ -4845,7 +4879,7 @@ function initShippingPolicy() {
   renderShippingPolicy();
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-18-slip-startup-jan-v57";
+window.KOBUNSHA_APP_VERSION = "2026-11-19-slip-usability-jan-v58";
 // 在庫一覧：色別の商品・並び替え・選択印刷。既存の商品ID/JAN/コードは変更しない。
 function inventoryStockAudit() {
   return {stockUpdatedAt:firebase.firestore.FieldValue.serverTimestamp(),stockUpdatedBy:currentStaffName||""};

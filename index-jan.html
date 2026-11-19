@@ -1231,6 +1231,22 @@
     #tabDisaster #dsLedgerWrap td:nth-child(4),#tabDisaster #dsCartWrap td:nth-child(4),#tabDisaster #dsCartWrap td:nth-child(5) {text-align:right;font-variant-numeric:tabular-nums;}
     .ds-bulk-toolbar > :is(input[type=search], button) {max-width:100%;}
   }
+
+  #tabSlips .slip-entry-actions {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:880px;margin:12px 0 16px;}
+  #tabSlips .slip-entry-actions button {width:100%;min-width:0;margin:0;padding:12px 10px;white-space:normal;line-height:1.5;}
+  #pdfInvoicePreview {white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:16px;line-height:1.85;font-weight:500;color:#182f4b;background:#fff;border:2px solid #8ba1bf;border-radius:8px;padding:18px;margin:18px 0;}
+  #pdfInvoicePreview:empty {display:none;}
+  #slipDeleteDialog {box-sizing:border-box;width:min(760px,94vw);max-height:88vh;overflow:auto;border:1px solid #acb9ca;border-radius:12px;padding:22px;color:#182f4b;background:#fff;}
+  #slipDeleteDialog:not([open]) {display:none;}
+  #slipDeleteDialog::backdrop {background:rgba(15,25,40,.55);}
+  #slipDeleteDialog h2 {font-size:20px;margin:0 0 14px;}
+  #slipDeleteContents {max-height:48vh;overflow:auto;}
+  #slipDeleteContents .slip-delete-record {white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:15px;line-height:1.7;padding:14px;background:#f2f5fa;border:1px solid #d4deeb;border-radius:8px;margin:0 0 12px;}
+  #slipDeleteQuestion {font-size:17px;font-weight:700;}
+  #slipDeleteNote {font-size:14px;}
+  .slip-delete-actions {display:flex;flex-wrap:wrap;justify-content:flex-end;gap:12px;margin-top:18px;}
+  .slip-delete-actions button {width:auto;max-width:100%;margin:0;}
+  @media(max-width:600px) {#tabSlips .slip-entry-actions {grid-template-columns:1fr;}#pdfInvoicePreview {font-size:16px;padding:12px;}}
 </style>
 </head>
 <body>
@@ -1403,12 +1419,10 @@
         <div class="spacer"></div>
         <input type="text" id="scannerInputSlips" class="scanner-input" placeholder="🔫 ハンディスキャナー入力欄">
         <button class="btn-secondary-inline" id="scanGlobalBtn2">📷 伝票をスキャン</button>
-        <button class="btn-add" id="slipCreateOutBtn">＋ 出荷指示書を作成</button>
-        <button class="btn-add btn-add-in" id="slipCreateInBtn">＋ 入荷伝票を作成</button>
-        <button type="button" class="btn-secondary-inline" id="incomingShowBtn">入荷待ち・入庫処理</button>
       </div>
+      <div class="slip-entry-actions" aria-label="入荷・出荷の入力操作"><button type="button" class="btn-secondary-inline" id="incomingShowBtn">入荷待ち・入庫処理</button><button class="btn-add" id="slipCreateOutBtn">＋ 出荷指示書を作成</button><button class="btn-add btn-add-in" id="slipCreateInBtn">＋ 入荷伝票を作成</button></div>
       <div class="toolbar"><button class="btn-secondary-inline" id="slipSelectAllBtn">表示中をすべて選択</button><button class="btn-danger" id="slipDeleteBtn">選択した伝票を削除（0件）</button></div>
-      <details class="pilot-panel" id="incomingPanel" open>
+      <details class="pilot-panel" id="incomingPanel">
         <summary>入荷待ち・入庫処理（通常発注・防災発注と連動）</summary>
         <p id="incomingLoadStatus" role="status" aria-live="polite">入荷予定を読み込み中です。</p>
         <button type="button" class="btn-secondary-inline" id="incomingNewBtn">新規入力</button>
@@ -1430,15 +1444,15 @@
       </details>
       <details class="pilot-panel" id="pdfInvoicePanel">
         <summary>手入力で出荷指示書を作成</summary>
-        <p>初回はコードと名称を入力します。登録後は同じコードで検索できます。未登録のコードは「追加」、または伝票作成時に登録します。</p>
+        <p>コードを入力すると登録済みの名称を自動表示します。初めてのコードは名称を手入力してください。出荷先・取扱先は伝票作成時に登録され、次回から自動表示されます。</p>
         <button type="button" class="btn-secondary-inline" id="manualNewBtn">新しい伝票を入力</button>
         <p id="pdfInvoiceStatus" role="status" aria-live="polite" style="white-space:pre-line;"></p>
         <fieldset id="pdfInvoiceForm">
           <legend>出荷指示書の入力</legend>
           <div class="manual-invoice-fields">
-            <div><label for="pdfInvoiceShipCode">出荷先</label><div class="manual-code-pair"><input id="pdfInvoiceShipCode" type="text" list="manual-ship-list" placeholder="コード" aria-label="出荷先コード" autocomplete="off"><input id="pdfInvoiceShipName" type="text" placeholder="出荷先名（初回は手入力）" aria-label="出荷先名"></div><datalist id="manual-ship-list"></datalist><div class="manual-code-actions"><button type="button" class="btn-secondary-inline" id="manual-ship-lookup">検索</button><button type="button" class="btn-secondary-inline" id="manual-ship-add">出荷先を追加</button></div><p id="manual-ship-status" class="manual-code-status" role="status" aria-live="polite"></p></div>
+            <div><label for="pdfInvoiceShipCode">出荷先コード・名称</label><div class="manual-code-pair"><input id="pdfInvoiceShipCode" type="text" list="manual-ship-list" placeholder="コード" aria-label="出荷先コード" autocomplete="off"><input id="pdfInvoiceShipName" type="text" placeholder="出荷先名（初回は手入力）" aria-label="出荷先名"></div><datalist id="manual-ship-list"></datalist><p id="manual-ship-status" class="manual-code-status" role="status" aria-live="polite"></p></div>
             <div><label for="pdfInvoicePostingDate">計上日</label><input id="pdfInvoicePostingDate" type="date"></div>
-            <div><label for="pdfInvoiceHandlingCode">取扱先</label><div class="manual-code-pair"><input id="pdfInvoiceHandlingCode" type="text" list="manual-handling-list" placeholder="コード" aria-label="取扱先コード" autocomplete="off"><input id="pdfInvoiceHandlingName" type="text" placeholder="取扱先名（初回は手入力）" aria-label="取扱先名"></div><datalist id="manual-handling-list"></datalist><div class="manual-code-actions"><button type="button" class="btn-secondary-inline" id="manual-handling-lookup">検索</button><button type="button" class="btn-secondary-inline" id="manual-handling-add">取扱先を追加</button></div><p id="manual-handling-status" class="manual-code-status" role="status" aria-live="polite"></p></div>
+            <div><label for="pdfInvoiceHandlingCode">取扱先コード・名称</label><div class="manual-code-pair"><input id="pdfInvoiceHandlingCode" type="text" list="manual-handling-list" placeholder="コード" aria-label="取扱先コード" autocomplete="off"><input id="pdfInvoiceHandlingName" type="text" placeholder="取扱先名（初回は手入力）" aria-label="取扱先名"></div><datalist id="manual-handling-list"></datalist><p id="manual-handling-status" class="manual-code-status" role="status" aria-live="polite"></p></div>
             <div><label for="pdfInvoiceSourceNo">伝票番号</label><input id="pdfInvoiceSourceNo" type="text" autocomplete="off" maxlength="40"></div>
             <div><div class="manual-trade-warehouse"><div><label for="pdfInvoiceTransactionCode">取引区分コード（3桁）</label><input id="pdfInvoiceTransactionCode" type="text" maxlength="3" list="manual-trade-list" placeholder="例：020" autocomplete="off"><datalist id="manual-trade-list"></datalist></div><div><label for="pdfInvoiceWarehouse">倉庫</label><input id="pdfInvoiceWarehouse" type="text" list="manual-warehouse-list" placeholder="選択・入力"><datalist id="manual-warehouse-list"></datalist></div></div><label for="pdfInvoiceTransactionName">取引区分名</label><input id="pdfInvoiceTransactionName" type="text" placeholder="未登録の場合は名称を入力"><div class="manual-code-actions"><button type="button" class="btn-secondary-inline" id="manual-trade-lookup">検索</button><button type="button" class="btn-secondary-inline" id="manual-trade-add">取引区分を追加</button></div><p id="manual-trade-status" class="manual-code-status" role="status" aria-live="polite"></p></div>
             <div><label for="pdfInvoiceOrderNo">受注番号</label><input id="pdfInvoiceOrderNo" type="text" autocomplete="off"></div>
@@ -1452,7 +1466,7 @@
           <div style="overflow-x:auto;"><table class="slip-detail-table"><thead><tr><th>商品コード</th><th>商品名（コードから自動表示）</th><th>単価（コードから自動入力）</th><th>数量</th><th>操作</th></tr></thead><tbody id="pdfInvoiceItems"></tbody></table></div>
           <button type="button" class="btn-secondary-inline" id="pdfInvoiceAddItemBtn">明細を追加</button>
           <button type="button" class="btn-secondary-inline" id="pdfInvoiceValidateBtn">入力内容を照合</button>
-          <pre id="pdfInvoicePreview" style="white-space:pre-wrap;"></pre>
+          <pre id="pdfInvoicePreview" aria-label="登録予定の伝票内容" role="region" tabindex="0"></pre>
           <label><input type="checkbox" id="pdfInvoiceConfirmed" style="width:auto;"> 登録予定の伝票番号・取引区分・受注番号・出荷先・取扱先・商品・単価・数量を確認しました</label>
           <p class="invoice-action-info">手順：コード・伝票情報を入力 → 数量を入力 → 入力内容を照合 → 確認チェック → 出荷伝票を作成</p>
           <p id="pdfInvoiceActionStatus" role="alert" aria-live="polite" style="white-space:pre-line;" hidden></p>
@@ -2058,11 +2072,20 @@
 <!-- Phase3追加: スマホカメラでのQRコード読み取り用ライブラリ -->
 <script async src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
+
+  <dialog id="slipDeleteDialog" aria-labelledby="slipDeleteTitle" aria-describedby="slipDeleteQuestion slipDeleteNote">
+    <h2 id="slipDeleteTitle">削除する伝票の確認</h2>
+    <div id="slipDeleteContents"></div>
+    <p id="slipDeleteQuestion"></p>
+    <p id="slipDeleteNote">伝票の削除では現在庫数は変更されません。</p>
+    <div class="slip-delete-actions"><button type="button" class="btn-secondary-inline" id="slipDeleteCancelBtn">キャンセル</button><button type="button" class="btn-danger" id="slipDeleteConfirmBtn">表示した伝票を削除する</button></div>
+  </dialog>
+
 <script src="firebase-config.js"></script>
 <script>
   // 脚本ファイルの取得失敗と、取得後の初期化エラーを区別する。
   (() => {
-    const expected = "2026-11-18-slip-startup-jan-v57";
+    const expected = "2026-11-19-slip-usability-jan-v58";
     const appScript = document.createElement("script");
     const report = message => {
       const notice = document.getElementById("loginError");
