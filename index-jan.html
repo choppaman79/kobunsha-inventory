@@ -925,20 +925,21 @@
 
 
 
-  /* 23mm: 内容18.501mm + 上下余白0.4mm = 18.901mm。印刷枠19.1mm以内。 */
+  /* 23mm: 内容17.096mmを中央配置。商品名の上余白を0.3mm追加し、数字を0.3mm上へ。線幅は維持する。 */
   @page brother-product-small { size:23mm 23mm; margin:1.9mm; }
-  .brother-product-small-mode .brother-product-label { width:23mm; height:23mm; padding:2.15mm 1.9mm; flex-direction:column; align-items:center; justify-content:flex-start; gap:.25mm; }
+  .brother-product-small-mode .brother-product-label { width:23mm; height:23mm; padding:2.8mm 1.9mm 2.9mm; flex-direction:column; align-items:center; justify-content:center; gap:.2mm; }
   .brother-product-small-mode .product-label-info { box-sizing:border-box; flex:0 0 8.6mm; width:100%; height:8.6mm; padding:0 1mm; text-align:center; }
-  .brother-product-small-mode .product-label-name { box-sizing:border-box; height:4.2mm; max-height:4.2mm; line-height:1.12; font-size:4.8pt; font-weight:600; padding:.1mm 0 .1mm; overflow:hidden; display:block; white-space:pre-line; overflow-wrap:anywhere; word-break:normal; }
+  .brother-product-small-mode .product-label-name { box-sizing:border-box; height:4.2mm; max-height:4.2mm; line-height:1.12; font-size:4.8pt; font-weight:600; padding:.4mm 0 .1mm; overflow:hidden; display:block; white-space:pre-line; overflow-wrap:anywhere; word-break:normal; }
   .brother-product-small-mode .product-label-color { box-sizing:border-box; height:1.9mm; line-height:1.15; padding:.1mm 0; font-size:5.5pt; font-weight:700; white-space:nowrap; overflow:hidden; }
   .brother-product-small-mode .product-label-no-color .product-label-name { height:6.1mm; max-height:6.1mm; }
   .brother-product-small-mode .product-label-price { box-sizing:border-box; height:2.5mm; line-height:1.05; font-size:6.5pt; padding:.05mm 0; margin:0; white-space:nowrap; overflow:hidden; }
-  .brother-product-small-mode .product-label-bars { flex:0 0 9.6506666667mm; width:19.1346666667mm; height:9.6506666667mm; }
-  .brother-product-small-mode .product-label-bars canvas { width:19.1346666667mm; height:7.4506666667mm; display:block; max-width:none; image-rendering:pixelated; }
-  .brother-product-small-mode .product-label-digits { box-sizing:border-box; width:100%; height:2.2mm; padding:.15mm 0; font:5pt/1.9mm monospace; text-align:center; white-space:nowrap; color:#000; overflow:visible; }
+  .brother-product-small-mode .product-label-bars { flex:0 0 8.296mm; width:19.1346666667mm; height:8.296mm; }
+  .brother-product-small-mode .product-label-bars canvas { width:19.1346666667mm; height:6.096mm; display:block; max-width:none; image-rendering:pixelated; }
+  .brother-product-small-mode .product-label-info, .brother-product-small-mode .product-label-bars {transform:translateY(var(--product-label-offset-y, 0mm));}
+  .brother-product-small-mode .product-label-digits { box-sizing:border-box; width:100%; height:2.2mm; padding:.15mm 0; font:5pt/1.9mm monospace; text-align:center; white-space:nowrap; color:#000; overflow:visible; position:relative; top:-.3mm; }
   @media print {
     body.label-print #qrBulkPrintArea.brother-product-mode.brother-product-small-mode { width:19.2mm !important; max-width:19.2mm !important; page:brother-product-small; }
-    body.label-print .brother-product-small-mode .brother-product-label { width:19.2mm !important; height:19.1mm !important; padding:.25mm 0 .15mm !important; }
+    body.label-print .brother-product-small-mode .brother-product-label { width:19.2mm !important; height:19.1mm !important; padding:.9mm 0 !important; }
   }
 
   .label-printer-settings { border:1px solid #cbd6e5; background:#f3f6fa; border-radius:8px; margin:0 0 16px; padding:12px 14px; font-size:13px; line-height:1.7; }
@@ -1749,6 +1750,15 @@
         </select>
         <p class="printer-guide-note">印字太りを補正します。線が欠けたり読みにくくなった場合は「標準」に戻し、1枚ずつ比較してください。</p>
       </div>
+      <div id="productLabelOffsetTools" style="margin-top:10px;">
+        <label for="productLabelOffsetSelect">印字の上下位置（23×23mm）</label>
+        <select id="productLabelOffsetSelect" style="max-width:360px;margin-top:6px;">
+          <option value="-0.6">0.6mm 上へ</option><option value="-0.4">0.4mm 上へ</option><option value="-0.2">0.2mm 上へ</option>
+          <option value="0" selected>中央（標準）</option>
+          <option value="0.2">0.2mm 下へ</option><option value="0.4">0.4mm 下へ</option><option value="0.6">0.6mm 下へ</option>
+        </select>
+        <p class="printer-guide-note">まず「中央」で1枚確認してください。上だけ切れる場合は下へ、下だけ切れる場合は上へ、0.2mmずつ調整できます。上下とも切れる場合は用紙サイズ・倍率・余白設定を確認してください。</p>
+      </div>
     </div>
     <aside class="label-printer-settings no-print" aria-label="プリンター設定の確認">
       <p id="printerGuideSummary" role="status">用紙と倍率を確認してから印刷してください。</p>
@@ -2103,7 +2113,7 @@
 <script>
   // 脚本ファイルの取得失敗と、取得後の初期化エラーを区別する。
   (() => {
-    const expected = "2026-11-20-jan-portrait-v60";
+    const expected = "2026-11-20-jan-text-inset-v62";
     const appScript = document.createElement("script");
     const report = message => {
       const notice = document.getElementById("loginError");
