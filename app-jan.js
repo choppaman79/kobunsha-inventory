@@ -3627,20 +3627,21 @@ function initOpeningStockTools() {
 let productLabelSize = "23";
 let productLabelPreviewCount = 0;
 let compactBarcodeReduction = 1;
+let productLabelVerticalOffset = 0;
 // 300dpiで1モジュールを2ドットにそろえ、線と隙間の端数縮小を避ける。
 function makeCompactProductBarcode(code) {
   const bits = ean13Bits(code);
   const canvas = document.createElement("canvas");
   // EAN-13：左11・右7モジュールの白地を含む113モジュール。
   canvas.width = 226;
-  canvas.height = 88;
+  canvas.height = 72;
   canvas.setAttribute("role", "img");
   canvas.setAttribute("aria-label", "商品バーコード " + code);
   const context = canvas.getContext("2d");
   if (!context) throw Error("バーコードの画像を作成できませんでした");
   context.imageSmoothingEnabled = false;
   context.fillStyle = "#fff";
-  context.fillRect(0, 0, 226, 88);
+  context.fillRect(0, 0, 226, 72);
   context.fillStyle = "#000";
   // 黒い連続区間をまとめて補正する。太いバーの内部に白い隙間を作らない。
   for (let i = 0; i < bits.length;) {
@@ -3649,7 +3650,7 @@ function makeCompactProductBarcode(code) {
     while (i < bits.length && bits[i] === "1") i++;
     const guard = start < 3 || start >= 45 && start < 50 || start >= 92;
     const width = Math.max(1, (i - start) * 2 - compactBarcodeReduction);
-    context.fillRect((11 + start) * 2, 0, width, guard ? 84 : 76);
+    context.fillRect((11 + start) * 2, 0, width, guard ? 68 : 64);
   }
   return canvas;
 }
@@ -3697,7 +3698,11 @@ function updateProductLabelSize() {
   productLabelSize = select.value === "62" ? "62" : "23";
   compactBarcodeReduction = document.getElementById("productBarcodeWeightSelect").value === "standard" ? 0 : 1;
   document.getElementById("productBarcodeWeightTools").hidden = productLabelSize !== "23";
+  document.getElementById("productLabelOffsetTools").hidden = productLabelSize !== "23";
+  const offset=Number(document.getElementById("productLabelOffsetSelect").value);
+  productLabelVerticalOffset=Number.isFinite(offset)?Math.max(-.6,Math.min(.6,offset)):0;
   const area = document.getElementById("qrBulkPrintArea");
+  area.style.setProperty("--product-label-offset-y", productLabelVerticalOffset+"mm");
   area.classList.remove("brother-qr-mode", "brother-pick-mode", "brother-product-small-mode");
   area.classList.add("brother-product-mode");
   if (productLabelSize === "23") area.classList.add("brother-product-small-mode");
@@ -3706,7 +3711,7 @@ function updateProductLabelSize() {
   document.getElementById("qrBulkGrid").querySelectorAll(".product-label-name, .product-label-color, .product-label-price").forEach(element => { element.style.fontSize = ""; });
   document.getElementById("qrBulkTitle").textContent = productLabelSize === "23" ? "商品バーコード・商品名・価格（23×23mm）" : "商品バーコード・商品名・価格（62×29mm）";
   document.getElementById("qrBulkHint").textContent = productLabelPreviewCount + "枚／" + (productLabelSize === "23"
-    ? "DK-1221（23×23mm）。縦向き・300dpi・倍率100%・余白はアプリ指定（既定）・ヘッダー／フッターなし。用紙に合わせる拡大縮小は使わないでください。商品名2行・色1行・価格の順に印刷します。色は商品名末尾の既知の色名から分けて表示し、判別できない場合は商品名に残します。標準より小さいバーコードです。最初に1枚だけ印刷し、Tera HW0010で商品が正しく開くか確認してください。POSでの読取は未確認です。"
+    ? "DK-1221（23×23mm）。上下の余白を広くした配置（約3mm）。縦向き・300dpi・倍率100%・余白はアプリ指定（既定）・ヘッダー／フッターなし。上下にずれるときは「印字の上下位置」で調整してください。用紙に合わせる拡大縮小は使わないでください。商品名2行・色1行・価格の順に印刷します。色は商品名末尾の既知の色名から分けて表示し、判別できない場合は商品名に残します。標準より小さいバーコードです。最初に1枚だけ印刷し、Tera HW0010で商品が正しく開くか確認してください。POSでの読取は未確認です。"
     : "DK-1209（62×29mm）。倍率100%・ヘッダー／フッターなし。価格は商品マスタの売価です。POS利用には同じ商品番号と価格の登録が必要です。");
   if (productLabelSize === "23") document.getElementById("qrBulkHint").textContent += compactBarcodeReduction
     ? " 線は「細く補正」です。線が欠ける場合は「標準」に戻してください。"
@@ -3724,6 +3729,7 @@ function initProductLabelSizes() {
   const weight = document.getElementById("productBarcodeWeightSelect");
   weight.value = "thin";
   weight.addEventListener("change", updateProductLabelSize);
+  const offset=document.getElementById("productLabelOffsetSelect");offset.value="0";offset.addEventListener("change",updateProductLabelSize);
 }
 
 // ブラウザ・ドライバーの実設定は読めないため、今回選ぶ設定と開き方を表示する。
@@ -3735,7 +3741,7 @@ function updateLabelPrinterGuide() {
   document.getElementById("printerGuideOrientation").textContent = small ? "縦（23×23mm）" : "横（62×29mm）";
   document.getElementById("printerGuideWeight").textContent = compactBarcode ? (compactBarcodeReduction ? "細く補正（印字太り対策）" : "標準") : "標準";
   document.getElementById("printerGuideResolution").textContent = compactBarcode ? "300dpi" : "プリンターの標準設定";
-  document.getElementById("printerGuideSummary").textContent = "今回の用紙：" + (small ? "23×23mm" : "62×29mm") + (small ? " ／ 縦" : " ／ 横") + " ／ 倍率100% ／ 余白はアプリ指定（既定） ／ ヘッダー・フッターなし";
+  document.getElementById("printerGuideSummary").textContent = "今回の用紙：" + (small ? "23×23mm" : "62×29mm") + (small ? " ／ 縦" : " ／ 横") + " ／ 倍率100% ／ 余白はアプリ指定（既定） ／ ヘッダー・フッターなし" + (compactBarcode ? " ／ 上下余白広め ／ 位置 "+(productLabelVerticalOffset>0?"+":"")+productLabelVerticalOffset+"mm" : "");
 }
 function openLabelPrinterGuide() {
   updateLabelPrinterGuide();
@@ -4894,7 +4900,7 @@ function initShippingPolicy() {
   renderShippingPolicy();
 }
 
-window.KOBUNSHA_APP_VERSION = "2026-11-20-jan-portrait-v60";
+window.KOBUNSHA_APP_VERSION = "2026-11-20-jan-text-inset-v62";
 // 在庫一覧：色別の商品・並び替え・選択印刷。既存の商品ID/JAN/コードは変更しない。
 function inventoryStockAudit() {
   return {stockUpdatedAt:firebase.firestore.FieldValue.serverTimestamp(),stockUpdatedBy:currentStaffName||""};
