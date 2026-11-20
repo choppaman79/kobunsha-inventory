@@ -4,21 +4,25 @@
 <style>
 :root{font-family:"Yu Gothic UI","Meiryo",sans-serif;color:#213830;background:#f4f6f3;font-size:16px}*{box-sizing:border-box}body{margin:0}header{background:#214c40;color:white;padding:24px max(24px,calc((100vw - 1080px)/2));display:flex;justify-content:space-between;align-items:center;gap:12px}h1{font-size:24px;margin:4px 0}h2{font-size:19px;margin:0 0 18px}.brand{letter-spacing:.15em;font-size:12px;color:#c3d6cd}.sub{font-size:13px;color:#d5e2dc}main{max-width:1128px;margin:auto;padding:28px 24px}section,.card{background:white;border:1px solid #dce4df;border-radius:12px;padding:24px;margin-bottom:20px}#login{max-width:430px;margin:55px auto}label{display:block;font-size:14px;font-weight:600;margin-bottom:6px}input,select,button{font:inherit}input,select{width:100%;padding:12px;border:1px solid #a9bab0;border-radius:6px;background:white;color:#213830;min-height:46px}input:focus,select:focus,button:focus-visible{outline:3px solid #a8c8b7;outline-offset:2px}button{cursor:pointer;border:1px solid #b5c7bc;background:white;color:#214c40;border-radius:6px;padding:11px 16px;min-height:44px;white-space:nowrap}.primary{background:#245c49;color:white;border-color:#245c49}.return{color:#865f22;border-color:#bda77c}button:disabled{opacity:.5;cursor:default}.field{margin-bottom:18px}.grid{display:grid;grid-template-columns:1fr 1fr auto;gap:16px;align-items:end}.grid .field{margin:0}.hint{font-size:13px;color:#64786d;margin:12px 0 0}.topline{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.counts{display:flex;gap:12px;margin:0 0 22px;flex-wrap:wrap}.count{background:#e7eee9;padding:15px 22px;border-radius:9px;min-width:155px}.count strong{font-size:27px;margin-left:14px}.filters{display:grid;grid-template-columns:1fr 180px;gap:14px;margin:20px 0}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:14px;text-align:left}th{color:#64786d;font-size:12px;background:#f6f8f6;white-space:nowrap}th,td{padding:14px 12px;border-bottom:1px solid #e5ebe7}td.slip{font-weight:700;overflow-wrap:anywhere;min-width:120px}td.person{overflow-wrap:anywhere;min-width:120px}.actions{display:flex;gap:7px;flex-wrap:wrap}.actions button{font-size:13px;padding:8px 12px}.badge{display:inline-block;border-radius:20px;padding:5px 10px;font-size:12px;white-space:nowrap}.pending{background:#fff1d9;color:#7e591c}.completed{background:#e6f2eb;color:#216344}.date{font-size:12px;color:#65786d;white-space:nowrap}.empty{text-align:center;padding:40px;color:#64786d}.message{background:#edf4ef;border-radius:7px;padding:12px 16px;margin-bottom:18px;white-space:pre-wrap}.error{background:#fff0eb;color:#8c3925}.connection{font-size:13px;font-weight:600;color:#64786d}.headerbtn{background:transparent;border-color:#85aa98;color:white;font-size:13px}dialog{width:min(680px,calc(100% - 24px));border:1px solid #b5c7bc;border-radius:12px;padding:24px;max-height:85vh}dialog::backdrop{background:#10291b66}.event{padding:14px 0;border-bottom:1px solid #e5ebe7}.event p{margin:5px 0;overflow-wrap:anywhere}footer{font-size:12px;text-align:center;color:#74877b;padding:10px 20px 25px}[hidden]{display:none!important}@media(max-width:650px){header{padding:20px}h1{font-size:21px}main{padding:20px 12px}.grid,.filters{grid-template-columns:1fr}.count{padding:12px;min-width:130px}.count strong{font-size:23px}section{padding:18px}#login{margin:25px auto}}
 .register-grid{grid-template-columns:1fr 1fr 170px}.month-filters{grid-template-columns:1fr 180px 190px}.monthly-total{font-weight:700;background:#edf4ef}@media(max-width:650px){.register-grid,.month-filters{grid-template-columns:1fr}}
+
+.search-main{margin-top:20px}.search-input-row{display:flex;gap:8px}.search-input-row input{min-width:0;font-size:18px}.search-input-row button{flex-shrink:0}.status-buttons{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0 12px}.status-buttons button{font-weight:700;background:#f4f7f4}.status-buttons button[aria-pressed="true"]{background:#245c49;color:white;border-color:#245c49}.search-options summary{padding:12px 0;cursor:pointer;color:#35604b;font-weight:600}.advanced-filters{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:10px 0 14px}.result-line{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.result-line #shown{font-size:15px;font-weight:700;color:#214c40}.result-line button{font-size:13px;padding:7px 10px}.fold-panel{margin-bottom:16px;border:1px solid #dce4df;border-radius:10px;background:white}.fold-panel>summary{cursor:pointer;padding:18px 22px;font-weight:700}.fold-panel>section{border:none;margin:0;padding-top:10px}.edit-actions{min-width:120px}.edit-actions>summary{cursor:pointer;padding:10px 12px;border:1px solid #b5c7bc;border-radius:6px;min-height:44px;background:#f8faf8}.edit-buttons{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:8px}.record-primary{font-weight:700}.records-table .record-actions{min-width:240px}.records-table td{vertical-align:top}.records-table .person{min-width:100px}.records-table .slip{min-width:100px}
+@media(max-width:700px){header{padding:18px 14px;align-items:flex-start}h1{font-size:20px}.sub{font-size:12px}.headerbtn{font-size:12px;padding:8px;white-space:normal}main{padding:14px 10px}#recordsSection{padding:18px 12px}#recordsSection h2{font-size:19px}.topline{gap:8px}.connection{font-size:12px}.status-buttons button{padding:12px 6px;font-size:15px;min-height:48px}.search-input-row input{font-size:18px;min-height:50px}.advanced-filters{grid-template-columns:1fr}.records-wrap{overflow:visible}.records-table,.records-table tbody{display:block;width:100%}.records-table thead{display:none}.records-table tbody>tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px 12px;background:#fff;border:1px solid #d4e1d7;box-shadow:0 2px 6px #173b2010;border-radius:10px;padding:16px 12px;margin:12px 0}.records-table td{padding:0;border:0;min-width:0!important;white-space:normal;overflow-wrap:anywhere}.records-table .slip{grid-column:1;grid-row:1;font-size:19px}.records-table .slip::before{content:'伝票番号';display:block;font-size:11px;font-weight:400;color:#64786d;margin-bottom:3px}.records-table .record-state{grid-column:2;grid-row:1;justify-self:end}.records-table .person{grid-column:1/-1;grid-row:2;font-size:20px;font-weight:700}.records-table .record-period{grid-column:1/-1;grid-row:3;font-size:14px}.records-table .record-ihai{grid-column:1;grid-row:4;padding:10px;background:#f0f5f1;border-radius:6px;font-size:18px;font-weight:700}.records-table .record-butsudan{grid-column:2;grid-row:4;padding:10px;background:#f0f5f1;border-radius:6px;font-size:18px;font-weight:700}.records-table .record-ihai::before{content:'位牌（体）';display:block;font-size:11px;font-weight:400;color:#64786d}.records-table .record-butsudan::before{content:'お仏壇（台）';display:block;font-size:11px;font-weight:400;color:#64786d}.records-table .record-date{grid-column:1/-1;grid-row:5;font-size:12px}.records-table .record-date::before{content:'引取日時：'}.records-table .record-actions{grid-column:1/-1;grid-row:6;min-width:0}.records-table .record-actions>.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.records-table .actions button{min-height:48px;font-size:15px;padding:10px}.edit-actions{grid-column:1/-1}.edit-actions>summary{text-align:center;font-size:14px}.records-table tr:has(.empty){display:block}.counts{gap:8px;margin:16px 0}.count{flex:1;min-width:0;padding:12px;font-size:14px}.count strong{font-size:23px;margin-left:8px}.fold-panel>summary{padding:17px 14px}.fold-panel>section{padding:8px 12px 18px}.register-grid{grid-template-columns:1fr 1fr}.register-grid .field:nth-child(-n+3){grid-column:1/-1}.register-grid button{grid-column:1/-1}dialog{padding:20px 14px}input,select{font-size:16px}.result-line{gap:4px}.result-line #shown{margin:10px 0}.fold-panel .tablewrap{max-width:100%}.edit-buttons{grid-template-columns:1fr 1fr}}
 </style></head><body>
 <header><div><div class="brand">KOBUNSHA</div><h1>位牌・お仏壇引き取り管理</h1><div class="sub">受付から、引き取り確認まで。</div></div><button id="logout" class="headerbtn" hidden>迫さん · ログアウト</button></header>
 <main><div id="message" class="message" role="status" aria-live="polite" hidden></div>
 <section id="login"><h2>ログイン</h2><form id="loginForm"><div class="field"><label for="loginName">名前</label><input id="loginName" value="迫" readonly autocomplete="username"></div><div class="field"><label for="password">パスワード</label><input id="password" type="password" autocomplete="current-password" required></div><button id="loginBtn" class="primary" type="submit">ログインする</button><p class="hint">在庫管理システムと同じパスワードを入力してください。</p></form></section>
 <div id="app" hidden>
+<section id="recordsSection"><div class="topline"><h2 style="margin:0">引き取り状況を探す</h2><span id="connection" class="connection" role="status">接続を確認しています…</span></div><div class="search-main"><div><label for="search">伝票番号・名前を入力</label><div class="search-input-row"><input id="search" type="search" enterkeyhint="search" placeholder="例：001234 ／ 山田 太郎" autocomplete="off"><button id="clearSearch" type="button" aria-label="検索文字を消す">消す</button></div><p class="hint">一部の入力でも検索できます。全角・半角、名前の空白、ひらがな・カタカナに対応。</p></div><div hidden><label for="filter">表示する状況</label><select id="filter"><option value="pending">未完了</option><option value="completed">消込済</option><option value="all">すべて</option></select></div></div><div class="status-buttons" role="group" aria-label="引取状況の絞り込み"><button id="quickPending" type="button">未引取</button><button id="quickCompleted" type="button">引取済</button><button id="quickAll" type="button">すべて</button></div><details id="searchOptions" class="search-options"><summary>月分・検索対象で絞り込む</summary><div class="advanced-filters"><div><label for="searchScope">検索対象</label><select id="searchScope"><option value="all">伝票番号・名前</option><option value="slip">伝票番号のみ</option><option value="name">名前のみ</option></select></div><div><label for="monthFilter">月分で絞り込み</label><select id="monthFilter"><option value="all">すべての月分</option></select></div></div></details><div class="result-line"><p class="hint" id="shown" role="status" aria-live="polite"></p><button id="resetSearch" type="button">絞り込みをリセット</button></div><p class="hint" id="searchHint"></p><p hidden></p><div class="tablewrap records-wrap"><table class="records-table"><thead><tr><th>伝票番号</th><th>名前</th><th>月分</th><th>位牌（体）</th><th>お仏壇（台）</th><th>状況</th><th>引取日時</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div><button id="moreRecords" type="button" hidden style="width:100%;margin-top:14px">さらに表示する</button><p class="hint">伝票の位牌・お仏壇をすべて引き取ったら「引取済にする」を押してください。履歴は消えません。</p></section>
 <div class="counts"><div class="count">未完了<strong id="pendingCount">—</strong></div><div class="count">消込済<strong id="completedCount">—</strong></div></div>
-<section><h2>月分別の集計</h2><p class="hint">ExcelのC列・画面で設定した月分を基準に集計します。実際の引取月による集計ではありません。</p><div class="tablewrap" style="margin-top:14px"><table><thead><tr><th>月分</th><th>登録件数</th><th>未引取件数</th><th>引取済件数</th></tr></thead><tbody id="monthlyRows"></tbody></table></div><p class="hint">全記録の集計です。消込・未完了への戻し・月分の変更を反映します。</p></section>
-<section><h2>月分別の数量集計</h2><p class="hint">数量を入力した記録だけを合計します。数量未設定は0として扱わず、件数を別に表示します。</p><div class="tablewrap" style="margin-top:14px"><table><thead><tr><th rowspan="2">月分</th><th colspan="3">位牌（体）</th><th colspan="3">お仏壇（台）</th><th rowspan="2">数量未設定（件）</th></tr><tr><th>受付数</th><th>未引取数</th><th>引取済数</th><th>受付数</th><th>未引取数</th><th>引取済数</th></tr></thead><tbody id="quantityRows"></tbody></table></div><p class="hint">1件の消込で、その伝票の位牌・お仏壇をすべて引取済として集計します。</p></section>
-<section id="excelSection"><div class="topline"><h2 style="margin:0">Excelから一括登録</h2><button id="excelTemplate" type="button">入力用Excelをダウンロード</button></div><p class="hint">1行目はA列「伝票番号」・B列「名前」・C列「月分」。2行目以降のC列には「2026年11月分」の形式で入力してください。D列は「位牌体数」、E列は「お仏壇台数」です。取り込んだ記録は「未完了」になります。</p><p class="hint">伝票番号の列はExcelで「文字列」にすると、先頭の0を保持できます。</p><div class="grid" style="margin-top:18px"><div class="field"><label for="excelFile">Excelファイル（.xlsx / .xls）</label><input id="excelFile" type="file" accept=".xlsx,.xls"></div><div class="field"><label for="excelSheet">取り込むシート</label><select id="excelSheet" disabled><option>ファイルを選択してください</option></select></div><button id="excelPreview" type="button" disabled>内容を確認する</button></div><p class="hint">1回1,000行・10MBまで。登録済みの記録は、未設定の月分・数量だけを補います。名前・引取状況・入力済みの数量は維持します。</p><div id="excelResults" hidden><p id="excelSummary" class="message" role="status" style="margin-top:18px"></p><div class="tablewrap" style="max-height:340px"><table><thead><tr><th>Excel行</th><th>伝票番号</th><th>名前</th><th>月分</th><th>位牌（体）</th><th>お仏壇（台）</th><th>確認結果</th></tr></thead><tbody id="excelRows"></tbody></table></div><p class="hint">空欄や不備のある行、Excel内で伝票番号が重複している行は除外します。プレビューだけでは登録されません。</p><div class="actions" style="margin-top:16px"><button id="excelImport" type="button" class="primary" disabled>新規の行を登録する</button><button id="excelStop" type="button" hidden>処理を停止する</button><button id="excelClear" type="button">確認を閉じる</button></div><p id="excelProgress" class="hint" role="status" aria-live="polite"></p></div></section>
-<section><h2>新しく登録する</h2><form id="registerForm" class="grid register-grid"><div class="field"><label for="slip">伝票番号</label><input id="slip" maxlength="80" autocomplete="off" required placeholder="例：001234"></div><div class="field"><label for="person">名前</label><input id="person" maxlength="100" autocomplete="off" required placeholder="お名前を入力"></div><div class="field"><label for="period">月分</label><input id="period" type="month" min="1900-01" max="9999-12" required></div><div class="field"><label for="ihaiCount">位牌体数</label><input id="ihaiCount" type="number" min="0" max="999999" step="1" placeholder="対象なしは0"></div><div class="field"><label for="butsudanCount">お仏壇台数</label><input id="butsudanCount" type="number" min="0" max="999999" step="1" placeholder="対象なしは0"></div><button class="primary write" type="submit">登録する</button></form><p class="hint">伝票番号の先頭の「0」も保存されます。全角の英数字は半角にそろえます。数量は両方を空欄にすると未設定、対象のない方は0を入力してください。</p></section>
-<section><div class="topline"><h2 style="margin:0">引き取り状況</h2><span id="connection" class="connection" role="status">接続を確認しています…</span></div><div class="filters month-filters"><div><label for="search">伝票番号・名前で検索</label><input id="search" type="search" placeholder="番号や名前の一部を入力" autocomplete="off"></div><div><label for="filter">表示する状況</label><select id="filter"><option value="pending">未完了</option><option value="completed">消込済</option><option value="all">すべて</option></select></div><div><label for="monthFilter">月分で絞り込み</label><select id="monthFilter"><option value="all">すべての月分</option></select></div></div><p class="hint" id="shown"></p><div class="tablewrap"><table><thead><tr><th>伝票番号</th><th>名前</th><th>月分</th><th>位牌（体）</th><th>お仏壇（台）</th><th>状況</th><th>引取日時</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div><p class="hint">伝票の位牌・お仏壇をすべて引き取ったら「引取済にする」を押してください。履歴は消えません。</p></section>
+<details class="fold-panel" id="monthlyPanel"><summary>月別の件数集計を見る</summary><section><h2>月分別の集計</h2><p class="hint">ExcelのC列・画面で設定した月分を基準に集計します。実際の引取月による集計ではありません。</p><div class="tablewrap" style="margin-top:14px"><table><thead><tr><th>月分</th><th>登録件数</th><th>未引取件数</th><th>引取済件数</th></tr></thead><tbody id="monthlyRows"></tbody></table></div><p class="hint">全記録の集計です。消込・未完了への戻し・月分の変更を反映します。</p></section></details>
+<details class="fold-panel" id="quantityPanel"><summary>月別の数量集計を見る</summary><section><h2>月分別の数量集計</h2><p class="hint">数量を入力した記録だけを合計します。数量未設定は0として扱わず、件数を別に表示します。</p><div class="tablewrap" style="margin-top:14px"><table><thead><tr><th rowspan="2">月分</th><th colspan="3">位牌（体）</th><th colspan="3">お仏壇（台）</th><th rowspan="2">数量未設定（件）</th></tr><tr><th>受付数</th><th>未引取数</th><th>引取済数</th><th>受付数</th><th>未引取数</th><th>引取済数</th></tr></thead><tbody id="quantityRows"></tbody></table></div><p class="hint">1件の消込で、その伝票の位牌・お仏壇をすべて引取済として集計します。</p></section></details>
+<details class="fold-panel" id="excelPanel"><summary>Excelから一括登録する</summary><section id="excelSection"><div class="topline"><h2 style="margin:0">Excelから一括登録</h2><button id="excelTemplate" type="button">入力用Excelをダウンロード</button></div><p class="hint">1行目はA列「伝票番号」・B列「名前」・C列「月分」。2行目以降のC列には「2026年11月分」の形式で入力してください。D列は「位牌体数」、E列は「お仏壇台数」です。取り込んだ記録は「未完了」になります。</p><p class="hint">伝票番号の列はExcelで「文字列」にすると、先頭の0を保持できます。</p><div class="grid" style="margin-top:18px"><div class="field"><label for="excelFile">Excelファイル（.xlsx / .xls）</label><input id="excelFile" type="file" accept=".xlsx,.xls"></div><div class="field"><label for="excelSheet">取り込むシート</label><select id="excelSheet" disabled><option>ファイルを選択してください</option></select></div><button id="excelPreview" type="button" disabled>内容を確認する</button></div><p class="hint">1回1,000行・10MBまで。登録済みの記録は、未設定の月分・数量だけを補います。名前・引取状況・入力済みの数量は維持します。</p><div id="excelResults" hidden><p id="excelSummary" class="message" role="status" style="margin-top:18px"></p><div class="tablewrap" style="max-height:340px"><table><thead><tr><th>Excel行</th><th>伝票番号</th><th>名前</th><th>月分</th><th>位牌（体）</th><th>お仏壇（台）</th><th>確認結果</th></tr></thead><tbody id="excelRows"></tbody></table></div><p class="hint">空欄や不備のある行、Excel内で伝票番号が重複している行は除外します。プレビューだけでは登録されません。</p><div class="actions" style="margin-top:16px"><button id="excelImport" type="button" class="primary" disabled>新規の行を登録する</button><button id="excelStop" type="button" hidden>処理を停止する</button><button id="excelClear" type="button">確認を閉じる</button></div><p id="excelProgress" class="hint" role="status" aria-live="polite"></p></div></section></details>
+<details class="fold-panel" id="registrationPanel"><summary>新しく登録する</summary><section><h2>新しく登録する</h2><form id="registerForm" class="grid register-grid"><div class="field"><label for="slip">伝票番号</label><input id="slip" maxlength="80" autocomplete="off" required placeholder="例：001234"></div><div class="field"><label for="person">名前</label><input id="person" maxlength="100" autocomplete="off" required placeholder="お名前を入力"></div><div class="field"><label for="period">月分</label><input id="period" type="month" min="1900-01" max="9999-12" required></div><div class="field"><label for="ihaiCount">位牌体数</label><input id="ihaiCount" type="number" min="0" max="999999" step="1" placeholder="空欄は0"></div><div class="field"><label for="butsudanCount">お仏壇台数</label><input id="butsudanCount" type="number" min="0" max="999999" step="1" placeholder="空欄は0"></div><button class="primary write" type="submit">登録する</button></form><p class="hint">伝票番号の先頭の「0」も保存されます。全角の英数字は半角にそろえます。数量欄の空欄は0として保存します。両方が空欄の場合も0体・0台になります。</p></section></details>
+
 </div></main>
-<dialog id="confirmDialog"><h2 id="confirmTitle"></h2><p id="confirmText" style="white-space:pre-wrap;overflow-wrap:anywhere"></p><form id="confirmForm"><div id="renameField" class="field" hidden><label for="newName">正しい名前</label><input id="newName" maxlength="100"></div><div id="periodField" class="field" hidden><label for="newPeriod">月分</label><input id="newPeriod" type="month" min="1900-01" max="9999-12"></div><div id="slipField" class="field" hidden><label for="newSlip">正しい伝票番号</label><input id="newSlip" maxlength="80" autocomplete="off"><p class="hint">訂正前の番号は別の記録には再利用できません。同じ記録を以前の番号に戻すことはできます。</p></div><div id="quantityField" class="field" hidden><label for="newIhaiCount">位牌体数</label><input id="newIhaiCount" type="number" min="0" max="999999" step="1"><label for="newButsudanCount" style="margin-top:12px">お仏壇台数</label><input id="newButsudanCount" type="number" min="0" max="999999" step="1"><p class="hint">対象のない方は0を入力してください。両方を空欄にすると数量未設定へ戻せます。訂正前後の数量は履歴に残ります。</p></div><div class="actions"><button id="confirmOk" class="primary" type="submit">実行する</button><button id="confirmCancel" type="button">やめる</button></div></form></dialog>
+<dialog id="confirmDialog"><h2 id="confirmTitle"></h2><p id="confirmText" style="white-space:pre-wrap;overflow-wrap:anywhere"></p><form id="confirmForm"><div id="renameField" class="field" hidden><label for="newName">正しい名前</label><input id="newName" maxlength="100"></div><div id="periodField" class="field" hidden><label for="newPeriod">月分</label><input id="newPeriod" type="month" min="1900-01" max="9999-12"></div><div id="slipField" class="field" hidden><label for="newSlip">正しい伝票番号</label><input id="newSlip" maxlength="80" autocomplete="off"><p class="hint">訂正前の番号は別の記録には再利用できません。同じ記録を以前の番号に戻すことはできます。</p></div><div id="quantityField" class="field" hidden><label for="newIhaiCount">位牌体数</label><input id="newIhaiCount" type="number" min="0" max="999999" step="1"><label for="newButsudanCount" style="margin-top:12px">お仏壇台数</label><input id="newButsudanCount" type="number" min="0" max="999999" step="1"><p class="hint">空欄は0として保存します。両方が空欄の場合も0体・0台になります。訂正前後の数量は履歴に残ります。</p></div><div class="actions"><button id="confirmOk" class="primary" type="submit">実行する</button><button id="confirmCancel" type="button">やめる</button></div></form></dialog>
 <dialog id="historyDialog"><div class="topline"><h2 id="historyTitle">操作履歴</h2><button id="historyClose">閉じる</button></div><div id="historyContent"></div></dialog>
-<footer>弘文社 · 位牌引き取り管理 · 位牌・お仏壇数量集計版 2026.11.18</footer>
+<footer>弘文社 · 位牌引き取り管理 · 検索・スマホ対応版 2026.11.20</footer>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
@@ -58,15 +62,35 @@ const IhaiCore = (() => {
   }
   function quantities(ihai, butsudan) {
     const clean = v => String(v ?? '').normalize('NFKC').trim();
-    const a=clean(ihai), b=clean(butsudan);
-    if(!a && !b) return {ihaiCount:null,butsudanCount:null};
-    if(!/^\d+$/.test(a) || !/^\d+$/.test(b)) throw new Error('位牌体数・お仏壇台数は両方とも整数で入力してください。対象がない方は0、数量未設定なら両方を空欄にしてください。');
+    const a=clean(ihai) || '0', b=clean(butsudan) || '0';
+    if(!/^\d+$/.test(a) || !/^\d+$/.test(b)) throw new Error('位牌体数・お仏壇台数は0以上の整数で入力してください。空欄は0として保存します。');
     const x=Number(a),y=Number(b);
     if(!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || x>999999 || y>999999) throw new Error('数量はそれぞれ0〜999999の整数で入力してください。');
-    if(x+y===0) throw new Error('位牌またはお仏壇の数量を1以上にしてください。未設定の場合は両方を空欄にしてください。');
     return {ihaiCount:x,butsudanCount:y};
   }
-  function recordQuantities(record) {try{return quantities(record.ihaiCount,record.butsudanCount);}catch{return {ihaiCount:null,butsudanCount:null};}}
+  function recordQuantities(record) {if(record.ihaiCount==null && record.butsudanCount==null)return {ihaiCount:null,butsudanCount:null};try{return quantities(record.ihaiCount,record.butsudanCount);}catch{return {ihaiCount:null,butsudanCount:null};}}
+  function searchText(value) {
+    return String(value ?? '').normalize('NFKC').toLocaleLowerCase('ja').replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)).replace(/[‐‑‒–—−ー－]/g,'-').replace(/\s+/g,' ').trim();
+  }
+  function searchRecords(records, {query='',status='all',month='all',scope='all'}={}) {
+    const q=searchText(query),tokens=q.split(' ').filter(Boolean),compact=value=>searchText(value).replace(/\s/g,'');
+    const result=records.filter(r=>{
+      if(status!=='all' && r.status!==status)return false;
+      if(month!=='all' && recordPeriod(r)!==(month==='unset'?'':month))return false;
+      const fields=scope==='slip'?[compact(r.slip)]:scope==='name'?[compact(r.name)]:[compact(r.slip),compact(r.name)];
+      return tokens.every(token=>fields.some(field=>field.includes(token.replace(/\s/g,''))));
+    });
+    if(!q)return result;
+    const needle=compact(q),score=r=>{
+      const slip=compact(r.slip),name=compact(r.name);
+      if(scope!=='name' && slip===needle)return 0;
+      if(scope!=='slip' && name===needle)return 1;
+      if(scope!=='name' && slip.startsWith(needle))return 2;
+      if(scope!=='slip' && name.startsWith(needle))return 3;
+      return 4;
+    };
+    return result.sort((a,b)=>score(a)-score(b));
+  }
   function quantityLabel(record) {const q=recordQuantities(record);return q.ihaiCount===null ? '数量未設定' : `位牌 ${q.ihaiCount}体・お仏壇 ${q.butsudanCount}台`;}
   function quantitySummary(records) {
     const groups=new Map();
@@ -114,7 +138,7 @@ const IhaiCore = (() => {
       const oldPeriod = old ? recordPeriod(old) : '';
       const nextPeriod = action === 'register' ? period(input.period) : action === 'setPeriod' || (action==='fillDetails' && !oldPeriod) ? period(input.period,true) : oldPeriod;
       if (action === 'setPeriod' && nextPeriod === oldPeriod) throw new Error('月分が変更されていません。');
-      const oldQuantities=old ? recordQuantities(old) : quantities();
+      const oldQuantities=old ? recordQuantities(old) : {ihaiCount:null,butsudanCount:null};
       const proposedQuantities=['register','setQuantities','fillDetails'].includes(action) ? quantities(input.ihaiCount,input.butsudanCount) : oldQuantities;
       const nextQuantities=action==='fillDetails' && oldQuantities.ihaiCount!==null ? oldQuantities : proposedQuantities;
       const quantitiesChanged=nextQuantities.ihaiCount!==oldQuantities.ihaiCount || nextQuantities.butsudanCount!==oldQuantities.butsudanCount;
@@ -142,7 +166,7 @@ const IhaiCore = (() => {
       if(numberRef) tx.set(numberRef,{recordId:ref.id,slip:record.slip,updatedAt:now,updatedBy:user.uid});
     });
   }
-  return { OWNER, validate, isOwner, save, period, periodLabel, recordPeriod, monthlySummary, quantities, recordQuantities, quantityLabel, quantitySummary };
+  return { OWNER, validate, isOwner, save, period, periodLabel, recordPeriod, monthlySummary, quantities, recordQuantities, quantityLabel, quantitySummary, searchText, searchRecords };
 })();
 if (typeof module !== 'undefined') module.exports = IhaiCore;
 
@@ -173,7 +197,7 @@ const IhaiExcel = (() => {
       const a = cell(r,columns.slip[0]), b = cell(r,columns.name[0]), c = cell(r,2), d=cell(r,3), e=cell(r,4);
       const slip = displayed(a), name = displayed(b), monthText = displayed(c);
       if (!slip && !name && !monthText && !a?.f && !b?.f && !c?.f && (!quantityColumns || (!displayed(d) && !displayed(e) && !d?.f && !e?.f))) continue;
-      const entry = { row:r+1, slip, name, monthText, ihaiCount:null,butsudanCount:null,status:'new', detail:'新規登録します' };
+      const entry = { row:r+1, slip, name, monthText, ihaiCount:0,butsudanCount:0,status:'new', detail:'新規登録します' };
       try {
         if(!quantityColumns && (displayed(d) || displayed(e) || d?.f || e?.f)) throw new Error('D列・E列に数量を入れる場合は、1行目に「位牌体数」「お仏壇台数」の見出しを付けてください。');
         if (a?.f || b?.f || c?.f) throw new Error('数式を値に貼り付け直してください。');
@@ -227,6 +251,8 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
 (() => {
   const $ = id => document.getElementById(id);
   let auth, db, user = null, records = [], ready = false, busy = false, unsubscribe, historyUnsubscribe, epoch = 0, pendingAction;
+  const pageSize=typeof window.matchMedia==='function' && window.matchMedia('(max-width:700px)').matches ? 10 : 20;
+  let shownLimit=pageSize;
   let excelWorkbook = null, excelRows = [], excelParsing = false, excelLoading = 0, excelStopped = false, excelNeedsReview = false, xlsxPromise;
   function loadExcelLibrary() {
     if (window.XLSX) return Promise.resolve(window.XLSX);
@@ -303,7 +329,7 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
       const XLSX=await loadExcelLibrary(), sheet=XLSX.utils.aoa_to_sheet([['伝票番号','名前','月分','位牌体数','お仏壇台数']]);
       sheet['!cols']=[{wch:24},{wch:28},{wch:24},{wch:14},{wch:16}];
       const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'位牌引取');XLSX.writeFile(book,'ihai-import-template.xlsx');
-      message('入力用Excelをダウンロードしました。C列は「2026年11月分」、D列は位牌体数、E列はお仏壇台数です。数量は対象のない方に0、両方未設定なら空欄にしてください。');
+      message('入力用Excelをダウンロードしました。C列は「2026年11月分」、D列は位牌体数、E列はお仏壇台数です。数量欄の空欄は0として取り込みます。');
     } catch(err) { message(errorText(err),true); }
     finally { excelParsing=false; excelControls(); }
   };
@@ -377,31 +403,43 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
     renderQuantities();
     $('pendingCount').textContent = ready ? records.filter(r => r.status === 'pending').length : '—';
     $('completedCount').textContent = ready ? records.filter(r => r.status === 'completed').length : '—';
-    const q = $('search').value.normalize('NFKC').trim().toLocaleLowerCase('ja');
+    const q = $('search').value;
     const filter = $('filter').value;
     const month = $('monthFilter').value;
-    const visible = records.filter(r => (filter === 'all' || r.status === filter) && (month === 'all' || IhaiCore.recordPeriod(r) === (month === 'unset' ? '' : month)) && (r.slip + '\n' + r.name).normalize('NFKC').toLocaleLowerCase('ja').includes(q));
-    $('shown').textContent = ready ? `${visible.length}件表示 ／ 全${records.length}件` : '最新のデータを確認しています。';
+    const scope=$('searchScope').value || 'all';
+    const base=IhaiCore.searchRecords(records,{query:q,month,scope});
+    const visible=IhaiCore.searchRecords(records,{query:q,status:filter,month,scope});
+    for(const [id,value,label] of [['quickPending','pending','未引取'],['quickCompleted','completed','引取済'],['quickAll','all','すべて']]) {
+      $(id).textContent=`${label} ${value==='all'?base.length:base.filter(r=>r.status===value).length}件`;
+      $(id).ariaPressed=String(filter===value);
+    }
+    $('clearSearch').disabled=!q;
+    $('shown').textContent = ready ? `${q.trim()?'検索結果':'対象'} ${visible.length}件${visible.length>shownLimit?`（先頭${shownLimit}件を表示）`:''} ／ 全${records.length}件` : '最新のデータを確認しています。';
+    $('moreRecords').hidden=!ready || visible.length<=shownLimit;
+    $('searchHint').textContent=q.trim()?'検索時は引取済も含めて探します。上の状態ボタンや月分で絞り込めます。':'最初は未引取を表示します。番号や名前を入力すると、引取済の記録も検索します。';
     $('rows').replaceChildren();
     if (!visible.length) {
       const tr = document.createElement('tr'), td = document.createElement('td'); td.colSpan = 8; td.className = 'empty';
-      td.textContent = ready ? '該当する記録はありません。' : '読み込み待ちです。'; tr.append(td); $('rows').append(tr);
+      td.textContent = ready ? '該当する記録はありません。入力文字・月分・状態を確認するか、絞り込みをリセットしてください。' : '読み込み待ちです。'; tr.append(td); $('rows').append(tr);
     }
-    visible.forEach(record => {
+    visible.slice(0,shownLimit).forEach(record => {
       const tr = document.createElement('tr');
       for (const [value, cls] of [[record.slip,'slip'],[record.name,'person']]) { const td = document.createElement('td'); td.textContent = value; td.className = cls; tr.append(td); }
-      const periodCell=document.createElement('td');periodCell.textContent=IhaiCore.periodLabel(IhaiCore.recordPeriod(record));periodCell.className='date';tr.append(periodCell);
-      const q=IhaiCore.recordQuantities(record);for(const count of [q.ihaiCount,q.butsudanCount]){const td=document.createElement('td');td.textContent=count===null?'未設定':count;tr.append(td);}
-      const td = document.createElement('td'), badge = document.createElement('span'); badge.className = 'badge ' + record.status; badge.textContent = record.status === 'pending' ? '未完了' : '消込済'; td.append(badge); tr.append(td);
-      const date = document.createElement('td'); date.textContent = fmt(record.completedAt); date.className = 'date'; tr.append(date);
-      const operations = document.createElement('td'), actions = document.createElement('div'); actions.className = 'actions';
+      const periodCell=document.createElement('td');periodCell.textContent=IhaiCore.periodLabel(IhaiCore.recordPeriod(record));periodCell.className='date record-period';tr.append(periodCell);
+      const q=IhaiCore.recordQuantities(record);for(const [count,cls] of [[q.ihaiCount,'record-ihai'],[q.butsudanCount,'record-butsudan']]){const td=document.createElement('td');td.textContent=count===null?'未設定':count;td.className=cls;tr.append(td);}
+      const td = document.createElement('td'), badge = document.createElement('span');td.className='record-state'; badge.className = 'badge ' + record.status; badge.textContent = record.status === 'pending' ? '未引取' : '引取済'; td.append(badge); tr.append(td);
+      const date = document.createElement('td'); date.textContent = fmt(record.completedAt); date.className = 'date record-date'; tr.append(date);
+      const operations = document.createElement('td'), actions = document.createElement('div'); actions.className = 'actions';operations.className='record-actions';
+      const edits=document.createElement('details'),editTitle=document.createElement('summary'),editButtons=document.createElement('div');edits.className='edit-actions';editTitle.textContent='訂正・設定';editButtons.className='edit-buttons';edits.append(editTitle,editButtons);
       const action = record.status === 'pending' ? 'complete' : 'reopen';
       [[action, record.status === 'pending' ? '引取済にする' : '未完了に戻す'],['history','履歴'],['rename','名前訂正'],['setPeriod','月分設定'],['renumber','伝票番号訂正'],['setQuantities','数量設定']].forEach(([key,label]) => {
         const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+        button.dataset.action=key;button.ariaLabel=`伝票${record.slip}：${label}`;
         button.disabled = !ready || busy;
         button.className = key === 'complete' ? 'primary' : key === 'reopen' ? 'return' : '';
-        button.addEventListener('click', () => key === 'history' ? history(record) : confirm(record,key)); actions.append(button);
-      }); operations.append(actions); tr.append(operations); $('rows').append(tr);
+        button.addEventListener('click', () => key === 'history' ? history(record) : confirm(record,key));
+        if(key===action || key==='history')actions.append(button);else editButtons.append(button);
+      });actions.append(edits); operations.append(actions); tr.append(operations); $('rows').append(tr);
     });
     document.querySelectorAll('.write').forEach(b => b.disabled = !ready || busy);
     excelControls();
@@ -464,7 +502,15 @@ if (typeof module !== 'undefined') module.exports = IhaiExcel;
     else if ($('confirmDialog').open) { $('confirmDialog').close(); } // 再度最新の行から操作
   };
   $('registerForm').onsubmit = async e => { e.preventDefault(); const value=$('period').value;if (await perform({slip:$('slip').value,name:$('person').value,period:value,ihaiCount:$('ihaiCount').value,butsudanCount:$('butsudanCount').value},'register')) { $('registerForm').reset();$('period').value=value; $('slip').focus(); } };
-  $('search').oninput = render; $('filter').onchange = render; $('monthFilter').onchange=render;
+  let previousQuery='';
+  function searchInput(e) {if(e?.isComposing)return;shownLimit=pageSize;const query=$('search').value.trim();if(query && !previousQuery)$('filter').value='all';previousQuery=query;render();}
+  $('search').oninput=searchInput;$('search').addEventListener('compositionend',searchInput);$('search').addEventListener('search',searchInput);
+  $('clearSearch').onclick=()=>{$('search').value='';previousQuery='';shownLimit=pageSize;render();$('search').focus();};
+  $('resetSearch').onclick=()=>{$('search').value='';previousQuery='';shownLimit=pageSize;$('filter').value='pending';$('monthFilter').value='all';$('searchScope').value='all';render();$('search').focus();};
+  for(const [id,value] of [['quickPending','pending'],['quickCompleted','completed'],['quickAll','all']])$(id).onclick=()=>{$('filter').value=value;shownLimit=pageSize;render();};
+  const filtersChanged=()=>{shownLimit=pageSize;render();};
+  $('filter').onchange=filtersChanged;$('monthFilter').onchange=filtersChanged;$('searchScope').onchange=filtersChanged;
+  $('moreRecords').onclick=()=>{shownLimit+=pageSize;render();};
   window.addEventListener('offline', () => { ready = false; $('connection').textContent = '通信が切れています · 操作停止中'; render(); });
   window.addEventListener('online', () => { if (user) { $('connection').textContent = '再接続を確認しています…'; subscribe(epoch); } });
   function subscribe(currentEpoch) {
