@@ -925,8 +925,9 @@
 
 
 
+  /* 23mm: 内容18.501mm + 上下余白0.4mm = 18.901mm。印刷枠19.1mm以内。 */
   @page brother-product-small { size:23mm 23mm; margin:1.9mm; }
-  .brother-product-small-mode .brother-product-label { width:23mm; height:23mm; padding:2.05mm 1.9mm; flex-direction:column; align-items:center; justify-content:flex-start; gap:.25mm; }
+  .brother-product-small-mode .brother-product-label { width:23mm; height:23mm; padding:2.15mm 1.9mm; flex-direction:column; align-items:center; justify-content:flex-start; gap:.25mm; }
   .brother-product-small-mode .product-label-info { box-sizing:border-box; flex:0 0 8.6mm; width:100%; height:8.6mm; padding:0 1mm; text-align:center; }
   .brother-product-small-mode .product-label-name { box-sizing:border-box; height:4.2mm; max-height:4.2mm; line-height:1.12; font-size:4.8pt; font-weight:600; padding:.1mm 0 .1mm; overflow:hidden; display:block; white-space:pre-line; overflow-wrap:anywhere; word-break:normal; }
   .brother-product-small-mode .product-label-color { box-sizing:border-box; height:1.9mm; line-height:1.15; padding:.1mm 0; font-size:5.5pt; font-weight:700; white-space:nowrap; overflow:hidden; }
@@ -937,7 +938,7 @@
   .brother-product-small-mode .product-label-digits { box-sizing:border-box; width:100%; height:2.2mm; padding:.15mm 0; font:5pt/1.9mm monospace; text-align:center; white-space:nowrap; color:#000; overflow:visible; }
   @media print {
     body.label-print #qrBulkPrintArea.brother-product-mode.brother-product-small-mode { width:19.2mm !important; max-width:19.2mm !important; page:brother-product-small; }
-    body.label-print .brother-product-small-mode .brother-product-label { width:19.2mm !important; height:19.1mm !important; padding:.90mm 0 !important; }
+    body.label-print .brother-product-small-mode .brother-product-label { width:19.2mm !important; height:19.1mm !important; padding:.25mm 0 .15mm !important; }
   }
 
   .label-printer-settings { border:1px solid #cbd6e5; background:#f3f6fa; border-radius:8px; margin:0 0 16px; padding:12px 14px; font-size:13px; line-height:1.7; }
@@ -1761,6 +1762,8 @@
         <dl>
           <dt>プリンター</dt><dd>使用中のラベルプリンター（Brother QL-800など）</dd>
           <dt>用紙サイズ</dt><dd id="printerGuidePaper">23×23mm（DK-1221）</dd>
+          <dt>印刷の向き</dt><dd id="printerGuideOrientation">縦（23×23mm）</dd>
+          <dt>余白</dt><dd>アプリ指定（既定）。独自の余白や位置補正を設定している場合は解除してください。</dd>
           <dt>倍率</dt><dd>100%（「用紙に合わせる」は使わない）</dd>
           <dt>解像度</dt><dd id="printerGuideResolution">300dpi</dd>
           <dt>黒い線の補正</dt><dd id="printerGuideWeight">細く補正（印字太り対策）</dd>
@@ -2100,7 +2103,7 @@
 <script>
   // 脚本ファイルの取得失敗と、取得後の初期化エラーを区別する。
   (() => {
-    const expected = "2026-11-19-slip-edit-barcode-jan-v59";
+    const expected = "2026-11-20-jan-portrait-v60";
     const appScript = document.createElement("script");
     const report = message => {
       const notice = document.getElementById("loginError");
